@@ -80,8 +80,6 @@ function TopBar() {
               style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 13, padding: '2px 7px', borderRadius: 4 }}>🔒</button>
             <button onClick={adminLogout}
               style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}>관리자 해제</button>
-            <button onClick={memberLogout}
-              style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}>로그아웃</button>
           </div>
         </div>
         {showPin && <PinModal onClose={() => setShowPin(false)} />}
@@ -95,8 +93,6 @@ function TopBar() {
       padding: '5px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
     }}>
       <span>👤 {memberName} 님</span>
-      <button onClick={memberLogout}
-        style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}>로그아웃</button>
     </div>
   )
 }
@@ -148,7 +144,7 @@ export function App() {
           </button>
         ))}
         <button onClick={() => { if (window.confirm('앱을 종료할까요?')) memberLogout() }}>
-          <span className="nav-icon" aria-hidden="true">🚪</span>
+          <span className="nav-icon" aria-hidden="true">⏻</span>
           <span className="nav-label">종료</span>
         </button>
       </nav>
