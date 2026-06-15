@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useApp } from '../store/appStore'
 import type { Member, Session } from '../types'
-import { buildMeetCount, matchTwoRounds, pairKey, recommendNext } from '../logic/matching'
+import { buildMeetCount, matchTwoRounds } from '../logic/matching'
 import { winnerId } from '../logic/game'
 import { todayStr } from '../lib/date'
 import { fmtScore } from '../lib/format'
@@ -208,9 +208,6 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
     background: isFlash ? '#fff3cd' : '#e1f5ee',
     color: isFlash ? '#856404' : '#0f6e56',
   }
-
-  // 수동매칭: busy + manualA로 선택된 사람 제외한 대기자
-  const manualWaiting = waiting.filter((id) => id !== manualA)
 
   return (
     <div className="tab">
