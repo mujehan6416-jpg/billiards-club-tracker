@@ -54,7 +54,16 @@ function AttendeePicker({ members, date, onDateChange, onStart }: {
   onDateChange: (d: string) => void
   onStart: (ids: string[], type: 'regular' | 'flash') => void
 }) {
-  const active = [...members.filter((m) => m.active)].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  const PINNED = ['엄재익', '이제한']
+  const active = [...members.filter((m) => m.active)].sort((a, b) => {
+    const ai = PINNED.indexOf(a.name), bi = PINNED.indexOf(b.name)
+    if (ai !== -1 || bi !== -1) {
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    }
+    return a.name.localeCompare(b.name, 'ko')
+  })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [meetingType, setMeetingType] = useState<'regular' | 'flash'>('regular')
 
