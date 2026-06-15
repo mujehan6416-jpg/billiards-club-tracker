@@ -123,7 +123,7 @@ function PendingFlashCard({ sessions, members }: { sessions: Session[]; members:
 
 // 에버리지(핸디) 직접 수정 카드
 function HandicapEditCard({ members }: { members: Member[] }) {
-  const applyHandicapCsv = useApp((s) => s.applyHandicapCsv)
+  const updateMember = useApp((s) => s.updateMember)
   const PINNED = ['엄재익', '이제한']
   const sorted = [...members.filter((m) => m.active)].sort((a, b) => {
     const ai = PINNED.indexOf(a.name), bi = PINNED.indexOf(b.name)
@@ -140,13 +140,19 @@ function HandicapEditCard({ members }: { members: Member[] }) {
     if (!m) { setMsg('회원을 선택하세요.'); return }
     const hv = parseInt(handicap)
     if (!hv || hv < 1) { setMsg('유효한 에버리지를 입력하세요.'); return }
-    applyHandicapCsv([{ name: m.name, handicap: hv, date }])
+    // 같은 날짜 기존 항목은 덮어쓰기 (applyHandicapCsv는 중복 날짜 건너뜀)
+    const changedAt = date + 'T00:00:00.000Z'
+    const filtered = m.handicapHistory.filter((h) => h.changedAt.slice(0, 10) !== date)
+    const newHistory = [...filtered, { value: hv, changedAt }]
+      .sort((a, b) => a.changedAt.localeCompare(b.changedAt))
+    const latestHandicap = newHistory[newHistory.length - 1].value
+    updateMember(m.id, { handicap: latestHandicap, handicapHistory: newHistory })
     try {
       const s = useApp.getState()
       await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
-      setMsg(`${m.name} 에버리지 ${hv} 반영 완료`)
+      setMsg(`${m.name} 에버리지 ${latestHandicap} 반영 완료`)
     } catch {
-      setMsg(`${m.name} 에버리지 ${hv} 반영 완료 (클라우드 저장 실패)`)
+      setMsg(`${m.name} 에버리지 ${latestHandicap} 반영 완료 (클라우드 저장 실패)`)
     }
     setHandicap('')
   }
