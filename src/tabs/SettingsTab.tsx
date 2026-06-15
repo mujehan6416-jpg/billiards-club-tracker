@@ -295,7 +295,7 @@ export function SettingsTab() {
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>👤 회원 비밀번호 관리</span>
             <span className="muted">회원 비밀번호를 강제 변경합니다. 변경 후 클라우드에 저장하세요.</span>
-            {members.filter((m) => m.active).map((m) => (
+            {[...members.filter((m) => m.active)].sort((a, b) => a.name.localeCompare(b.name, 'ko')).map((m) => (
               <MemberPwRow key={m.id} member={m} onSave={(pw) => setMemberPassword(m.id, pw)} />
             ))}
           </div>
