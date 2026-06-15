@@ -86,7 +86,9 @@ function MyPasswordCard() {
   const [next2, setNext2] = useState('')
   const [msg, setMsg] = useState('')
 
-  const doChange = () => {
+  const [saving, setSaving] = useState(false)
+
+  const doChange = async () => {
     const me = members.find((m) => m.id === memberId)
     if (!me) return
     const curPw = me.password ?? '0000'
@@ -94,8 +96,19 @@ function MyPasswordCard() {
     if (next.length < 4) { setMsg('비밀번호는 4자리 이상이어야 합니다.'); return }
     if (next !== next2) { setMsg('새 비밀번호가 일치하지 않습니다.'); return }
     setMemberPassword(memberId!, next)
-    setMsg('비밀번호가 변경되었습니다.')
-    setCur(''); setNext(''); setNext2('')
+    // 클라우드에 즉시 저장해야 다음 로그인 때 초기화되지 않음
+    setSaving(true)
+    setMsg('저장 중...')
+    try {
+      const s = useApp.getState()
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+      setMsg('비밀번호가 변경되었습니다.')
+      setCur(''); setNext(''); setNext2('')
+    } catch {
+      setMsg('변경했으나 저장에 실패했습니다. 인터넷 확인 후 다시 시도해 주세요.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -105,8 +118,8 @@ function MyPasswordCard() {
       <input type="password" placeholder="새 비밀번호 (4자리 이상)" value={next} onChange={(e) => setNext(e.target.value)} style={{ width: '100%' }} />
       <input type="password" placeholder="새 비밀번호 확인" value={next2} onChange={(e) => setNext2(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && doChange()} style={{ width: '100%' }} />
-      {msg && <span style={{ fontSize: 13, color: msg.includes('변경') ? '#1d9e75' : 'var(--danger)' }}>{msg}</span>}
-      <button className="primary block" onClick={doChange}>변경</button>
+      {msg && <span style={{ fontSize: 13, color: msg.includes('변경') ? '#1d9e75' : msg.includes('저장 중') ? 'var(--muted)' : 'var(--danger)' }}>{msg}</span>}
+      <button className="primary block" onClick={doChange} disabled={saving}>{saving ? '저장 중...' : '변경'}</button>
     </div>
   )
 }
