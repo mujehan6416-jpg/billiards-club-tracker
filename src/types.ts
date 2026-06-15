@@ -31,12 +31,23 @@ export interface Game {
   winnerId?: string | null
 }
 
+/** 게시된 대진표의 한 경기(라운드별). */
+export interface LineupMatch {
+  round: number // 1 = 1부, 2 = 2부
+  aId: string
+  bId: string
+  handicapA: number
+  handicapB: number
+}
+
 export interface Session {
   id: string
   date: string // YYYY-MM-DD
   type?: 'regular' | 'flash'  // 미지정 = regular
   approved?: boolean           // 번개모임: 관리자 승인 여부
   attendeeIds: string[]
+  lineup?: LineupMatch[]       // 게시된 대진표 (일반회원 열람용)
+  sitOutIds?: string[]         // 대진표상 대기자
   games: Game[]
 }
 

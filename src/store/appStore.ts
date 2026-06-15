@@ -10,6 +10,7 @@ interface Store extends AppState {
   setActive: (id: string, active: boolean) => void
   createSession: (date: string, attendeeIds: string[], type?: 'regular' | 'flash') => string
   approveSession: (sessionId: string) => void
+  publishLineup: (sessionId: string, lineup: import('../types').LineupMatch[], sitOutIds: string[]) => void
   setAttendees: (sessionId: string, attendeeIds: string[]) => void
   addGame: (sessionId: string, game: Omit<Game, 'id' | 'playedAt'>) => void
   deleteGame: (sessionId: string, gameId: string) => void
@@ -73,6 +74,11 @@ export const useApp = create<Store>()(
       approveSession: (sessionId) =>
         set((s) => ({
           sessions: s.sessions.map((ss) => ss.id === sessionId ? { ...ss, approved: true } : ss),
+        })),
+
+      publishLineup: (sessionId, lineup, sitOutIds) =>
+        set((s) => ({
+          sessions: s.sessions.map((ss) => ss.id === sessionId ? { ...ss, lineup, sitOutIds } : ss),
         })),
 
       setAttendees: (sessionId, attendeeIds) =>
