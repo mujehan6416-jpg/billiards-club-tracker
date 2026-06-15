@@ -183,13 +183,16 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
   const name = (id: string) => memberMap.get(id)?.name ?? '알수없음'
   const hcapOf = (id: string) => memberMap.get(id)?.handicap ?? 20
 
-  // 게시된 대진표(session.lineup)를 작업 상태로 초기화
+  // 게시된 대진표(session.lineup)를 작업 상태로 초기화 (이미 결과 입력된 경기는 제외)
   const [ongoing, setOngoing] = useState<Ongoing[]>(() =>
-    (session.lineup ?? []).map((m) => ({
-      key: crypto.randomUUID(),
-      aId: m.aId, bId: m.bId, handicapA: m.handicapA, handicapB: m.handicapB,
-      scoreA: '', scoreB: '', round: m.round,
-    })),
+    (session.lineup ?? [])
+      .filter((m) => !session.games.some((g) => g.round === m.round &&
+        ((g.playerAId === m.aId && g.playerBId === m.bId) || (g.playerAId === m.bId && g.playerBId === m.aId))))
+      .map((m) => ({
+        key: crypto.randomUUID(),
+        aId: m.aId, bId: m.bId, handicapA: m.handicapA, handicapB: m.handicapB,
+        scoreA: '', scoreB: '', round: m.round,
+      })),
   )
   const [sitOut, setSitOut] = useState<string[]>(() => session.sitOutIds ?? [])
   const [editAttendees, setEditAttendees] = useState(false)
@@ -220,6 +223,8 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
   const matchedInRound = (round: number) => {
     const s = new Set<string>()
     ongoing.filter((o) => o.round === round).forEach((o) => { s.add(o.aId); s.add(o.bId) })
+    // 이미 결과가 저장된 경기의 선수도 해당 라운드 매칭 완료로 간주
+    session.games.filter((g) => g.round === round).forEach((g) => { s.add(g.playerAId); s.add(g.playerBId) })
     return s
   }
   const unmatchedInRound = (round: number) => {
@@ -268,7 +273,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
     addGame(session.id, {
       playerAId: o.aId, playerBId: o.bId,
       handicapA: o.handicapA, handicapB: o.handicapB,
-      scoreA, scoreB, endType,
+      scoreA, scoreB, endType, round: o.round,
     })
     cancel(o.key)
   }
@@ -305,8 +310,8 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
     color: isFlash ? '#856404' : '#0f6e56',
   }
 
-  // 점수 입력 전(대진표 작성 단계)에만 미대진자 재매칭 UI 표시
-  const lineupPhase = session.games.length === 0
+  // 매칭이 시작된 후(자동매칭/게시/결과)에만 라운드 그룹 표시
+  const started = ongoing.length > 0 || session.games.length > 0 || (session.lineup?.length ?? 0) > 0
 
   const renderRoundGroup = (round: number) => {
     const matches = ongoing.filter((o) => o.round === round)
@@ -341,7 +346,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
             </div>
           ))}
         </div>
-        {lineupPhase && unmatched.length >= 1 && (
+        {unmatched.length >= 1 && (
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: '#c0392b' }}>
               ({round}라운드 미대진자) {unmatched.map(name).join(', ')}
@@ -426,8 +431,8 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
             </button>
           </div>
 
-          {renderRoundGroup(1)}
-          {renderRoundGroup(2)}
+          {started && renderRoundGroup(1)}
+          {started && renderRoundGroup(2)}
 
           {sitOut.length > 0 && (
             <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>⏸ 대기: {sitOut.map(name).join(', ')}</div>

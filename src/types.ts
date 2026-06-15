@@ -24,6 +24,7 @@ export interface Game {
   scoreB: number
   endType: GameEndType
   playedAt: string // ISO datetime
+  round?: number // 정기모임 라운드(1=1부, 2=2부). 과거 임포트 데이터는 없음
   /**
    * 명시적으로 기록된 승자(과거 CSV 임포트·수기 확정용).
    * undefined이면 달성률(rate)로 자동 계산, null이면 무승부로 확정.
