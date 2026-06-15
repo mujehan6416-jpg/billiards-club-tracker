@@ -26,11 +26,11 @@ export function LoginScreen({ members, onLogin }: Props) {
     <div style={{
       minHeight: '100vh', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      background: '#f4f5f3', padding: '24px 20px',
+      background: '#fff', padding: '24px 20px',
     }}>
       <div style={{ display: 'flex', width: '100%', maxWidth: 360, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
         <div style={{ flex: 1 }} />
-        <img src={logoSrc} alt="로고" style={{ flex: 3, maxWidth: '60%', height: 'auto', objectFit: 'contain' }} />
+        <img src={logoSrc} alt="로고" style={{ flex: 3, maxWidth: '120%', height: 'auto', objectFit: 'contain' }} />
         <div style={{ flex: 1 }} />
       </div>
 
