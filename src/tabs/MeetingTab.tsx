@@ -177,6 +177,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
   const deleteGame = useApp((s) => s.deleteGame)
   const setAttendees = useApp((s) => s.setAttendees)
   const approveSession = useApp((s) => s.approveSession)
+  const deleteSession = useApp((s) => s.deleteSession)
   const publishLineup = useApp((s) => s.publishLineup)
 
   const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
@@ -293,6 +294,18 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
     return txt
   }
 
+  // 모임 통째로 삭제 (날짜 오설정 등) → 게시 대진표·경기 모두 제거, 클라우드 반영
+  const removeSession = async () => {
+    if (!window.confirm(`${session.date} 모임을 삭제할까요?\n게시된 대진표와 입력된 경기 기록이 모두 삭제됩니다.`)) return
+    deleteSession(session.id)
+    const s = useApp.getState()
+    try {
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+    } catch {
+      // 업로드 실패해도 로컬에서는 삭제됨
+    }
+  }
+
   // 대진표를 게시(클라우드 업로드) → 일반회원 열람 가능
   const doPublish = async () => {
     const lineup: LineupMatch[] = ongoing
@@ -389,7 +402,12 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
           </div>
           <span className="muted">참석 {session.attendeeIds.length}명 · 완료 {session.games.length}경기</span>
         </div>
-        {isAdmin && <button onClick={() => setEditAttendees((v) => !v)}>참석자</button>}
+        {isAdmin && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => setEditAttendees((v) => !v)}>참석자</button>
+            <button onClick={removeSession} style={{ color: '#c0392b', borderColor: '#e0a0a0' }}>모임 삭제</button>
+          </div>
+        )}
       </div>
 
       {isFlash && !isApproved && isAdmin && (
