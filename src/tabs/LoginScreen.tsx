@@ -7,7 +7,7 @@ interface Props {
 }
 
 export function LoginScreen({ members, onLogin }: Props) {
-  const active = members.filter((m) => m.active)
+  const active = [...members.filter((m) => m.active)].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
