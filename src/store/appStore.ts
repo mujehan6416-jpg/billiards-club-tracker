@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+﻿import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { AppState, Member, Game } from '../types'
 
@@ -12,6 +12,7 @@ interface Store extends AppState {
   addGame: (sessionId: string, game: Omit<Game, 'id' | 'playedAt'>) => void
   deleteGame: (sessionId: string, gameId: string) => void
   touchBackup: () => void
+  applyHandicapCsv: (rows: import('../lib/backup').HandicapRow[]) => void
   replaceAll: (state: AppState) => void
 }
 
@@ -85,8 +86,31 @@ export const useApp = create<Store>()(
 
       touchBackup: () => set((s) => ({ settings: { ...s.settings, lastBackupAt: now() } })),
 
+      applyHandicapCsv: (rows) =>
+        set((s) => {
+          const nameMap = new Map(s.members.map((m) => [m.name, m.id]))
+          const patches = new Map<string, import('../types').HandicapChange[]>()
+          for (const row of rows) {
+            const id = nameMap.get(row.name)
+            if (!id) continue
+            if (!patches.has(id)) patches.set(id, [])
+            patches.get(id)!.push({ value: row.handicap, changedAt: row.date + 'T00:00:00.000Z' })
+          }
+          const members = s.members.map((m) => {
+            const newEntries = patches.get(m.id)
+            if (!newEntries) return m
+            const existingKeys = new Set(m.handicapHistory.map((h) => h.changedAt.slice(0, 10)))
+            const toAdd = newEntries.filter((e) => !existingKeys.has(e.changedAt.slice(0, 10)))
+            const merged = [...m.handicapHistory, ...toAdd].sort((a, b) => a.changedAt.localeCompare(b.changedAt))
+            const latest = merged[merged.length - 1]
+            return { ...m, handicapHistory: merged, handicap: latest.value }
+          })
+          return { members }
+        }),
+
       replaceAll: (state) => set(() => ({ ...state })),
     }),
     { name: 'billiards-club-state' },
   ),
 )
+

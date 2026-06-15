@@ -1,4 +1,4 @@
-import type { AppState, Member, Session } from '../types'
+﻿import type { AppState, Member, Session } from '../types'
 import { rate, winnerId } from '../logic/game'
 
 function download(filename: string, content: string, type: string) {
@@ -59,4 +59,39 @@ export function exportCsv(sessions: Session[], members: Member[], dateStr: strin
     }
   }
   download(`billiards-${dateStr}.csv`, BOM + lines.join('\n'), 'text/csv;charset=utf-8')
+}
+
+
+export function exportHandicapCsv(members: Member[], dateStr: string) {
+  const header = ['이름', '날짜', '핸디']
+  const lines: string[] = [header.map(csvCell).join(',')]
+  for (const m of members) {
+    const sorted = [...m.handicapHistory].sort((a, b) => a.changedAt.localeCompare(b.changedAt))
+    for (const h of sorted) {
+      lines.push([m.name, h.changedAt.slice(0, 10), h.value].map(csvCell).join(','))
+    }
+  }
+  download(`billiards-handicap-${dateStr}.csv`, BOM + lines.join('\n'), 'text/csv;charset=utf-8')
+}
+
+export interface HandicapRow {
+  name: string
+  date: string
+  handicap: number
+}
+
+export async function importHandicapCsv(file: File): Promise<HandicapRow[]> {
+  const text = await file.text()
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim())
+  if (lines.length < 2) throw new Error('데이터가 없습니다.')
+  const rows: HandicapRow[] = []
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
+    const [name, date, handicapStr] = cols
+    const handicap = parseInt(handicapStr, 10)
+    if (!name || !date || isNaN(handicap)) throw new Error(`${i + 1}행 형식 오류: "${lines[i]}"`)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`${i + 1}행 날짜 형식 오류 (YYYY-MM-DD 필요): "${date}"`)
+    rows.push({ name, date, handicap })
+  }
+  return rows
 }
