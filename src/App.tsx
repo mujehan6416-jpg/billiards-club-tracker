@@ -104,7 +104,7 @@ function TopBar() {
 export function App() {
   const [tab, setTab] = useState<Tab>('home')
   const [syncing, setSyncing] = useState(true)
-  const { memberId } = useAuth()
+  const { memberId, logout: memberLogout } = useAuth()
   const members = useApp((s) => s.members)
   const replaceAll = useApp((s) => s.replaceAll)
   const { login } = useAuth()
@@ -147,6 +147,10 @@ export function App() {
             <span className="nav-label">{t.label}</span>
           </button>
         ))}
+        <button onClick={() => { if (window.confirm('앱을 종료할까요?')) memberLogout() }}>
+          <span className="nav-icon" aria-hidden="true">🚪</span>
+          <span className="nav-label">종료</span>
+        </button>
       </nav>
     </div>
   )
