@@ -1,17 +1,23 @@
-﻿import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { MembersTab } from './tabs/MembersTab'
 import { MeetingTab } from './tabs/MeetingTab'
 import { DashboardTab } from './tabs/DashboardTab'
 import { SettingsTab } from './tabs/SettingsTab'
+import { HomeTab } from './tabs/HomeTab'
+import { LoginScreen } from './tabs/LoginScreen'
 import { useAdmin } from './store/adminStore'
+import { useAuth } from './store/authStore'
+import { useApp } from './store/appStore'
+import { downloadFromCloud } from './lib/cloudSync'
 
-type Tab = 'members' | 'meeting' | 'dashboard' | 'settings'
+type Tab = 'home' | 'members' | 'meeting' | 'dashboard' | 'settings'
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'members', label: '회원', icon: '👥' },
-  { key: 'meeting', label: '모임', icon: '🎱' },
+  { key: 'home',      label: '홈',       icon: '🏠' },
+  { key: 'members',   label: '회원',     icon: '👥' },
+  { key: 'meeting',   label: '모임',     icon: '🎱' },
   { key: 'dashboard', label: '대시보드', icon: '📊' },
-  { key: 'settings', label: '설정', icon: '⚙️' },
+  { key: 'settings',  label: '설정',     icon: '⚙️' },
 ]
 
 function PinModal({ onClose }: { onClose: () => void }) {
@@ -34,7 +40,7 @@ function PinModal({ onClose }: { onClose: () => void }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        background: 'var(--color-bg, #fff)', borderRadius: 12, padding: '24px 20px',
+        background: '#fff', borderRadius: 12, padding: '24px 20px',
         width: 280, display: 'flex', flexDirection: 'column', gap: 10
       }}>
         <span style={{ fontWeight: 600, fontSize: 15 }}>🔒 PIN 변경</span>
@@ -56,44 +62,83 @@ function PinModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function AdminBanner() {
-  const { isAdmin, logout } = useAdmin()
+function TopBar() {
+  const { isAdmin, logout: adminLogout } = useAdmin()
+  const { memberName, logout: memberLogout } = useAuth()
   const [showPin, setShowPin] = useState(false)
-  if (!isAdmin) return null
-  return (
-    <>
-      <div style={{
-        background: '#0f6e56', color: '#fff', fontSize: 12,
-        padding: '5px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-      }}>
-        <span>🔑 관리자 모드</span>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button
-            onClick={() => setShowPin(true)}
-            title="PIN 변경"
-            style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 13, padding: '2px 7px', borderRadius: 4, lineHeight: 1 }}
-          >🔒</button>
-          <button
-            onClick={logout}
-            style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}
-          >로그아웃</button>
+
+  if (isAdmin) {
+    return (
+      <>
+        <div style={{
+          background: '#0f6e56', color: '#fff', fontSize: 12,
+          padding: '5px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+        }}>
+          <span>🔑 관리자 모드 {memberName && `· ${memberName}`}</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={() => setShowPin(true)} title="PIN 변경"
+              style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 13, padding: '2px 7px', borderRadius: 4 }}>🔒</button>
+            <button onClick={adminLogout}
+              style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}>관리자 해제</button>
+            <button onClick={memberLogout}
+              style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}>로그아웃</button>
+          </div>
         </div>
-      </div>
-      {showPin && <PinModal onClose={() => setShowPin(false)} />}
-    </>
+        {showPin && <PinModal onClose={() => setShowPin(false)} />}
+      </>
+    )
+  }
+
+  return (
+    <div style={{
+      background: '#072B61', color: '#fff', fontSize: 12,
+      padding: '5px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+    }}>
+      <span>👤 {memberName} 님</span>
+      <button onClick={memberLogout}
+        style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}>로그아웃</button>
+    </div>
   )
 }
 
 export function App() {
-  const [tab, setTab] = useState<Tab>('meeting')
+  const [tab, setTab] = useState<Tab>('home')
+  const [syncing, setSyncing] = useState(true)
+  const { memberId } = useAuth()
+  const members = useApp((s) => s.members)
+  const replaceAll = useApp((s) => s.replaceAll)
+  const { login } = useAuth()
+
+  useEffect(() => {
+    downloadFromCloud()
+      .then((state) => { if (state) replaceAll(state) })
+      .catch(() => {})
+      .finally(() => setSyncing(false))
+  }, [])
+
+  if (syncing) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f4f5f3', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 28 }}>🎱</div>
+        <div style={{ fontSize: 14, color: '#072B61', fontWeight: 500 }}>당신회</div>
+        <div style={{ fontSize: 12, color: '#aaa' }}>데이터 동기화 중...</div>
+      </div>
+    )
+  }
+
+  if (!memberId) {
+    return <LoginScreen members={members} onLogin={login} />
+  }
+
   return (
     <div className="app">
-      <AdminBanner />
+      <TopBar />
       <main className="app-main">
-        {tab === 'members' && <MembersTab />}
-        {tab === 'meeting' && <MeetingTab />}
+        {tab === 'home'      && <HomeTab onNavigate={setTab} />}
+        {tab === 'members'   && <MembersTab />}
+        {tab === 'meeting'   && <MeetingTab />}
         {tab === 'dashboard' && <DashboardTab />}
-        {tab === 'settings' && <SettingsTab />}
+        {tab === 'settings'  && <SettingsTab />}
       </main>
       <nav className="bottom-nav">
         {TABS.map((t) => (

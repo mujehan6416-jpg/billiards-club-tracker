@@ -9,6 +9,7 @@ export interface Member {
   handicap: number // 현재 핸디(=목표 개수)
   handicapHistory: HandicapChange[]
   active: boolean
+  password?: string // 미설정시 기본값 '0000'
 }
 
 export type GameEndType = 'cleared' | 'time'

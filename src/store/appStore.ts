@@ -15,6 +15,7 @@ interface Store extends AppState {
   touchBackup: () => void
   applyHandicapCsv: (rows: import('../lib/backup').HandicapRow[]) => void
   applyMemberCsv: (rows: import('../lib/backup').MemberRow[]) => void
+  setMemberPassword: (id: string, password: string) => void
   replaceAll: (state: AppState) => void
 }
 
@@ -133,6 +134,11 @@ export const useApp = create<Store>()(
           })
           return { members: [...updated, ...newMembers] }
         }),
+
+      setMemberPassword: (id, password) =>
+        set((s) => ({
+          members: s.members.map((m) => (m.id === id ? { ...m, password } : m)),
+        })),
 
       replaceAll: (state) => set(() => ({ ...state })),
     }),

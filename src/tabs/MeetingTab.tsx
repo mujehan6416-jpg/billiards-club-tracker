@@ -22,16 +22,28 @@ export function MeetingTab() {
   const members = useApp((s) => s.members)
   const sessions = useApp((s) => s.sessions)
   const createSession = useApp((s) => s.createSession)
-  const today = todayStr()
-  const current = sessions.find((s) => s.date === today)
+  const [selectedDate, setSelectedDate] = useState(todayStr())
+  const current = sessions.find((s) => s.date === selectedDate)
 
   if (!current) {
-    return <AttendeePicker members={members} onStart={(ids) => createSession(today, ids)} />
+    return (
+      <AttendeePicker
+        members={members}
+        date={selectedDate}
+        onDateChange={setSelectedDate}
+        onStart={(ids) => createSession(selectedDate, ids)}
+      />
+    )
   }
   return <Board key={current.id} session={current} members={members} sessions={sessions} />
 }
 
-function AttendeePicker({ members, onStart }: { members: Member[]; onStart: (ids: string[]) => void }) {
+function AttendeePicker({ members, date, onDateChange, onStart }: {
+  members: Member[]
+  date: string
+  onDateChange: (d: string) => void
+  onStart: (ids: string[]) => void
+}) {
   const active = members.filter((m) => m.active)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const toggle = (id: string) =>
@@ -43,7 +55,16 @@ function AttendeePicker({ members, onStart }: { members: Member[]; onStart: (ids
 
   return (
     <div className="tab">
-      <h2 className="tab-title">오늘 모임 시작</h2>
+      <h2 className="tab-title">모임 시작</h2>
+      <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>📅 날짜</span>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => { onDateChange(e.target.value); setSelected(new Set()) }}
+          style={{ flex: 1 }}
+        />
+      </div>
       {active.length === 0 && <p className="muted">먼저 회원 탭에서 회원을 추가하세요.</p>}
       <div className="chip-grid">
         {active.map((m) => (

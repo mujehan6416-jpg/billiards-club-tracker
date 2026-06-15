@@ -92,6 +92,14 @@ export function MembersTab() {
   const rankMap = useMemo(() => calcRanks(members), [members])
   const activeCount = members.filter((m) => m.active).length
 
+  const ROLES: Record<string, string> = {
+    '엄재익': '당신회 회장',
+    '이제한': '당신회 총무',
+    '임진홍': '고문',
+    '현응렬': '고문',
+    '조영일': '고문',
+  }
+
   const sorted = [...members].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name))
 
   const startEdit = (id: string, curName: string, curHcap: number) => {
@@ -119,43 +127,45 @@ export function MembersTab() {
     <div className="tab">
       <h2 className="tab-title">회원</h2>
 
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <input
-          value={name}
-          placeholder="이름"
-          style={{ width: '100%' }}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && name.trim()) {
-              addMember(name.trim(), hcap)
-              setName('')
-            }
-          }}
-        />
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <label className="hcap-label" style={{ flex: 1 }}>
-            핸디
-            <input
-              type="number"
-              min={1}
-              value={hcap}
-              style={{ width: 70 }}
-              onChange={(e) => setHcap(Math.max(1, +e.target.value))}
-            />
-          </label>
-          <button
-            className="primary"
-            disabled={!name.trim()}
-            style={{ flex: 1 }}
-            onClick={() => {
-              addMember(name.trim(), hcap)
-              setName('')
+      {isAdmin && (
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input
+            value={name}
+            placeholder="이름"
+            style={{ width: '100%' }}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && name.trim()) {
+                addMember(name.trim(), hcap)
+                setName('')
+              }
             }}
-          >
-            추가
-          </button>
+          />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <label className="hcap-label" style={{ flex: 1 }}>
+              핸디
+              <input
+                type="number"
+                min={1}
+                value={hcap}
+                style={{ width: 70 }}
+                onChange={(e) => setHcap(Math.max(1, +e.target.value))}
+              />
+            </label>
+            <button
+              className="primary"
+              disabled={!name.trim()}
+              style={{ flex: 1 }}
+              onClick={() => {
+                addMember(name.trim(), hcap)
+                setName('')
+              }}
+            >
+              추가
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {sorted.length === 0 && <p className="muted">아직 회원이 없습니다. 위에서 추가하세요.</p>}
 
@@ -165,7 +175,7 @@ export function MembersTab() {
           const isEditing = editId === m.id
           const isDetail = detailId === m.id
           return (
-            <li key={m.id}>
+            <li key={m.id} className={isDetail ? 'expanded' : ''}>
               <div className={`card member-row${m.active ? '' : ' inactive'}`} style={{
                 marginBottom: isDetail ? 0 : undefined,
                 borderBottomLeftRadius: isDetail ? 0 : undefined,
@@ -199,7 +209,14 @@ export function MembersTab() {
                 ) : (
                   <>
                     <div className="member-main" style={{ cursor: 'pointer' }} onClick={() => toggleDetail(m.id)}>
-                      <span className="member-name" style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>{m.name}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="member-name" style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>{m.name}</span>
+                        {ROLES[m.name] && (
+                          <span style={{ fontSize: 11, background: '#e1f5ee', color: '#0f6e56', borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap' }}>
+                            {ROLES[m.name]}
+                          </span>
+                        )}
+                      </div>
                       <span className="member-stat">
                         {st ? `${st.wins}승 ${st.losses}패 · ${Math.round(st.winRate * 100)}%` : '기록 없음'}
                       </span>

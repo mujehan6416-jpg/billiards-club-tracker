@@ -1,6 +1,7 @@
 ﻿import { useRef, useState } from 'react'
 import { useApp } from '../store/appStore'
 import { useAdmin } from '../store/adminStore'
+import { useAuth } from '../store/authStore'
 import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv } from '../lib/backup'
 import { uploadToCloud, downloadFromCloud } from '../lib/cloudSync'
 import { todayStr } from '../lib/date'
@@ -60,6 +61,56 @@ function ChangePinCard() {
   )
 }
 
+function MemberPwRow({ member, onSave }: { member: import('../types').Member; onSave: (pw: string) => void }) {
+  const [pw, setPw] = useState('')
+  const [done, setDone] = useState(false)
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <span style={{ minWidth: 60, fontSize: 13 }}>{member.name}</span>
+      <input type="text" placeholder="새 비밀번호" value={pw}
+        onChange={(e) => { setPw(e.target.value); setDone(false) }}
+        style={{ flex: 1, fontSize: 13 }} />
+      <button style={{ fontSize: 12 }} onClick={() => { if (pw.length >= 4) { onSave(pw); setDone(true); setPw('') } }}>
+        {done ? '✓' : '변경'}
+      </button>
+    </div>
+  )
+}
+
+function MyPasswordCard() {
+  const { memberId } = useAuth()
+  const members = useApp((s) => s.members)
+  const setMemberPassword = useApp((s) => s.setMemberPassword)
+  const [cur, setCur] = useState('')
+  const [next, setNext] = useState('')
+  const [next2, setNext2] = useState('')
+  const [msg, setMsg] = useState('')
+
+  const doChange = () => {
+    const me = members.find((m) => m.id === memberId)
+    if (!me) return
+    const curPw = me.password ?? '0000'
+    if (cur !== curPw) { setMsg('현재 비밀번호가 틀렸습니다.'); return }
+    if (next.length < 4) { setMsg('비밀번호는 4자리 이상이어야 합니다.'); return }
+    if (next !== next2) { setMsg('새 비밀번호가 일치하지 않습니다.'); return }
+    setMemberPassword(memberId!, next)
+    setMsg('비밀번호가 변경되었습니다.')
+    setCur(''); setNext(''); setNext2('')
+  }
+
+  return (
+    <div className="card col-card">
+      <span style={{ fontWeight: 600, fontSize: 14 }}>내 비밀번호 변경</span>
+      <input type="password" placeholder="현재 비밀번호" value={cur} onChange={(e) => setCur(e.target.value)} style={{ width: '100%' }} />
+      <input type="password" placeholder="새 비밀번호 (4자리 이상)" value={next} onChange={(e) => setNext(e.target.value)} style={{ width: '100%' }} />
+      <input type="password" placeholder="새 비밀번호 확인" value={next2} onChange={(e) => setNext2(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && doChange()} style={{ width: '100%' }} />
+      {msg && <span style={{ fontSize: 13, color: msg.includes('변경') ? '#1d9e75' : 'var(--danger)' }}>{msg}</span>}
+      <button className="primary block" onClick={doChange}>변경</button>
+    </div>
+  )
+}
+
 export function SettingsTab() {
   const members = useApp((s) => s.members)
   const sessions = useApp((s) => s.sessions)
@@ -67,6 +118,7 @@ export function SettingsTab() {
   const replaceAll = useApp((s) => s.replaceAll)
   const applyHandicapCsv = useApp((s) => s.applyHandicapCsv)
   const applyMemberCsv = useApp((s) => s.applyMemberCsv)
+  const setMemberPassword = useApp((s) => s.setMemberPassword)
   const touchBackup = useApp((s) => s.touchBackup)
   const { isAdmin } = useAdmin()
 
@@ -220,6 +272,14 @@ export function SettingsTab() {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportHandicap(f); e.target.value = '' }} />
           </div>
 
+          <div className="card col-card">
+            <span style={{ fontWeight: 600, fontSize: 14 }}>👤 회원 비밀번호 관리</span>
+            <span className="muted">회원 비밀번호를 강제 변경합니다. 변경 후 클라우드에 저장하세요.</span>
+            {members.filter((m) => m.active).map((m) => (
+              <MemberPwRow key={m.id} member={m} onSave={(pw) => setMemberPassword(m.id, pw)} />
+            ))}
+          </div>
+
           <ChangePinCard />
 
           <div className="card col-card">
@@ -233,6 +293,8 @@ export function SettingsTab() {
           </div>
         </>
       )}
+
+      <MyPasswordCard />
 
       {msg && <p className="info-msg">{msg}</p>}
     </div>
