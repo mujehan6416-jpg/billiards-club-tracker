@@ -1,10 +1,13 @@
-﻿import { useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useApp } from '../store/appStore'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
 import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv, importGameCsv } from '../lib/backup'
 import { uploadToCloud, downloadFromCloud } from '../lib/cloudSync'
 import { todayStr } from '../lib/date'
+import { winnerId } from '../logic/game'
+import { fmtScore } from '../lib/format'
+import type { Member, Session } from '../types'
 
 function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
   const { login } = useAdmin()
@@ -61,23 +64,164 @@ function ChangePinCard() {
   )
 }
 
-function MemberPwRow({ member, onSave }: { member: import('../types').Member; onSave: (pw: string) => void }) {
-  const [pw, setPw] = useState('')
-  const [done, setDone] = useState(false)
+// 번개모임 승인 카드 (관리자 전용, 맨 위)
+function PendingFlashCard({ sessions, members }: { sessions: Session[]; members: Member[] }) {
+  const approveSession = useApp((s) => s.approveSession)
+  const [expanding, setExpanding] = useState<string | null>(null)
+
+  const pending = sessions.filter((s) => s.type === 'flash' && s.approved === false)
+  if (pending.length === 0) return null
+
+  const name = (id: string) => members.find((m) => m.id === id)?.name ?? id
+
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <span style={{ minWidth: 60, fontSize: 13 }}>{member.name}</span>
-      <input type="text" placeholder="새 비밀번호" value={pw}
-        onChange={(e) => { setPw(e.target.value); setDone(false) }}
-        style={{ flex: 1, fontSize: 13 }} />
-      <button style={{ fontSize: 12 }} onClick={() => { if (pw.length >= 4) { onSave(pw); setDone(true); setPw('') } }}>
-        {done ? '✓' : '변경'}
-      </button>
+    <div className="card col-card">
+      <span style={{ fontWeight: 600, fontSize: 14 }}>⚡ 번개모임 승인 대기 ({pending.length}건)</span>
+      {pending.map((s) => (
+        <div key={s.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>{s.date}</span>
+              <span className="muted" style={{ fontSize: 12, marginLeft: 8 }}>
+                참석 {s.attendeeIds.length}명 · {s.games.length}경기
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button style={{ fontSize: 12 }} onClick={() => setExpanding(expanding === s.id ? null : s.id)}>
+                {expanding === s.id ? '닫기' : '내용 보기'}
+              </button>
+              <button className="primary" style={{ fontSize: 12 }} onClick={async () => {
+                if (!window.confirm(`${s.date} 번개모임 기록을 승인할까요?\n정규 통계에 반영됩니다.`)) return
+                approveSession(s.id)
+                const st = useApp.getState()
+                try { await uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings }) } catch { /* ignore */ }
+              }}>승인</button>
+            </div>
+          </div>
+          {expanding === s.id && s.games.length > 0 && (
+            <ul style={{ margin: '8px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {s.games.map((g) => {
+                const win = winnerId(g)
+                return (
+                  <li key={g.id} style={{ display: 'flex', gap: 8, fontSize: 13, alignItems: 'center' }}>
+                    <span className={win === g.playerAId ? 'win' : ''}>{name(g.playerAId)} {fmtScore(g.scoreA, g.handicapA)}</span>
+                    <span className="vs">vs</span>
+                    <span className={win === g.playerBId ? 'win' : ''}>{name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {expanding === s.id && s.games.length === 0 && (
+            <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>경기 기록 없음</p>
+          )}
+        </div>
+      ))}
     </div>
   )
 }
 
-function MyPasswordCard() {
+// 에버리지(핸디) 직접 수정 카드
+function HandicapEditCard({ members }: { members: Member[] }) {
+  const applyHandicapCsv = useApp((s) => s.applyHandicapCsv)
+  const PINNED = ['엄재익', '이제한']
+  const sorted = [...members.filter((m) => m.active)].sort((a, b) => {
+    const ai = PINNED.indexOf(a.name), bi = PINNED.indexOf(b.name)
+    if (ai !== -1 || bi !== -1) { if (ai === -1) return 1; if (bi === -1) return -1; return ai - bi }
+    return a.name.localeCompare(b.name, 'ko')
+  })
+  const [memberId, setMemberId] = useState('')
+  const [date, setDate] = useState(todayStr())
+  const [handicap, setHandicap] = useState('')
+  const [msg, setMsg] = useState('')
+
+  const save = async () => {
+    const m = members.find((x) => x.id === memberId)
+    if (!m) { setMsg('회원을 선택하세요.'); return }
+    const hv = parseInt(handicap)
+    if (!hv || hv < 1) { setMsg('유효한 에버리지를 입력하세요.'); return }
+    applyHandicapCsv([{ name: m.name, handicap: hv, date }])
+    try {
+      const s = useApp.getState()
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+      setMsg(`${m.name} 에버리지 ${hv} 반영 완료`)
+    } catch {
+      setMsg(`${m.name} 에버리지 ${hv} 반영 완료 (클라우드 저장 실패)`)
+    }
+    setHandicap('')
+  }
+
+  return (
+    <div className="card col-card">
+      <span style={{ fontWeight: 600, fontSize: 14 }}>🎯 에버리지(핸디) 수정</span>
+      <select value={memberId} onChange={(e) => setMemberId(e.target.value)} style={{ width: '100%' }}>
+        <option value="">회원 선택</option>
+        {sorted.map((m) => (
+          <option key={m.id} value={m.id}>{m.name} (현재: {m.handicap})</option>
+        ))}
+      </select>
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: '100%' }} />
+      <input type="number" min={1} placeholder="새 에버리지(핸디)" value={handicap}
+        onChange={(e) => { setHandicap(e.target.value); setMsg('') }}
+        onKeyDown={(e) => e.key === 'Enter' && save()}
+        style={{ width: '100%' }} />
+      {msg && <span style={{ fontSize: 13, color: msg.includes('완료') ? '#1d9e75' : 'var(--danger)' }}>{msg}</span>}
+      <button className="primary block" onClick={save}>저장</button>
+    </div>
+  )
+}
+
+// 관리자용 회원 비밀번호 변경 카드
+function AdminMemberPwCard({ members }: { members: Member[] }) {
+  const setMemberPassword = useApp((s) => s.setMemberPassword)
+  const PINNED = ['엄재익', '이제한']
+  const sorted = [...members.filter((m) => m.active)].sort((a, b) => {
+    const ai = PINNED.indexOf(a.name), bi = PINNED.indexOf(b.name)
+    if (ai !== -1 || bi !== -1) { if (ai === -1) return 1; if (bi === -1) return -1; return ai - bi }
+    return a.name.localeCompare(b.name, 'ko')
+  })
+  const [memberId, setMemberId] = useState('')
+  const [pw, setPw] = useState('')
+  const [msg, setMsg] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (!memberId) { setMsg('회원을 선택하세요.'); return }
+    if (pw.length < 4) { setMsg('비밀번호는 4자리 이상이어야 합니다.'); return }
+    setSaving(true)
+    setMemberPassword(memberId, pw)
+    try {
+      const s = useApp.getState()
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+      const m = members.find((x) => x.id === memberId)
+      setMsg(`${m?.name ?? ''} 비밀번호 변경 완료`)
+      setPw('')
+    } catch {
+      setMsg('변경했으나 클라우드 저장 실패')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="card col-card">
+      <span style={{ fontWeight: 600, fontSize: 14 }}>👤 회원 비밀번호 관리 (관리자)</span>
+      <select value={memberId} onChange={(e) => { setMemberId(e.target.value); setMsg('') }} style={{ width: '100%' }}>
+        <option value="">회원 선택</option>
+        {sorted.map((m) => (
+          <option key={m.id} value={m.id}>{m.name}</option>
+        ))}
+      </select>
+      <input type="text" placeholder="새 비밀번호 (4자리 이상)" value={pw}
+        onChange={(e) => { setPw(e.target.value); setMsg('') }}
+        onKeyDown={(e) => e.key === 'Enter' && save()}
+        style={{ width: '100%' }} />
+      {msg && <span style={{ fontSize: 13, color: msg.includes('완료') ? '#1d9e75' : 'var(--danger)' }}>{msg}</span>}
+      <button className="primary block" onClick={save} disabled={saving}>{saving ? '저장 중...' : '변경'}</button>
+    </div>
+  )
+}
+
+// 내 비밀번호 변경 (일반회원)
+function MyPasswordCard({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const { memberId } = useAuth()
   const members = useApp((s) => s.members)
   const setMemberPassword = useApp((s) => s.setMemberPassword)
@@ -85,7 +229,6 @@ function MyPasswordCard() {
   const [next, setNext] = useState('')
   const [next2, setNext2] = useState('')
   const [msg, setMsg] = useState('')
-
   const [saving, setSaving] = useState(false)
 
   const doChange = async () => {
@@ -96,9 +239,7 @@ function MyPasswordCard() {
     if (next.length < 4) { setMsg('비밀번호는 4자리 이상이어야 합니다.'); return }
     if (next !== next2) { setMsg('새 비밀번호가 일치하지 않습니다.'); return }
     setMemberPassword(memberId!, next)
-    // 클라우드에 즉시 저장해야 다음 로그인 때 초기화되지 않음
-    setSaving(true)
-    setMsg('저장 중...')
+    setSaving(true); setMsg('저장 중...')
     try {
       const s = useApp.getState()
       await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
@@ -106,20 +247,25 @@ function MyPasswordCard() {
       setCur(''); setNext(''); setNext2('')
     } catch {
       setMsg('변경했으나 저장에 실패했습니다. 인터넷 확인 후 다시 시도해 주세요.')
-    } finally {
-      setSaving(false)
-    }
+    } finally { setSaving(false) }
   }
 
   return (
     <div className="card col-card">
-      <span style={{ fontWeight: 600, fontSize: 14 }}>내 비밀번호 변경</span>
-      <input type="password" placeholder="현재 비밀번호" value={cur} onChange={(e) => setCur(e.target.value)} style={{ width: '100%' }} />
-      <input type="password" placeholder="새 비밀번호 (4자리 이상)" value={next} onChange={(e) => setNext(e.target.value)} style={{ width: '100%' }} />
-      <input type="password" placeholder="새 비밀번호 확인" value={next2} onChange={(e) => setNext2(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && doChange()} style={{ width: '100%' }} />
-      {msg && <span style={{ fontSize: 13, color: msg.includes('변경') ? '#1d9e75' : msg.includes('저장 중') ? 'var(--muted)' : 'var(--danger)' }}>{msg}</span>}
-      <button className="primary block" onClick={doChange} disabled={saving}>{saving ? '저장 중...' : '변경'}</button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>🔒 내 비밀번호 변경</span>
+        <button style={{ fontSize: 12 }} onClick={onToggle}>{open ? '닫기' : '변경하기'}</button>
+      </div>
+      {open && (
+        <>
+          <input type="password" placeholder="현재 비밀번호" value={cur} onChange={(e) => setCur(e.target.value)} style={{ width: '100%' }} />
+          <input type="password" placeholder="새 비밀번호 (4자리 이상)" value={next} onChange={(e) => setNext(e.target.value)} style={{ width: '100%' }} />
+          <input type="password" placeholder="새 비밀번호 확인" value={next2} onChange={(e) => setNext2(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && doChange()} style={{ width: '100%' }} />
+          {msg && <span style={{ fontSize: 13, color: msg.includes('변경') ? '#1d9e75' : msg.includes('저장 중') ? 'var(--muted)' : 'var(--danger)' }}>{msg}</span>}
+          <button className="primary block" onClick={doChange} disabled={saving}>{saving ? '저장 중...' : '변경'}</button>
+        </>
+      )}
     </div>
   )
 }
@@ -131,7 +277,6 @@ export function SettingsTab() {
   const replaceAll = useApp((s) => s.replaceAll)
   const applyHandicapCsv = useApp((s) => s.applyHandicapCsv)
   const applyMemberCsv = useApp((s) => s.applyMemberCsv)
-  const setMemberPassword = useApp((s) => s.setMemberPassword)
   const applyGameCsv = useApp((s) => s.applyGameCsv)
   const touchBackup = useApp((s) => s.touchBackup)
   const { isAdmin } = useAdmin()
@@ -143,6 +288,7 @@ export function SettingsTab() {
   const [msg, setMsg] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
+  const [myPwOpen, setMyPwOpen] = useState(false)
 
   const onExportJson = () => {
     exportJson({ members, sessions, settings }, todayStr())
@@ -243,8 +389,15 @@ export function SettingsTab() {
 
       {!isAdmin && showLogin && <AdminLogin onSuccess={() => setShowLogin(false)} />}
 
+      {/* 내 비밀번호 변경 (일반회원 항상 표시) */}
+      <MyPasswordCard open={myPwOpen} onToggle={() => setMyPwOpen((v) => !v)} />
+
       {isAdmin && (
         <>
+          {/* 1. 번개모임 승인 대기 (맨 위) */}
+          <PendingFlashCard sessions={sessions} members={members} />
+
+          {/* 2. 클라우드 동기화 */}
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>☁️ 클라우드 동기화</span>
             <span className="muted">PC와 휴대폰 간 데이터를 맞출 때 사용하세요.</span>
@@ -256,15 +409,23 @@ export function SettingsTab() {
             </button>
           </div>
 
+          {/* 3. 에버리지 직접 수정 */}
+          <HandicapEditCard members={members} />
+
+          {/* 4. 회원 비밀번호 관리 (관리자) */}
+          <AdminMemberPwCard members={members} />
+
+          {/* 5. 핸디 이력 CSV */}
           <div className="card col-card">
-            <span className="muted">마지막 백업: {settings.lastBackupAt ? new Date(settings.lastBackupAt).toLocaleString('ko-KR') : '없음'}</span>
-            <button className="primary block" onClick={onExportJson}>JSON 백업 다운로드</button>
-            <button className="block" onClick={onExportCsv}>CSV 다운로드 (엑셀용)</button>
-            <button className="block" onClick={() => fileRef.current?.click()}>백업 불러오기 (JSON)</button>
-            <input ref={fileRef} type="file" accept="application/json" hidden
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = '' }} />
+            <span style={{ fontWeight: 600, fontSize: 14 }}>핸디 이력 파일</span>
+            <span className="muted">CSV 형식: <code>이름,날짜,핸디</code></span>
+            <button className="block" onClick={onExportHandicapCsv}>핸디 이력 CSV 다운로드</button>
+            <button className="primary block" onClick={() => hcapFileRef.current?.click()}>핸디 이력 CSV 업로드</button>
+            <input ref={hcapFileRef} type="file" accept=".csv,text/csv" hidden
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportHandicap(f); e.target.value = '' }} />
           </div>
 
+          {/* 6. 회원명부 CSV */}
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>👥 회원명부 CSV</span>
             <span className="muted">
@@ -278,6 +439,7 @@ export function SettingsTab() {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportMemberCsv(f); e.target.value = '' }} />
           </div>
 
+          {/* 7. 경기 기록 CSV */}
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>🎱 경기 기록 CSV 업로드</span>
             <span className="muted">형식: <code>날짜,선수1,선수2,승자,패자,승자점수,패자점수</code></span>
@@ -296,25 +458,20 @@ export function SettingsTab() {
               }} />
           </div>
 
+          {/* 8. 백업/복원 */}
           <div className="card col-card">
-            <span style={{ fontWeight: 600, fontSize: 14 }}>핸디 이력 파일</span>
-            <span className="muted">CSV 형식: <code>이름,날짜,핸디</code></span>
-            <button className="block" onClick={onExportHandicapCsv}>핸디 이력 CSV 다운로드</button>
-            <button className="primary block" onClick={() => hcapFileRef.current?.click()}>핸디 이력 CSV 업로드</button>
-            <input ref={hcapFileRef} type="file" accept=".csv,text/csv" hidden
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportHandicap(f); e.target.value = '' }} />
+            <span className="muted">마지막 백업: {settings.lastBackupAt ? new Date(settings.lastBackupAt).toLocaleString('ko-KR') : '없음'}</span>
+            <button className="primary block" onClick={onExportJson}>JSON 백업 다운로드</button>
+            <button className="block" onClick={onExportCsv}>CSV 다운로드 (엑셀용)</button>
+            <button className="block" onClick={() => fileRef.current?.click()}>백업 불러오기 (JSON)</button>
+            <input ref={fileRef} type="file" accept="application/json" hidden
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = '' }} />
           </div>
 
-          <div className="card col-card">
-            <span style={{ fontWeight: 600, fontSize: 14 }}>👤 회원 비밀번호 관리</span>
-            <span className="muted">회원 비밀번호를 강제 변경합니다. 변경 후 클라우드에 저장하세요.</span>
-            {[...members.filter((m) => m.active)].sort((a, b) => a.name.localeCompare(b.name, 'ko')).map((m) => (
-              <MemberPwRow key={m.id} member={m} onSave={(pw) => setMemberPassword(m.id, pw)} />
-            ))}
-          </div>
-
+          {/* 9. PIN 변경 */}
           <ChangePinCard />
 
+          {/* 10. 전체 초기화 (맨 밑) */}
           <div className="card col-card">
             <span className="muted">데이터는 이 기기(브라우저)에만 저장됩니다.</span>
             <button className="block danger" onClick={() => {
@@ -326,8 +483,6 @@ export function SettingsTab() {
           </div>
         </>
       )}
-
-      <MyPasswordCard />
 
       {msg && <p className="info-msg">{msg}</p>}
     </div>
