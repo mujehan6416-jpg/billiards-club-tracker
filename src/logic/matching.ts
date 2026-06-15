@@ -82,3 +82,36 @@ export function matchAll(ctx: MatchContext): Pair[] {
   }
   return pairs
 }
+
+/**
+ * 정기모임 2라운드 자동매칭.
+ * - 홀수 참가자면 sitOutId(이제한)를 제외한 뒤 매칭.
+ * - 2라운드는 1라운드 대진 상대를 피함.
+ */
+export function matchTwoRounds(
+  allIds: string[],
+  meetCount: Map<string, number>,
+  sitOutId: string | null,
+): { round1: Pair[]; round2: Pair[] } {
+  let ids = [...allIds]
+
+  // 홀수면 sitOutId 제외
+  if (ids.length % 2 !== 0 && sitOutId && ids.includes(sitOutId)) {
+    ids = ids.filter((id) => id !== sitOutId)
+  }
+
+  const empty = new Map<string, number>()
+
+  // 1라운드
+  const round1 = matchAll({ waitingIds: ids, meetCount, todayGameCount: empty })
+
+  // 2라운드: 1라운드 대진 상대를 meetCount에 +999 가중치
+  const boosted = new Map(meetCount)
+  for (const p of round1) {
+    const k = pairKey(p.aId, p.bId)
+    boosted.set(k, (boosted.get(k) ?? 0) + 999)
+  }
+  const round2 = matchAll({ waitingIds: ids, meetCount: boosted, todayGameCount: empty })
+
+  return { round1, round2 }
+}

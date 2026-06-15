@@ -8,7 +8,8 @@ interface Store extends AppState {
   updateMember: (id: string, patch: Partial<Member>) => void
   setHandicap: (id: string, handicap: number) => void
   setActive: (id: string, active: boolean) => void
-  createSession: (date: string, attendeeIds: string[]) => string
+  createSession: (date: string, attendeeIds: string[], type?: 'regular' | 'flash') => string
+  approveSession: (sessionId: string) => void
   setAttendees: (sessionId: string, attendeeIds: string[]) => void
   addGame: (sessionId: string, game: Omit<Game, 'id' | 'playedAt'>) => void
   deleteGame: (sessionId: string, gameId: string) => void
@@ -63,11 +64,16 @@ export const useApp = create<Store>()(
           members: s.members.map((m) => (m.id === id ? { ...m, active } : m)),
         })),
 
-      createSession: (date, attendeeIds) => {
+      createSession: (date, attendeeIds, type = 'regular') => {
         const id = uid()
-        set((s) => ({ sessions: [...s.sessions, { id, date, attendeeIds, games: [] }] }))
+        set((s) => ({ sessions: [...s.sessions, { id, date, type, approved: type === 'regular', attendeeIds, games: [] }] }))
         return id
       },
+
+      approveSession: (sessionId) =>
+        set((s) => ({
+          sessions: s.sessions.map((ss) => ss.id === sessionId ? { ...ss, approved: true } : ss),
+        })),
 
       setAttendees: (sessionId, attendeeIds) =>
         set((s) => ({

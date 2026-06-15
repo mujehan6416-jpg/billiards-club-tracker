@@ -34,6 +34,8 @@ export interface Game {
 export interface Session {
   id: string
   date: string // YYYY-MM-DD
+  type?: 'regular' | 'flash'  // 미지정 = regular
+  approved?: boolean           // 번개모임: 관리자 승인 여부
   attendeeIds: string[]
   games: Game[]
 }

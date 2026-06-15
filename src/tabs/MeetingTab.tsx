@@ -1,7 +1,7 @@
-﻿import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useApp } from '../store/appStore'
 import type { Member, Session } from '../types'
-import { buildMeetCount, matchAll, recommendNext } from '../logic/matching'
+import { buildMeetCount, matchTwoRounds, pairKey, recommendNext } from '../logic/matching'
 import { winnerId } from '../logic/game'
 import { todayStr } from '../lib/date'
 import { fmtScore } from '../lib/format'
@@ -16,6 +16,7 @@ interface Ongoing {
   handicapB: number
   scoreA: string
   scoreB: string
+  round?: number
 }
 
 export function MeetingTab() {
@@ -31,7 +32,7 @@ export function MeetingTab() {
         members={members}
         date={selectedDate}
         onDateChange={setSelectedDate}
-        onStart={(ids) => createSession(selectedDate, ids)}
+        onStart={(ids, type) => createSession(selectedDate, ids, type)}
       />
     )
   }
@@ -51,10 +52,12 @@ function AttendeePicker({ members, date, onDateChange, onStart }: {
   members: Member[]
   date: string
   onDateChange: (d: string) => void
-  onStart: (ids: string[]) => void
+  onStart: (ids: string[], type: 'regular' | 'flash') => void
 }) {
-  const active = members.filter((m) => m.active)
+  const active = [...members.filter((m) => m.active)].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [meetingType, setMeetingType] = useState<'regular' | 'flash'>('regular')
+
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev)
@@ -65,6 +68,7 @@ function AttendeePicker({ members, date, onDateChange, onStart }: {
   return (
     <div className="tab">
       <h2 className="tab-title">모임 시작</h2>
+
       <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>📅 날짜</span>
         <input
@@ -74,6 +78,30 @@ function AttendeePicker({ members, date, onDateChange, onStart }: {
           style={{ flex: 1 }}
         />
       </div>
+
+      <div className="card" style={{ display: 'flex', gap: 8 }}>
+        <button
+          className={meetingType === 'regular' ? 'primary grow' : 'grow'}
+          onClick={() => setMeetingType('regular')}
+          style={{ flex: 1 }}
+        >
+          📋 정기모임
+        </button>
+        <button
+          className={meetingType === 'flash' ? 'primary grow' : 'grow'}
+          onClick={() => setMeetingType('flash')}
+          style={{ flex: 1 }}
+        >
+          ⚡ 번개모임
+        </button>
+      </div>
+
+      {meetingType === 'flash' && (
+        <div style={{ fontSize: 12, color: '#c07000', background: '#fff8e1', borderRadius: 8, padding: '8px 12px' }}>
+          ⚡ 번개모임 기록은 관리자 승인 후 정규 통계에 반영됩니다.
+        </div>
+      )}
+
       {active.length === 0 && <p className="muted">먼저 회원 탭에서 회원을 추가하세요.</p>}
       <div className="chip-grid">
         {active.map((m) => (
@@ -89,23 +117,31 @@ function AttendeePicker({ members, date, onDateChange, onStart }: {
       <button
         className="primary block"
         disabled={selected.size < 2}
-        onClick={() => onStart([...selected])}
+        onClick={() => onStart([...selected], meetingType)}
       >
-        {selected.size}명으로 모임 시작
+        {selected.size}명으로 {meetingType === 'regular' ? '정기' : '번개'}모임 시작
       </button>
     </div>
   )
 }
 
-function Board({ session, members, sessions, selectedDate, onDateChange }: { session: Session; members: Member[]; sessions: Session[]; selectedDate: string; onDateChange: (d: string) => void }) {
+function Board({ session, members, sessions, selectedDate, onDateChange }: {
+  session: Session
+  members: Member[]
+  sessions: Session[]
+  selectedDate: string
+  onDateChange: (d: string) => void
+}) {
   const { isAdmin } = useAdmin()
   const [mountTime] = useState(() => new Date().toISOString())
   const addGame = useApp((s) => s.addGame)
   const deleteGame = useApp((s) => s.deleteGame)
   const setAttendees = useApp((s) => s.setAttendees)
+  const approveSession = useApp((s) => s.approveSession)
 
   const [ongoing, setOngoing] = useState<Ongoing[]>([])
   const [editAttendees, setEditAttendees] = useState(false)
+  const [manualA, setManualA] = useState<string | null>(null)
   const resultsRef = useRef<HTMLUListElement>(null)
 
   const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
@@ -113,42 +149,40 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: { ses
   const hcapOf = (id: string) => memberMap.get(id)?.handicap ?? 20
 
   const meetCount = useMemo(() => buildMeetCount(sessions), [sessions])
-  const todayGameCount = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const g of session.games) {
-      m.set(g.playerAId, (m.get(g.playerAId) ?? 0) + 1)
-      m.set(g.playerBId, (m.get(g.playerBId) ?? 0) + 1)
-    }
-    return m
-  }, [session.games])
 
   const busy = new Set<string>()
-  for (const o of ongoing) {
-    busy.add(o.aId)
-    busy.add(o.bId)
-  }
+  for (const o of ongoing) { busy.add(o.aId); busy.add(o.bId) }
   const waiting = session.attendeeIds.filter((id) => !busy.has(id))
 
-  const makeOngoing = (aId: string, bId: string): Ongoing => ({
+  const isFlash = session.type === 'flash'
+  const isApproved = session.approved !== false
+
+  // 이제한 ID
+  const sitOutMember = members.find((m) => m.name === '이제한')
+  const sitOutId = sitOutMember?.id ?? null
+
+  const makeOngoing = (aId: string, bId: string, round?: number): Ongoing => ({
     key: crypto.randomUUID(),
-    aId,
-    bId,
+    aId, bId,
     handicapA: hcapOf(aId),
     handicapB: hcapOf(bId),
-    scoreA: '',
-    scoreB: '',
+    scoreA: '', scoreB: '',
+    round,
   })
 
-  const matchEveryone = () => {
-    const pairs = matchAll({ waitingIds: waiting, meetCount, todayGameCount })
-    if (pairs.length === 0) return
-    setOngoing((prev) => [...prev, ...pairs.map((p) => makeOngoing(p.aId, p.bId))])
+  const autoMatch2Rounds = () => {
+    const { round1, round2 } = matchTwoRounds(waiting, meetCount, sitOutId)
+    const newOngoing = [
+      ...round1.map((p) => makeOngoing(p.aId, p.bId, 1)),
+      ...round2.map((p) => makeOngoing(p.aId, p.bId, 2)),
+    ]
+    setOngoing((prev) => [...prev, ...newOngoing])
   }
 
-  const recommendOne = () => {
-    const p = recommendNext({ waitingIds: waiting, meetCount, todayGameCount })
-    if (!p) return
-    setOngoing((prev) => [...prev, makeOngoing(p.aId, p.bId)])
+  const addManualPair = (bId: string) => {
+    if (!manualA || manualA === bId) return
+    setOngoing((prev) => [...prev, makeOngoing(manualA, bId)])
+    setManualA(null)
   }
 
   const patch = (key: string, field: keyof Ongoing, value: string | number) =>
@@ -161,16 +195,22 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: { ses
     const scoreB = Math.max(0, parseInt(o.scoreB || '0', 10) || 0)
     const endType = scoreA >= o.handicapA || scoreB >= o.handicapB ? 'cleared' : 'time'
     addGame(session.id, {
-      playerAId: o.aId,
-      playerBId: o.bId,
-      handicapA: o.handicapA,
-      handicapB: o.handicapB,
-      scoreA,
-      scoreB,
-      endType,
+      playerAId: o.aId, playerBId: o.bId,
+      handicapA: o.handicapA, handicapB: o.handicapB,
+      scoreA, scoreB, endType,
     })
     cancel(o.key)
   }
+
+  const typeLabel = isFlash ? '⚡ 번개모임' : '📋 정기모임'
+  const typeBadgeStyle: React.CSSProperties = {
+    fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 600,
+    background: isFlash ? '#fff3cd' : '#e1f5ee',
+    color: isFlash ? '#856404' : '#0f6e56',
+  }
+
+  // 수동매칭: busy + manualA로 선택된 사람 제외한 대기자
+  const manualWaiting = waiting.filter((id) => id !== manualA)
 
   return (
     <div className="tab">
@@ -178,15 +218,38 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: { ses
         <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>📅 날짜</span>
         <input type="date" value={selectedDate} onChange={(e) => onDateChange(e.target.value)} style={{ flex: 1 }} />
       </div>
+
       <div className="board-head">
-        <div>
-          <h2 className="tab-title">{session.date} 모임</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h2 className="tab-title" style={{ margin: 0 }}>{session.date} 모임</h2>
+            <span style={typeBadgeStyle}>{typeLabel}</span>
+            {isFlash && !isApproved && (
+              <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: '#fce8e8', color: '#c0392b', fontWeight: 600 }}>
+                승인 대기
+              </span>
+            )}
+          </div>
           <span className="muted">
             참석 {session.attendeeIds.length} · 경기중 {ongoing.length} · 대기 {waiting.length} · 완료 {session.games.length}
           </span>
         </div>
         {isAdmin && <button onClick={() => setEditAttendees((v) => !v)}>참석자</button>}
       </div>
+
+      {isFlash && !isApproved && isAdmin && (
+        <div style={{ background: '#fff8e1', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ fontSize: 13 }}>⚡ 번개모임 기록을 정규 통계에 반영할까요?</span>
+          <button className="primary" onClick={() => { if (window.confirm('이 번개모임 기록을 승인할까요?')) approveSession(session.id) }}>
+            승인
+          </button>
+        </div>
+      )}
+      {isFlash && isApproved && (
+        <div style={{ fontSize: 12, color: '#0f6e56', background: '#e1f5ee', borderRadius: 8, padding: '6px 12px' }}>
+          ✅ 승인됨 — 정규 통계에 반영됩니다.
+        </div>
+      )}
 
       {editAttendees && (
         <AttendeeEditor
@@ -196,88 +259,80 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: { ses
         />
       )}
 
+      {/* 자동매칭 */}
       <div className="board-actions">
-        <button className="primary grow" disabled={waiting.length < 2} onClick={matchEveryone}>
-          대기자 전체 매칭
-        </button>
-        <button className="grow" disabled={waiting.length < 2} onClick={recommendOne}>
-          빈 테이블 추천
+        <button className="primary grow" disabled={waiting.length < 2} onClick={autoMatch2Rounds}>
+          🔀 자동매칭 (2라운드)
         </button>
       </div>
 
+      {/* 수동매칭 */}
+      {waiting.length >= 2 && (
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>
+            ✋ 수동매칭 {manualA ? `— ${name(manualA)} 선택됨, 상대를 선택하세요` : '— 첫 번째 선수를 선택하세요'}
+          </span>
+          <div className="chip-grid">
+            {waiting.map((id) => (
+              <button
+                key={id}
+                className={`chip${manualA === id ? ' on' : ''}`}
+                onClick={() => {
+                  if (!manualA) { setManualA(id) }
+                  else if (manualA === id) { setManualA(null) }
+                  else { addManualPair(id) }
+                }}
+              >
+                {name(id)}
+              </button>
+            ))}
+          </div>
+          {manualA && (
+            <button onClick={() => setManualA(null)} style={{ fontSize: 12, alignSelf: 'flex-start' }}>취소</button>
+          )}
+        </div>
+      )}
+
+      {/* 진행 중 테이블 */}
       <div className="court-grid">
         {ongoing.map((o, i) => (
           <div key={o.key} className="card court">
-            <div className="court-label">테이블 {i + 1}</div>
+            <div className="court-label">
+              테이블 {i + 1}{o.round ? ` (${o.round}라운드)` : ''}
+            </div>
             <div className="court-row">
               <span className="court-name">{name(o.aId)}</span>
               <span className="vs">vs</span>
               <span className="court-name right">{name(o.bId)}</span>
             </div>
             <div className="court-inputs">
-              <ScoreCell
-                handicap={o.handicapA}
-                score={o.scoreA}
+              <ScoreCell handicap={o.handicapA} score={o.scoreA}
                 onHcap={(v) => patch(o.key, 'handicapA', v)}
-                onScore={(v) => patch(o.key, 'scoreA', v)}
-              />
-              <ScoreCell
-                handicap={o.handicapB}
-                score={o.scoreB}
+                onScore={(v) => patch(o.key, 'scoreA', v)} />
+              <ScoreCell handicap={o.handicapB} score={o.scoreB}
                 onHcap={(v) => patch(o.key, 'handicapB', v)}
-                onScore={(v) => patch(o.key, 'scoreB', v)}
-              />
+                onScore={(v) => patch(o.key, 'scoreB', v)} />
             </div>
             <div className="court-buttons">
-              <button className="primary grow" onClick={() => save(o)}>
-                결과 저장
-              </button>
-              <button onClick={() => cancel(o.key)}>취소</button>
+              <button className="primary grow" onClick={() => save(o)}>결과 저장</button>
+              {isAdmin && <button onClick={() => cancel(o.key)}>취소</button>}
             </div>
           </div>
         ))}
-
-        {waiting.length >= 2 && (
-          <button className="card court empty" onClick={recommendOne}>
-            <span>+ 빈 테이블</span>
-            <span className="muted">대기자 매칭</span>
-          </button>
-        )}
       </div>
-
-      {waiting.length > 0 && (
-        <div className="waiting">
-          <span className="muted">대기 중</span>
-          <div className="chip-grid">
-            {waiting.map((id) => (
-              <span key={id} className="chip static">
-                {name(id)}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       {session.games.length > 0 && (
         <div className="results">
           <div className="results-head">
-            <span className="muted">오늘 완료된 경기</span>
+            <span className="muted">완료된 경기</span>
             <div className="share-buttons">
-              <button
-                onClick={async () => {
-                  const copied = await shareText(buildResultText(session, members))
-                  if (copied) alert('결과를 클립보드에 복사했습니다.')
-                }}
-              >
-                텍스트 공유
-              </button>
-              <button
-                onClick={() => {
-                  if (resultsRef.current) shareImage(resultsRef.current, `당구결과-${session.date}.png`)
-                }}
-              >
-                이미지 공유
-              </button>
+              <button onClick={async () => {
+                const copied = await shareText(buildResultText(session, members))
+                if (copied) alert('결과를 클립보드에 복사했습니다.')
+              }}>텍스트 공유</button>
+              <button onClick={() => {
+                if (resultsRef.current) shareImage(resultsRef.current, `당구결과-${session.date}.png`)
+              }}>이미지 공유</button>
             </div>
           </div>
           <ul className="result-list" ref={resultsRef}>
@@ -292,7 +347,9 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: { ses
                   <span className={win === g.playerBId ? 'win right' : 'right'}>
                     {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
                   </span>
-                  {(isAdmin || g.playedAt >= mountTime) && (<button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>)}
+                  {(isAdmin || g.playedAt >= mountTime) && (
+                    <button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>
+                  )}
                 </li>
               )
             })}
@@ -303,26 +360,14 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: { ses
   )
 }
 
-function ScoreCell({
-  handicap,
-  score,
-  onHcap,
-  onScore,
-}: {
-  handicap: number
-  score: string
-  onHcap: (v: number) => void
-  onScore: (v: string) => void
+function ScoreCell({ handicap, score, onHcap, onScore }: {
+  handicap: number; score: string
+  onHcap: (v: number) => void; onScore: (v: string) => void
 }) {
   return (
     <div className="score-cell">
-      <input
-        className="score"
-        inputMode="numeric"
-        placeholder="득점"
-        value={score}
-        onChange={(e) => onScore(e.target.value.replace(/[^0-9]/g, ''))}
-      />
+      <input className="score" inputMode="numeric" placeholder="득점" value={score}
+        onChange={(e) => onScore(e.target.value.replace(/[^0-9]/g, ''))} />
       <label className="hcap-mini">
         / 핸디
         <input type="number" min={1} value={handicap} onChange={(e) => onHcap(Math.max(1, +e.target.value))} />
@@ -331,11 +376,7 @@ function ScoreCell({
   )
 }
 
-function AttendeeEditor({
-  members,
-  attendeeIds,
-  onChange,
-}: {
+function AttendeeEditor({ members, attendeeIds, onChange }: {
   members: Member[]
   attendeeIds: string[]
   onChange: (ids: string[]) => void
@@ -360,9 +401,3 @@ function AttendeeEditor({
     </div>
   )
 }
-
-
-
-
-
-

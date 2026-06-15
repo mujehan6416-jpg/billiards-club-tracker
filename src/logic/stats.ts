@@ -11,6 +11,11 @@ export interface MemberStat {
   avgRate: number
 }
 
+/** 승패 집계에 포함할 세션 필터 (번개모임은 승인된 것만). */
+export function approvedSessions(sessions: Session[]): Session[] {
+  return sessions.filter((s) => !s.type || s.type === 'regular' || s.approved)
+}
+
 /** 회원별 누적 전적 + 평균 달성률. */
 export function memberStats(sessions: Session[]): MemberStat[] {
   const acc = new Map<string, { g: number; w: number; l: number; d: number; rateSum: number; rateGames: number }>()
@@ -23,7 +28,7 @@ export function memberStats(sessions: Session[]): MemberStat[] {
     return a
   }
 
-  for (const s of sessions) {
+  for (const s of approvedSessions(sessions)) {
     for (const game of s.games) {
       const win = winnerId(game)
       const sides = [
@@ -65,7 +70,7 @@ export interface H2H {
 /** 두 회원의 상대전적(aId 기준). */
 export function headToHead(sessions: Session[], aId: string, bId: string): H2H {
   const r: H2H = { aWins: 0, bWins: 0, draws: 0, games: 0 }
-  for (const s of sessions) {
+  for (const s of approvedSessions(sessions)) {
     for (const game of s.games) {
       const ids = [game.playerAId, game.playerBId]
       if (!ids.includes(aId) || !ids.includes(bId)) continue
@@ -95,7 +100,7 @@ export interface TimelineEntry {
 /** 한 회원의 경기를 시간순으로 펼친 추이 목록. */
 export function memberTimeline(sessions: Session[], memberId: string): TimelineEntry[] {
   const entries: TimelineEntry[] = []
-  for (const s of sessions) {
+  for (const s of approvedSessions(sessions)) {
     for (const game of s.games) {
       const isA = game.playerAId === memberId
       const isB = game.playerBId === memberId
