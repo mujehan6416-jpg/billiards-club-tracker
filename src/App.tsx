@@ -100,6 +100,8 @@ function TopBar() {
 export function App() {
   const [tab, setTab] = useState<Tab>('home')
   const [syncing, setSyncing] = useState(true)
+  const [exitReady, setExitReady] = useState(false)
+  const [backToast, setBackToast] = useState(false)
   const { memberId, logout: memberLogout } = useAuth()
   const members = useApp((s) => s.members)
   const replaceAll = useApp((s) => s.replaceAll)
@@ -110,6 +112,30 @@ export function App() {
       .then((state) => { if (state) replaceAll(state) })
       .catch(() => {})
       .finally(() => setSyncing(false))
+  }, [])
+
+  // 안드로이드 뒤로 가기 버튼 — 2회 연속 눌러야 종료
+  useEffect(() => {
+    // 더미 히스토리를 쌓아두면 뒤로 가기가 popstate 이벤트로 감지됨
+    history.pushState(null, '', location.href)
+    let ready = false
+    let timer: ReturnType<typeof setTimeout>
+    const handlePop = () => {
+      if (ready) {
+        // 두 번째 뒤로 가기 → 실제로 뒤로 보내 앱 종료
+        return
+      }
+      // 첫 번째 뒤로 가기 → 다시 더미 상태 쌓고 토스트 표시
+      history.pushState(null, '', location.href)
+      ready = true
+      setBackToast(true)
+      timer = setTimeout(() => { ready = false; setBackToast(false) }, 2000)
+    }
+    window.addEventListener('popstate', handlePop)
+    return () => {
+      window.removeEventListener('popstate', handlePop)
+      clearTimeout(timer)
+    }
   }, [])
 
   if (syncing) {
@@ -129,6 +155,16 @@ export function App() {
   return (
     <div className="app">
       <TopBar />
+      {backToast && (
+        <div style={{
+          position: 'fixed', bottom: 72, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.75)', color: '#fff', borderRadius: 20,
+          padding: '10px 20px', fontSize: 14, fontWeight: 500, zIndex: 9999,
+          whiteSpace: 'nowrap', pointerEvents: 'none',
+        }}>
+          한 번 더 누르면 종료됩니다
+        </div>
+      )}
       <main className="app-main">
         {tab === 'home'      && <HomeTab onNavigate={setTab} />}
         {tab === 'members'   && <MembersTab />}
@@ -143,14 +179,18 @@ export function App() {
             <span className="nav-label">{t.label}</span>
           </button>
         ))}
-        <button onClick={() => { if (window.confirm('앱을 종료할까요?')) memberLogout() }}>
+        <button onClick={() => {
+          if (exitReady) { memberLogout(); return }
+          setExitReady(true)
+          setTimeout(() => setExitReady(false), 2000)
+        }} style={exitReady ? { color: '#c0392b' } : undefined}>
           <span className="nav-icon" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2v10" />
               <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
             </svg>
           </span>
-          <span className="nav-label">종료</span>
+          <span className="nav-label">{exitReady ? '한번더!' : '종료'}</span>
         </button>
       </nav>
     </div>
