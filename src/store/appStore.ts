@@ -201,6 +201,7 @@ export const useApp = create<Store>()(
                 scoreB,
                 endType,
                 playedAt: date + 'T00:00:00.000Z',
+                winnerId: isDraw ? null : (winnerIsA ? mA.id : mB.id),
               })
             }
           }
