@@ -16,6 +16,7 @@ interface Store extends AppState {
   applyHandicapCsv: (rows: import('../lib/backup').HandicapRow[]) => void
   applyMemberCsv: (rows: import('../lib/backup').MemberRow[]) => void
   setMemberPassword: (id: string, password: string) => void
+  applyGameCsv: (rows: import('../lib/backup').GameRow[]) => void
   replaceAll: (state: AppState) => void
 }
 
@@ -139,6 +140,59 @@ export const useApp = create<Store>()(
         set((s) => ({
           members: s.members.map((m) => (m.id === id ? { ...m, password } : m)),
         })),
+
+      applyGameCsv: (rows) =>
+        set((s) => {
+          const nameToMember = new Map(s.members.map((m) => [m.name, m]))
+          const handicapAt = (m: import('../types').Member, date: string) => {
+            const sorted = [...m.handicapHistory].sort((a, b) => a.changedAt.localeCompare(b.changedAt))
+            let val = sorted[0]?.value ?? m.handicap
+            for (const h of sorted) {
+              if (h.changedAt.slice(0, 10) <= date) val = h.value
+            }
+            return val
+          }
+          // group by date
+          const byDate = new Map<string, typeof rows>()
+          for (const r of rows) {
+            if (!byDate.has(r.date)) byDate.set(r.date, [])
+            byDate.get(r.date)!.push(r)
+          }
+          const sessions = [...s.sessions]
+          for (const [date, dateRows] of byDate) {
+            let session = sessions.find((ss) => ss.date === date)
+            if (!session) {
+              const attendeeNames = new Set<string>()
+              for (const r of dateRows) { attendeeNames.add(r.player1); attendeeNames.add(r.player2) }
+              const attendeeIds = [...attendeeNames].map((n) => nameToMember.get(n)?.id).filter(Boolean) as string[]
+              session = { id: uid(), date, attendeeIds, games: [] }
+              sessions.push(session)
+            }
+            for (const r of dateRows) {
+              const mA = nameToMember.get(r.player1)
+              const mB = nameToMember.get(r.player2)
+              if (!mA || !mB) continue
+              const isDraw = r.winner === '무승부'
+              const winnerIsA = r.winner === r.player1
+              const scoreA = winnerIsA ? r.winnerScore : r.loserScore
+              const scoreB = winnerIsA ? r.loserScore : r.winnerScore
+              const hA = handicapAt(mA, date)
+              const hB = handicapAt(mB, date)
+              session.games.push({
+                id: uid(),
+                playerAId: mA.id,
+                playerBId: mB.id,
+                handicapA: hA,
+                handicapB: hB,
+                scoreA: isDraw ? 0 : scoreA,
+                scoreB: isDraw ? 0 : scoreB,
+                endType: (isDraw || scoreA < hA && scoreB < hB) ? 'time' : 'cleared',
+                playedAt: date + 'T00:00:00.000Z',
+              })
+            }
+          }
+          return { sessions }
+        }),
 
       replaceAll: (state) => set(() => ({ ...state })),
     }),

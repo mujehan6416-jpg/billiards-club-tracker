@@ -135,6 +135,45 @@ export async function importMemberCsv(file: File): Promise<MemberRow[]> {
   return rows
 }
 
+export interface GameRow {
+  date: string
+  player1: string
+  player2: string
+  winner: string
+  loser: string
+  winnerScore: number
+  loserScore: number
+}
+
+async function readFileText(file: File): Promise<string> {
+  const buf = await file.arrayBuffer()
+  const utf8 = new TextDecoder('utf-8').decode(buf)
+  if (utf8.includes('�')) {
+    return new TextDecoder('euc-kr').decode(buf)
+  }
+  return utf8
+}
+
+export async function importGameCsv(file: File): Promise<GameRow[]> {
+  const text = await readFileText(file)
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim())
+  if (lines.length < 2) throw new Error('데이터가 없습니다.')
+  const rows: GameRow[] = []
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
+    const [date, p1, p2, winner, loser, ws, ls] = cols
+    if (!date || !p1 || !p2) continue
+    rows.push({
+      date, player1: p1, player2: p2,
+      winner: winner ?? '', loser: loser ?? '',
+      winnerScore: parseInt(ws ?? '0', 10) || 0,
+      loserScore: parseInt(ls ?? '0', 10) || 0,
+    })
+  }
+  if (rows.length === 0) throw new Error('유효한 경기 데이터가 없습니다.')
+  return rows
+}
+
 export interface HandicapRow {
   name: string
   date: string

@@ -2,7 +2,7 @@
 import { useApp } from '../store/appStore'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
-import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv } from '../lib/backup'
+import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv, importGameCsv } from '../lib/backup'
 import { uploadToCloud, downloadFromCloud } from '../lib/cloudSync'
 import { todayStr } from '../lib/date'
 
@@ -119,12 +119,14 @@ export function SettingsTab() {
   const applyHandicapCsv = useApp((s) => s.applyHandicapCsv)
   const applyMemberCsv = useApp((s) => s.applyMemberCsv)
   const setMemberPassword = useApp((s) => s.setMemberPassword)
+  const applyGameCsv = useApp((s) => s.applyGameCsv)
   const touchBackup = useApp((s) => s.touchBackup)
   const { isAdmin } = useAdmin()
 
   const fileRef = useRef<HTMLInputElement>(null)
   const hcapFileRef = useRef<HTMLInputElement>(null)
   const memberFileRef = useRef<HTMLInputElement>(null)
+  const gameFileRef = useRef<HTMLInputElement>(null)
   const [msg, setMsg] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
@@ -261,6 +263,24 @@ export function SettingsTab() {
             <button className="primary block" onClick={() => memberFileRef.current?.click()}>회원명부 CSV 업로드</button>
             <input ref={memberFileRef} type="file" accept=".csv,text/csv" hidden
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportMemberCsv(f); e.target.value = '' }} />
+          </div>
+
+          <div className="card col-card">
+            <span style={{ fontWeight: 600, fontSize: 14 }}>🎱 경기 기록 CSV 업로드</span>
+            <span className="muted">형식: <code>날짜,선수1,선수2,승자,패자,승자점수,패자점수</code></span>
+            <button className="primary block" onClick={() => gameFileRef.current?.click()}>경기 기록 CSV 업로드</button>
+            <input ref={gameFileRef} type="file" accept=".csv,text/csv" hidden
+              onChange={async (e) => {
+                const f = e.target.files?.[0]; if (!f) return; e.target.value = ''
+                try {
+                  const rows = await importGameCsv(f)
+                  if (!confirm(`${rows.length}개 경기를 불러옵니다. 계속할까요?`)) return
+                  applyGameCsv(rows)
+                  setMsg(`경기 기록 ${rows.length}개를 반영했습니다.`)
+                } catch (err) {
+                  setMsg(err instanceof Error ? err.message : '오류가 발생했습니다.')
+                }
+              }} />
           </div>
 
           <div className="card col-card">
