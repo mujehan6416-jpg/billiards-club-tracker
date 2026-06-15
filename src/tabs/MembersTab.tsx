@@ -100,7 +100,21 @@ export function MembersTab() {
     '조영일': '고문',
   }
 
-  const sorted = [...members].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name))
+  const PINNED_TOP = ['엄재익', '이제한']
+  const sorted = [...members].sort((a, b) => {
+    if (Number(b.active) !== Number(a.active)) return Number(b.active) - Number(a.active)
+    const aPinned = PINNED_TOP.indexOf(a.name)
+    const bPinned = PINNED_TOP.indexOf(b.name)
+    if (aPinned !== -1 || bPinned !== -1) {
+      if (aPinned === -1) return 1
+      if (bPinned === -1) return -1
+      return aPinned - bPinned
+    }
+    const aHasRecord = !!statOf(a.id)
+    const bHasRecord = !!statOf(b.id)
+    if (aHasRecord !== bHasRecord) return Number(bHasRecord) - Number(aHasRecord)
+    return a.name.localeCompare(b.name)
+  })
 
   const startEdit = (id: string, curName: string, curHcap: number) => {
     setEditId(id)
