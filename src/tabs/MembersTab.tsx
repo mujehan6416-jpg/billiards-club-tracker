@@ -207,23 +207,30 @@ export function MembersTab() {
                     <button onClick={() => setEditId(null)}>취소</button>
                   </>
                 ) : (
-                  <>
-                    <div className="member-main" style={{ cursor: 'pointer' }} onClick={() => toggleDetail(m.id)}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span className="member-name" style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>{m.name}</span>
-                        {ROLES[m.name] && (
-                          <span style={{ fontSize: 11, background: '#e1f5ee', color: '#0f6e56', borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap' }}>
-                            {ROLES[m.name]}
-                          </span>
-                        )}
+                  <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => toggleDetail(m.id)}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                          <span className="member-name" style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>{m.name}</span>
+                          {ROLES[m.name] && (
+                            <span style={{ fontSize: 10, background: '#e1f5ee', color: '#0f6e56', borderRadius: 4, padding: '2px 5px', whiteSpace: 'nowrap' }}>
+                              {ROLES[m.name]}
+                            </span>
+                          )}
+                        </div>
+                        <span className="member-stat">
+                          {st ? `${st.wins}승 ${st.losses}패 · ${Math.round(st.winRate * 100)}%` : '기록 없음'}
+                        </span>
                       </div>
-                      <span className="member-stat">
-                        {st ? `${st.wins}승 ${st.losses}패 · ${Math.round(st.winRate * 100)}%` : '기록 없음'}
-                      </span>
+                      <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap', marginLeft: 6 }}>핸디 {m.handicap}</span>
                     </div>
-                    <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>핸디 {m.handicap}</span>
-                    {isAdmin && (<><button onClick={() => startEdit(m.id, m.name, m.handicap)}>수정</button><button onClick={() => setActive(m.id, !m.active)}>{m.active ? '비활성' : '활성'}</button></>)}
-                  </>
+                    {isAdmin && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button style={{ flex: 1, fontSize: 12 }} onClick={() => startEdit(m.id, m.name, m.handicap)}>수정</button>
+                        <button style={{ flex: 1, fontSize: 12 }} onClick={() => setActive(m.id, !m.active)}>{m.active ? '비활성' : '활성'}</button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
               {isDetail && (
