@@ -145,6 +145,7 @@ function HandicapEditCard({ members }: { members: Member[] }) {
     const filtered = m.handicapHistory.filter((h) => h.changedAt.slice(0, 10) !== date)
     const newHistory = [...filtered, { value: hv, changedAt }]
       .sort((a, b) => a.changedAt.localeCompare(b.changedAt))
+    // 이력 중 가장 최신 날짜의 값이 현재 핸디
     const latestHandicap = newHistory[newHistory.length - 1].value
     updateMember(m.id, { handicap: latestHandicap, handicapHistory: newHistory })
     try {
