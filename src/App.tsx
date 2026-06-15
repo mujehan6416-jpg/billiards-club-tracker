@@ -64,7 +64,7 @@ function PinModal({ onClose }: { onClose: () => void }) {
 
 function TopBar() {
   const { isAdmin, logout: adminLogout } = useAdmin()
-  const { memberName, logout: memberLogout } = useAuth()
+  const { memberName } = useAuth()
   const [showPin, setShowPin] = useState(false)
 
   if (isAdmin) {
