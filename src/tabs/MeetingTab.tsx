@@ -8,6 +8,20 @@ import { fmtScore } from '../lib/format'
 import { buildResultText, shareImage, shareText } from '../lib/share'
 import { useAdmin } from '../store/adminStore'
 
+// 카톡 대진표용: 기본 장소 + 날짜별 예외 장소
+const LOCATION_DEFAULT = '수영 센텀당구클럽'
+const LOCATION_OVERRIDES: Record<string, string> = {
+  '2026-06-17': '남포동 다빈치당구장',
+}
+const locationOf = (date: string) => LOCATION_OVERRIDES[date] ?? LOCATION_DEFAULT
+
+// 날짜 → 정기모임 회차 (2026년)
+const ROUND_BY_DATE: Record<string, number> = {
+  '2026-01-21': 21, '2026-02-25': 22, '2026-03-25': 23, '2026-04-18': 24,
+  '2026-05-20': 25, '2026-06-17': 26, '2026-07-15': 27, '2026-08-19': 28,
+  '2026-09-16': 29, '2026-10-17': 30, '2026-11-18': 31, '2026-12-16': 32,
+}
+
 interface Ongoing {
   key: string
   aId: string
@@ -236,7 +250,9 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
     ongoing.forEach((o) => { matched.add(o.aId); matched.add(o.bId) })
     const sitOut = session.attendeeIds.filter((id) => !matched.has(id))
     const line = (o: Ongoing) => `${name(o.aId)}(${o.handicapA}) - ${name(o.bId)}(${o.handicapB})`
-    let txt = `🎱 당신회 정기모임 대진표 🎱\n📅 ${session.date}\n`
+    const round = ROUND_BY_DATE[session.date]
+    const title = round ? `🎱 제${round}차 당신회 정기모임 대진표 🎱` : `🎱 당신회 정기모임 대진표 🎱`
+    let txt = `${title}\n📅 ${session.date}\n📍 ${locationOf(session.date)}\n`
     if (r1.length) txt += `\n━━━ 1부 (16:00~17:00) ━━━\n${r1.map(line).join('\n')}\n`
     if (r2.length) txt += `\n━━━ 2부 (17:00~18:00) ━━━\n${r2.map(line).join('\n')}\n`
     if (other.length) txt += `\n━━━ 대진 ━━━\n${other.map(line).join('\n')}\n`
