@@ -35,7 +35,16 @@ export function MeetingTab() {
       />
     )
   }
-  return <Board key={current.id} session={current} members={members} sessions={sessions} />
+  return (
+    <Board
+      key={current.id}
+      session={current}
+      members={members}
+      sessions={sessions}
+      selectedDate={selectedDate}
+      onDateChange={setSelectedDate}
+    />
+  )
 }
 
 function AttendeePicker({ members, date, onDateChange, onStart }: {
@@ -88,7 +97,7 @@ function AttendeePicker({ members, date, onDateChange, onStart }: {
   )
 }
 
-function Board({ session, members, sessions }: { session: Session; members: Member[]; sessions: Session[] }) {
+function Board({ session, members, sessions, selectedDate, onDateChange }: { session: Session; members: Member[]; sessions: Session[]; selectedDate: string; onDateChange: (d: string) => void }) {
   const { isAdmin } = useAdmin()
   const [mountTime] = useState(() => new Date().toISOString())
   const addGame = useApp((s) => s.addGame)
@@ -165,6 +174,10 @@ function Board({ session, members, sessions }: { session: Session; members: Memb
 
   return (
     <div className="tab">
+      <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>📅 날짜</span>
+        <input type="date" value={selectedDate} onChange={(e) => onDateChange(e.target.value)} style={{ flex: 1 }} />
+      </div>
       <div className="board-head">
         <div>
           <h2 className="tab-title">{session.date} 모임</h2>

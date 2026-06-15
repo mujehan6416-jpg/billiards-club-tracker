@@ -28,7 +28,7 @@ export function HomeTab({ onNavigate }: Props) {
           <img
             src={logoSrc}
             alt="성균관대학교 로고"
-            style={{ flex: 3, maxWidth: '60%', height: 'auto', objectFit: 'contain' }}
+            style={{ flex: 3, maxWidth: '80%', height: 'auto', objectFit: 'contain' }}
           />
           <div style={{ flex: 1 }} />
         </div>
@@ -36,7 +36,7 @@ export function HomeTab({ onNavigate }: Props) {
         <div style={{ fontSize: 22, color: '#072B61', fontWeight: 600, marginTop: 2 }}>당신회</div>
       </div>
 
-      <div style={{ flex: 1, padding: '28px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+      <div style={{ flex: 1, padding: '28px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', background: '#fff' }}>
         <div style={{ display: 'flex', gap: 12 }}>
           {menus.map(({ tab, icon, label, desc }) => (
             <button
@@ -69,7 +69,7 @@ export function HomeTab({ onNavigate }: Props) {
         </div>
       </div>
 
-      <div style={{ textAlign: 'center', paddingBottom: 16, flexShrink: 0 }}>
+      <div style={{ textAlign: 'center', paddingBottom: 16, flexShrink: 0, background: '#fff' }}>
         <button
           onClick={() => onNavigate('settings')}
           style={{ background: 'none', border: 'none', color: '#aaa', fontSize: 13, cursor: 'pointer' }}
