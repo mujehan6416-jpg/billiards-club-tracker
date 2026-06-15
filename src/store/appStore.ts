@@ -13,6 +13,7 @@ interface Store extends AppState {
   deleteGame: (sessionId: string, gameId: string) => void
   touchBackup: () => void
   applyHandicapCsv: (rows: import('../lib/backup').HandicapRow[]) => void
+  applyMemberCsv: (rows: import('../lib/backup').MemberRow[]) => void
   replaceAll: (state: AppState) => void
 }
 
@@ -106,6 +107,30 @@ export const useApp = create<Store>()(
             return { ...m, handicapHistory: merged, handicap: latest.value }
           })
           return { members }
+        }),
+
+      applyMemberCsv: (rows) =>
+        set((s) => {
+          const existingNames = new Set(s.members.map((m) => m.name))
+          const toAdd = rows.filter((r) => !existingNames.has(r.name))
+          const newMembers = toAdd.map((r) => ({
+            id: uid(),
+            name: r.name,
+            handicap: r.handicap,
+            active: true,
+            handicapHistory: [{ value: r.handicap, changedAt: now() }],
+          }))
+          // 기존 회원 핸디 업데이트 (이름 일치)
+          const updated = s.members.map((m) => {
+            const row = rows.find((r) => r.name === m.name)
+            if (!row || row.handicap === m.handicap) return m
+            return {
+              ...m,
+              handicap: row.handicap,
+              handicapHistory: [...m.handicapHistory, { value: row.handicap, changedAt: now() }],
+            }
+          })
+          return { members: [...updated, ...newMembers] }
         }),
 
       replaceAll: (state) => set(() => ({ ...state })),

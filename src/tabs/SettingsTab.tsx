@@ -1,7 +1,7 @@
 ﻿import { useRef, useState } from 'react'
 import { useApp } from '../store/appStore'
 import { useAdmin } from '../store/adminStore'
-import { exportCsv, exportHandicapCsv, exportJson, importHandicapCsv, importJson } from '../lib/backup'
+import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv } from '../lib/backup'
 import { uploadToCloud, downloadFromCloud } from '../lib/cloudSync'
 import { todayStr } from '../lib/date'
 
@@ -66,11 +66,13 @@ export function SettingsTab() {
   const settings = useApp((s) => s.settings)
   const replaceAll = useApp((s) => s.replaceAll)
   const applyHandicapCsv = useApp((s) => s.applyHandicapCsv)
+  const applyMemberCsv = useApp((s) => s.applyMemberCsv)
   const touchBackup = useApp((s) => s.touchBackup)
   const { isAdmin } = useAdmin()
 
   const fileRef = useRef<HTMLInputElement>(null)
   const hcapFileRef = useRef<HTMLInputElement>(null)
+  const memberFileRef = useRef<HTMLInputElement>(null)
   const [msg, setMsg] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
@@ -100,6 +102,26 @@ export function SettingsTab() {
       setMsg('백업을 복원했습니다.')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '불러오기에 실패했습니다.')
+    }
+  }
+
+  const onExportMemberCsv = () => {
+    exportMemberCsv(members, todayStr())
+    setMsg('회원명부 CSV를 다운로드했습니다.')
+  }
+
+  const onImportMemberCsv = async (file: File) => {
+    try {
+      const rows = await importMemberCsv(file)
+      const existing = rows.filter((r) => members.some((m) => m.name === r.name))
+      const newOnes = rows.filter((r) => !members.some((m) => m.name === r.name))
+      let msg = `신규 회원 ${newOnes.length}명`
+      if (existing.length > 0) msg += `, 에버리지 업데이트 ${existing.length}명`
+      if (!confirm(`${msg}\n\n계속할까요?`)) return
+      applyMemberCsv(rows)
+      setMsg(`회원명부 반영 완료: ${msg}`)
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '파일 처리에 실패했습니다.')
     }
   }
 
@@ -174,6 +196,19 @@ export function SettingsTab() {
             <button className="block" onClick={() => fileRef.current?.click()}>백업 불러오기 (JSON)</button>
             <input ref={fileRef} type="file" accept="application/json" hidden
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = '' }} />
+          </div>
+
+          <div className="card col-card">
+            <span style={{ fontWeight: 600, fontSize: 14 }}>👥 회원명부 CSV</span>
+            <span className="muted">
+              형식: <code>이름,에버리지,직책,학과,학번,전화번호</code><br/>
+              엑셀 파일을 CSV로 저장 후 업로드 하세요.<br/>
+              신규 회원은 추가, 기존 회원은 에버리지만 업데이트됩니다.
+            </span>
+            <button className="block" onClick={onExportMemberCsv}>회원명부 CSV 양식 다운로드</button>
+            <button className="primary block" onClick={() => memberFileRef.current?.click()}>회원명부 CSV 업로드</button>
+            <input ref={memberFileRef} type="file" accept=".csv,text/csv" hidden
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportMemberCsv(f); e.target.value = '' }} />
           </div>
 
           <div className="card col-card">

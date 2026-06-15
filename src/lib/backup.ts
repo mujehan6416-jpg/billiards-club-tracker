@@ -74,6 +74,67 @@ export function exportHandicapCsv(members: Member[], dateStr: string) {
   download(`billiards-handicap-${dateStr}.csv`, BOM + lines.join('\n'), 'text/csv;charset=utf-8')
 }
 
+export interface MemberRow {
+  name: string
+  handicap: number
+  role?: string    // 직책
+  dept?: string    // 학과
+  year?: string    // 학번
+  phone?: string   // 전화번호
+}
+
+export function exportMemberCsv(members: Member[], dateStr: string) {
+  const header = ['이름', '에버리지', '직책', '학과', '학번', '전화번호']
+  const lines: string[] = [header.map(csvCell).join(',')]
+  for (const m of members) {
+    lines.push([m.name, m.handicap, '', '', '', ''].map(csvCell).join(','))
+  }
+  download(`당신회_회원명부_${dateStr}.csv`, BOM + lines.join('\n'), 'text/csv;charset=utf-8')
+}
+
+export async function importMemberCsv(file: File): Promise<MemberRow[]> {
+  const text = await file.text()
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim())
+  if (lines.length < 2) throw new Error('데이터가 없습니다.')
+
+  // 헤더에서 컬럼 위치 찾기
+  const headers = lines[0].split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
+  const col = (names: string[]) => {
+    for (const n of names) {
+      const i = headers.findIndex((h) => h.includes(n))
+      if (i >= 0) return i
+    }
+    return -1
+  }
+  const iName = col(['이름', '성  명', '성명', 'name'])
+  const iHandi = col(['에버리지', '핸디', 'handicap', '에버'])
+  const iRole = col(['직책'])
+  const iDept = col(['학과'])
+  const iYear = col(['학번'])
+  const iPhone = col(['폰번호', '전화', 'phone'])
+
+  if (iName < 0) throw new Error('이름 컬럼을 찾을 수 없습니다. (헤더: 이름 또는 성명)')
+
+  const rows: MemberRow[] = []
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
+    const name = iName >= 0 ? cols[iName] : ''
+    if (!name) continue
+    const handicapStr = iHandi >= 0 ? cols[iHandi] : '0'
+    const handicap = parseInt(handicapStr, 10)
+    rows.push({
+      name,
+      handicap: isNaN(handicap) ? 0 : handicap,
+      role: iRole >= 0 ? cols[iRole] : undefined,
+      dept: iDept >= 0 ? cols[iDept] : undefined,
+      year: iYear >= 0 ? cols[iYear] : undefined,
+      phone: iPhone >= 0 ? cols[iPhone] : undefined,
+    })
+  }
+  if (rows.length === 0) throw new Error('유효한 회원 데이터가 없습니다.')
+  return rows
+}
+
 export interface HandicapRow {
   name: string
   date: string
