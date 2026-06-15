@@ -40,20 +40,37 @@ export function MeetingTab() {
   const createSession = useApp((s) => s.createSession)
   const { isAdmin } = useAdmin()
   const [selectedDate, setSelectedDate] = useState(todayStr())
-  const current = sessions.find((s) => s.date === selectedDate)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [creatingFlash, setCreatingFlash] = useState(false)
 
-  if (!current) {
-    // 일반회원은 번개모임만 생성 가능 (flashOnly)
+  const daySessions = sessions.filter((s) => s.date === selectedDate)
+  const current = daySessions.find((s) => s.id === selectedId) ?? daySessions[0] ?? null
+
+  const handleDateChange = (d: string) => {
+    setSelectedDate(d)
+    setSelectedId(null)
+    setCreatingFlash(false)
+  }
+
+  const handleStart = (ids: string[], type: 'regular' | 'flash') => {
+    const id = createSession(selectedDate, ids, type)
+    setSelectedId(id)
+    setCreatingFlash(false)
+  }
+
+  if (!current || creatingFlash) {
     return (
       <AttendeePicker
         members={members}
         date={selectedDate}
-        onDateChange={setSelectedDate}
-        onStart={(ids, type) => createSession(selectedDate, ids, type)}
-        flashOnly={!isAdmin}
+        onDateChange={handleDateChange}
+        onStart={handleStart}
+        flashOnly={!isAdmin || creatingFlash}
+        onCancel={creatingFlash ? () => setCreatingFlash(false) : undefined}
       />
     )
   }
+
   return (
     <Board
       key={current.id}
@@ -61,17 +78,22 @@ export function MeetingTab() {
       members={members}
       sessions={sessions}
       selectedDate={selectedDate}
-      onDateChange={setSelectedDate}
+      onDateChange={handleDateChange}
+      daySessions={daySessions}
+      selectedId={current.id}
+      onSelectSession={setSelectedId}
+      onAddFlash={() => setCreatingFlash(true)}
     />
   )
 }
 
-function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = false }: {
+function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = false, onCancel }: {
   members: Member[]
   date: string
   onDateChange: (d: string) => void
   onStart: (ids: string[], type: 'regular' | 'flash') => void
   flashOnly?: boolean
+  onCancel?: () => void
 }) {
   const PINNED = ['엄재익', '이제한']
   const active = [...members.filter((m) => m.active)].sort((a, b) => {
@@ -151,16 +173,23 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
       >
         {selected.size}명으로 {(flashOnly || meetingType === 'flash') ? '번개' : '정기'}모임 시작
       </button>
+      {onCancel && (
+        <button className="block" onClick={onCancel} style={{ marginTop: 4 }}>취소</button>
+      )}
     </div>
   )
 }
 
-function Board({ session, members, sessions, selectedDate, onDateChange }: {
+function Board({ session, members, sessions, selectedDate, onDateChange, daySessions, selectedId, onSelectSession, onAddFlash }: {
   session: Session
   members: Member[]
   sessions: Session[]
   selectedDate: string
   onDateChange: (d: string) => void
+  daySessions: Session[]
+  selectedId: string
+  onSelectSession: (id: string) => void
+  onAddFlash: () => void
 }) {
   const { isAdmin } = useAdmin()
   const addGame = useApp((s) => s.addGame)
@@ -374,12 +403,36 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
     )
   }
 
+  // 같은 날짜에 번개모임이 아직 없는지 확인
+  const hasFlashToday = daySessions.some((s) => s.type === 'flash')
+
   return (
     <div className="tab">
       <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>📅 날짜</span>
         <input type="date" value={selectedDate} onChange={(e) => onDateChange(e.target.value)} style={{ flex: 1 }} />
       </div>
+
+      {/* 같은 날 여러 세션이 있을 때 탭 선택 */}
+      {daySessions.length > 1 && (
+        <div style={{ display: 'flex', gap: 6 }}>
+          {daySessions.map((s) => (
+            <button
+              key={s.id}
+              className={s.id === selectedId ? 'primary grow' : 'grow'}
+              style={{ flex: 1 }}
+              onClick={() => onSelectSession(s.id)}
+            >
+              {s.type === 'flash' ? '⚡ 번개모임' : '📋 정기모임'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 번개모임이 없을 때 추가 버튼 */}
+      {!hasFlashToday && (
+        <button style={{ fontSize: 13 }} onClick={onAddFlash}>⚡ 번개모임 추가</button>
+      )}
 
       <div className="board-head">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
