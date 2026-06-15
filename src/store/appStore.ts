@@ -1,6 +1,7 @@
 ﻿import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { AppState, Member, Game } from '../types'
+import { SEED_MEMBERS } from '../data/seedMembers'
 
 interface Store extends AppState {
   addMember: (name: string, handicap: number) => void
@@ -23,7 +24,7 @@ const now = () => new Date().toISOString()
 export const useApp = create<Store>()(
   persist(
     (set) => ({
-      members: [],
+      members: SEED_MEMBERS,
       sessions: [],
       settings: { lastBackupAt: null },
 
