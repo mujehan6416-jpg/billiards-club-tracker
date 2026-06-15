@@ -174,19 +174,32 @@ export const useApp = create<Store>()(
               if (!mA || !mB) continue
               const isDraw = r.winner === '무승부'
               const winnerIsA = r.winner === r.player1
-              const scoreA = winnerIsA ? r.winnerScore : r.loserScore
-              const scoreB = winnerIsA ? r.loserScore : r.winnerScore
               const hA = handicapAt(mA, date)
               const hB = handicapAt(mB, date)
+              let scoreA = winnerIsA ? r.winnerScore : r.loserScore
+              let scoreB = winnerIsA ? r.loserScore : r.winnerScore
+              let endType: 'cleared' | 'time'
+              if (isDraw) {
+                scoreA = 0; scoreB = 0; endType = 'time'
+              } else if (winnerIsA && scoreA >= hA) {
+                endType = 'cleared'
+              } else if (!winnerIsA && scoreB >= hB) {
+                endType = 'cleared'
+              } else {
+                // time mode: winner must have strictly higher score
+                endType = 'time'
+                if (winnerIsA && scoreA <= scoreB) scoreA = scoreB + 1
+                if (!winnerIsA && scoreB <= scoreA) scoreB = scoreA + 1
+              }
               session.games.push({
                 id: uid(),
                 playerAId: mA.id,
                 playerBId: mB.id,
                 handicapA: hA,
                 handicapB: hB,
-                scoreA: isDraw ? 0 : scoreA,
-                scoreB: isDraw ? 0 : scoreB,
-                endType: (isDraw || scoreA < hA && scoreB < hB) ? 'time' : 'cleared',
+                scoreA,
+                scoreB,
+                endType,
                 playedAt: date + 'T00:00:00.000Z',
               })
             }
