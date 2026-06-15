@@ -23,10 +23,26 @@ export function MeetingTab() {
   const members = useApp((s) => s.members)
   const sessions = useApp((s) => s.sessions)
   const createSession = useApp((s) => s.createSession)
+  const { isAdmin } = useAdmin()
   const [selectedDate, setSelectedDate] = useState(todayStr())
   const current = sessions.find((s) => s.date === selectedDate)
 
   if (!current) {
+    // 관리자만 모임 시작 가능, 일반회원은 안내 + 날짜 선택만
+    if (!isAdmin) {
+      return (
+        <div className="tab">
+          <h2 className="tab-title">모임</h2>
+          <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>📅 날짜</span>
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ flex: 1 }} />
+          </div>
+          <p className="muted" style={{ textAlign: 'center', padding: '24px 0' }}>
+            해당 날짜에 등록된 모임이 없습니다.
+          </p>
+        </div>
+      )
+    }
     return (
       <AttendeePicker
         members={members}
@@ -142,7 +158,6 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
   onDateChange: (d: string) => void
 }) {
   const { isAdmin } = useAdmin()
-  const [mountTime] = useState(() => new Date().toISOString())
   const addGame = useApp((s) => s.addGame)
   const deleteGame = useApp((s) => s.deleteGame)
   const setAttendees = useApp((s) => s.setAttendees)
@@ -151,6 +166,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
   const [ongoing, setOngoing] = useState<Ongoing[]>([])
   const [editAttendees, setEditAttendees] = useState(false)
   const [manualA, setManualA] = useState<string | null>(null)
+  const [lineupText, setLineupText] = useState<string | null>(null)
   const resultsRef = useRef<HTMLUListElement>(null)
 
   const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
@@ -211,6 +227,24 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
     cancel(o.key)
   }
 
+  // 카톡 배포용 대진표 텍스트 생성 (1부/2부 + 대기자)
+  const buildLineupText = () => {
+    const r1 = ongoing.filter((o) => o.round === 1)
+    const r2 = ongoing.filter((o) => o.round === 2)
+    const other = ongoing.filter((o) => !o.round)
+    const matched = new Set<string>()
+    ongoing.forEach((o) => { matched.add(o.aId); matched.add(o.bId) })
+    const sitOut = session.attendeeIds.filter((id) => !matched.has(id))
+    const line = (o: Ongoing) => `${name(o.aId)}(${o.handicapA}) - ${name(o.bId)}(${o.handicapB})`
+    let txt = `🎱 당신회 정기모임 대진표 🎱\n📅 ${session.date}\n`
+    if (r1.length) txt += `\n━━━ 1부 (16:00~17:00) ━━━\n${r1.map(line).join('\n')}\n`
+    if (r2.length) txt += `\n━━━ 2부 (17:00~18:00) ━━━\n${r2.map(line).join('\n')}\n`
+    if (other.length) txt += `\n━━━ 대진 ━━━\n${other.map(line).join('\n')}\n`
+    if (sitOut.length) txt += `\n⏸ 대기: ${sitOut.map(name).join(', ')}\n`
+    txt += `\n⏰ 시간 엄수 바랍니다.`
+    return txt
+  }
+
   const typeLabel = isFlash ? '⚡ 번개모임' : '📋 정기모임'
   const typeBadgeStyle: React.CSSProperties = {
     fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 600,
@@ -265,15 +299,20 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
         />
       )}
 
-      {/* 자동매칭 */}
-      <div className="board-actions">
-        <button className="primary grow" disabled={waiting.length < 2} onClick={autoMatch2Rounds}>
-          🔀 자동매칭 (2라운드)
-        </button>
-      </div>
+      {/* 자동매칭 + 카톡 대진표 (관리자만) */}
+      {isAdmin && (
+        <div className="board-actions">
+          <button className="primary grow" disabled={waiting.length < 2} onClick={autoMatch2Rounds}>
+            🔀 자동매칭 (2라운드)
+          </button>
+          <button className="grow" disabled={ongoing.length === 0} onClick={() => setLineupText(buildLineupText())}>
+            📋 카톡 대진표
+          </button>
+        </div>
+      )}
 
-      {/* 수동매칭 */}
-      {waiting.length >= 2 && (
+      {/* 수동매칭 (관리자만) */}
+      {isAdmin && waiting.length >= 2 && (
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>
             ✋ 수동매칭 {manualA ? `— ${name(manualA)} 선택됨, 상대를 선택하세요` : '— 첫 번째 선수를 선택하세요'}
@@ -353,7 +392,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
                   <span className={win === g.playerBId ? 'win right' : 'right'}>
                     {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
                   </span>
-                  {(isAdmin || g.playedAt >= mountTime) && (
+                  {isAdmin && (
                     <button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>
                   )}
                 </li>
@@ -362,6 +401,41 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
           </ul>
         </div>
       )}
+
+      {lineupText !== null && (
+        <LineupModal text={lineupText} onClose={() => setLineupText(null)} />
+      )}
+    </div>
+  )
+}
+
+function LineupModal({ text, onClose }: { text: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    const ok = await shareText(text)
+    setCopied(ok)
+  }
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, padding: 16,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 12, padding: 20,
+        width: '100%', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 12,
+      }}>
+        <span style={{ fontWeight: 600, fontSize: 15 }}>📋 카톡 대진표</span>
+        <span className="muted" style={{ fontSize: 12 }}>아래 내용을 복사해 카카오톡 단체방에 붙여넣으세요.</span>
+        <textarea readOnly value={text} style={{
+          width: '100%', height: 280, fontSize: 13, lineHeight: 1.6,
+          padding: 10, borderRadius: 8, border: '1px solid var(--border)', resize: 'none',
+          fontFamily: 'inherit',
+        }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="primary block" style={{ flex: 1 }} onClick={copy}>{copied ? '✅ 복사됨' : '복사하기'}</button>
+          <button className="block" style={{ flex: 1 }} onClick={onClose}>닫기</button>
+        </div>
+      </div>
     </div>
   )
 }
