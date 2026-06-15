@@ -83,15 +83,20 @@ export function matchAll(ctx: MatchContext): Pair[] {
   return pairs
 }
 
+/** 금지 대진은 사실상 매칭되지 않도록 큰 가중치를 부여. */
+const FORBIDDEN_WEIGHT = 1_000_000
+
 /**
  * 정기모임 2라운드 자동매칭.
  * - 홀수 참가자면 sitOutId(이제한)를 제외한 뒤 매칭.
  * - 2라운드는 1라운드 대진 상대를 피함.
+ * - forbiddenPairs(예: 엄재익↔이제한)는 서로 매칭하지 않음.
  */
 export function matchTwoRounds(
   allIds: string[],
   meetCount: Map<string, number>,
   sitOutId: string | null,
+  forbiddenPairs?: Set<string>,
 ): { round1: Pair[]; round2: Pair[] } {
   let ids = [...allIds]
 
@@ -100,13 +105,19 @@ export function matchTwoRounds(
     ids = ids.filter((id) => id !== sitOutId)
   }
 
+  // 금지 대진에 큰 가중치를 부여한 기준 맵
+  const base = new Map(meetCount)
+  if (forbiddenPairs) {
+    for (const k of forbiddenPairs) base.set(k, (base.get(k) ?? 0) + FORBIDDEN_WEIGHT)
+  }
+
   const empty = new Map<string, number>()
 
   // 1라운드
-  const round1 = matchAll({ waitingIds: ids, meetCount, todayGameCount: empty })
+  const round1 = matchAll({ waitingIds: ids, meetCount: base, todayGameCount: empty })
 
   // 2라운드: 1라운드 대진 상대를 meetCount에 +999 가중치
-  const boosted = new Map(meetCount)
+  const boosted = new Map(base)
   for (const p of round1) {
     const k = pairKey(p.aId, p.bId)
     boosted.set(k, (boosted.get(k) ?? 0) + 999)

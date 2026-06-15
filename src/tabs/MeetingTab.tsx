@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useApp } from '../store/appStore'
 import type { Member, Session } from '../types'
-import { buildMeetCount, matchTwoRounds } from '../logic/matching'
+import { buildMeetCount, matchTwoRounds, pairKey } from '../logic/matching'
 import { winnerId } from '../logic/game'
 import { todayStr } from '../lib/date'
 import { fmtScore } from '../lib/format'
@@ -196,9 +196,18 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
   const isFlash = session.type === 'flash'
   const isApproved = session.approved !== false
 
-  // 이제한 ID
+  // 이제한 ID (홀수 시 대기)
   const sitOutMember = members.find((m) => m.name === '이제한')
   const sitOutId = sitOutMember?.id ?? null
+
+  // 금지 대진: 엄재익 회장 ↔ 이제한 총무는 서로 대진하지 않음
+  const forbiddenPairs = useMemo(() => {
+    const set = new Set<string>()
+    const a = members.find((m) => m.name === '엄재익')?.id
+    const b = members.find((m) => m.name === '이제한')?.id
+    if (a && b) set.add(pairKey(a, b))
+    return set
+  }, [members])
 
   const makeOngoing = (aId: string, bId: string, round?: number): Ongoing => ({
     key: crypto.randomUUID(),
@@ -210,7 +219,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
   })
 
   const autoMatch2Rounds = () => {
-    const { round1, round2 } = matchTwoRounds(waiting, meetCount, sitOutId)
+    const { round1, round2 } = matchTwoRounds(waiting, meetCount, sitOutId, forbiddenPairs)
     const newOngoing = [
       ...round1.map((p) => makeOngoing(p.aId, p.bId, 1)),
       ...round2.map((p) => makeOngoing(p.aId, p.bId, 2)),
