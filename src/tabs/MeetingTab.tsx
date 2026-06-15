@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+﻿import { useMemo, useRef, useState } from 'react'
 import { useApp } from '../store/appStore'
 import type { Member, Session } from '../types'
 import { buildMeetCount, matchAll, recommendNext } from '../logic/matching'
@@ -6,6 +6,7 @@ import { winnerId } from '../logic/game'
 import { todayStr } from '../lib/date'
 import { fmtScore } from '../lib/format'
 import { buildResultText, shareImage, shareText } from '../lib/share'
+import { useAdmin } from '../store/adminStore'
 
 interface Ongoing {
   key: string
@@ -67,6 +68,8 @@ function AttendeePicker({ members, onStart }: { members: Member[]; onStart: (ids
 }
 
 function Board({ session, members, sessions }: { session: Session; members: Member[]; sessions: Session[] }) {
+  const { isAdmin } = useAdmin()
+  const [mountTime] = useState(() => new Date().toISOString())
   const addGame = useApp((s) => s.addGame)
   const deleteGame = useApp((s) => s.deleteGame)
   const setAttendees = useApp((s) => s.setAttendees)
@@ -148,7 +151,7 @@ function Board({ session, members, sessions }: { session: Session; members: Memb
             참석 {session.attendeeIds.length} · 경기중 {ongoing.length} · 대기 {waiting.length} · 완료 {session.games.length}
           </span>
         </div>
-        <button onClick={() => setEditAttendees((v) => !v)}>참석자</button>
+        {isAdmin && <button onClick={() => setEditAttendees((v) => !v)}>참석자</button>}
       </div>
 
       {editAttendees && (
@@ -255,9 +258,7 @@ function Board({ session, members, sessions }: { session: Session; members: Memb
                   <span className={win === g.playerBId ? 'win right' : 'right'}>
                     {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
                   </span>
-                  <button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">
-                    ×
-                  </button>
+                  {(isAdmin || g.playedAt >= mountTime) && (<button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>)}
                 </li>
               )
             })}
@@ -325,3 +326,9 @@ function AttendeeEditor({
     </div>
   )
 }
+
+
+
+
+
+

@@ -2,6 +2,7 @@
 import { useApp } from '../store/appStore'
 import { memberStats } from '../logic/stats'
 import type { Member } from '../types'
+import { useAdmin } from '../store/adminStore'
 
 function calcRanks(members: Member[]): Map<string, number> {
   const active = members.filter((m) => m.active)
@@ -83,6 +84,7 @@ export function MembersTab() {
   const [editName, setEditName] = useState('')
   const [editHcap, setEditHcap] = useState(20)
   const [detailId, setDetailId] = useState<string | null>(null)
+  const { isAdmin } = useAdmin()
 
   const stats = useMemo(() => memberStats(sessions), [sessions])
   const statOf = (id: string) => stats.find((s) => s.memberId === id)
@@ -203,8 +205,7 @@ export function MembersTab() {
                       </span>
                     </div>
                     <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>핸디 {m.handicap}</span>
-                    <button onClick={() => startEdit(m.id, m.name, m.handicap)}>수정</button>
-                    <button onClick={() => setActive(m.id, !m.active)}>{m.active ? '비활성' : '활성'}</button>
+                    {isAdmin && (<><button onClick={() => startEdit(m.id, m.name, m.handicap)}>수정</button><button onClick={() => setActive(m.id, !m.active)}>{m.active ? '비활성' : '활성'}</button></>)}
                   </>
                 )}
               </div>
@@ -223,3 +224,4 @@ export function MembersTab() {
     </div>
   )
 }
+
