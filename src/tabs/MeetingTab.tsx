@@ -43,27 +43,14 @@ export function MeetingTab() {
   const current = sessions.find((s) => s.date === selectedDate)
 
   if (!current) {
-    // 관리자만 모임 시작 가능, 일반회원은 안내 + 날짜 선택만
-    if (!isAdmin) {
-      return (
-        <div className="tab">
-          <h2 className="tab-title">모임</h2>
-          <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>📅 날짜</span>
-            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ flex: 1 }} />
-          </div>
-          <p className="muted" style={{ textAlign: 'center', padding: '24px 0' }}>
-            해당 날짜에 등록된 모임이 없습니다.
-          </p>
-        </div>
-      )
-    }
+    // 일반회원은 번개모임만 생성 가능 (flashOnly)
     return (
       <AttendeePicker
         members={members}
         date={selectedDate}
         onDateChange={setSelectedDate}
         onStart={(ids, type) => createSession(selectedDate, ids, type)}
+        flashOnly={!isAdmin}
       />
     )
   }
@@ -79,11 +66,12 @@ export function MeetingTab() {
   )
 }
 
-function AttendeePicker({ members, date, onDateChange, onStart }: {
+function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = false }: {
   members: Member[]
   date: string
   onDateChange: (d: string) => void
   onStart: (ids: string[], type: 'regular' | 'flash') => void
+  flashOnly?: boolean
 }) {
   const PINNED = ['엄재익', '이제한']
   const active = [...members.filter((m) => m.active)].sort((a, b) => {
@@ -96,7 +84,7 @@ function AttendeePicker({ members, date, onDateChange, onStart }: {
     return a.name.localeCompare(b.name, 'ko')
   })
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [meetingType, setMeetingType] = useState<'regular' | 'flash'>('regular')
+  const [meetingType, setMeetingType] = useState<'regular' | 'flash'>(flashOnly ? 'flash' : 'regular')
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -119,24 +107,26 @@ function AttendeePicker({ members, date, onDateChange, onStart }: {
         />
       </div>
 
-      <div className="card" style={{ display: 'flex', gap: 8 }}>
-        <button
-          className={meetingType === 'regular' ? 'primary grow' : 'grow'}
-          onClick={() => setMeetingType('regular')}
-          style={{ flex: 1 }}
-        >
-          📋 정기모임
-        </button>
-        <button
-          className={meetingType === 'flash' ? 'primary grow' : 'grow'}
-          onClick={() => setMeetingType('flash')}
-          style={{ flex: 1 }}
-        >
-          ⚡ 번개모임
-        </button>
-      </div>
+      {!flashOnly && (
+        <div className="card" style={{ display: 'flex', gap: 8 }}>
+          <button
+            className={meetingType === 'regular' ? 'primary grow' : 'grow'}
+            onClick={() => setMeetingType('regular')}
+            style={{ flex: 1 }}
+          >
+            📋 정기모임
+          </button>
+          <button
+            className={meetingType === 'flash' ? 'primary grow' : 'grow'}
+            onClick={() => setMeetingType('flash')}
+            style={{ flex: 1 }}
+          >
+            ⚡ 번개모임
+          </button>
+        </div>
+      )}
 
-      {meetingType === 'flash' && (
+      {(meetingType === 'flash' || flashOnly) && (
         <div style={{ fontSize: 12, color: '#c07000', background: '#fff8e1', borderRadius: 8, padding: '8px 12px' }}>
           ⚡ 번개모임 기록은 관리자 승인 후 정규 통계에 반영됩니다.
         </div>
@@ -157,9 +147,9 @@ function AttendeePicker({ members, date, onDateChange, onStart }: {
       <button
         className="primary block"
         disabled={selected.size < 2}
-        onClick={() => onStart([...selected], meetingType)}
+        onClick={() => onStart([...selected], flashOnly ? 'flash' : meetingType)}
       >
-        {selected.size}명으로 {meetingType === 'regular' ? '정기' : '번개'}모임 시작
+        {selected.size}명으로 {(flashOnly || meetingType === 'flash') ? '번개' : '정기'}모임 시작
       </button>
     </div>
   )
@@ -205,6 +195,8 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
 
   const isFlash = session.type === 'flash'
   const isApproved = session.approved !== false
+  // 번개모임은 일반회원도 편집 가능
+  const canEdit = isAdmin || isFlash
 
   // 이제한 ID (홀수 시 대기)
   const sitOutId = members.find((m) => m.name === '이제한')?.id ?? null
@@ -402,10 +394,12 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
           </div>
           <span className="muted">참석 {session.attendeeIds.length}명 · 완료 {session.games.length}경기</span>
         </div>
-        {isAdmin && (
+        {canEdit && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={() => setEditAttendees((v) => !v)}>참석자</button>
-            <button onClick={removeSession} style={{ color: '#c0392b', borderColor: '#e0a0a0' }}>모임 삭제</button>
+            {isAdmin && (
+              <button onClick={removeSession} style={{ color: '#c0392b', borderColor: '#e0a0a0' }}>모임 삭제</button>
+            )}
           </div>
         )}
       </div>
@@ -424,13 +418,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
         </div>
       )}
 
-      {/* === 일반회원: 게시된 대진표 읽기 전용 === */}
-      {!isAdmin && (
+      {/* === 일반회원 + 정기모임: 게시된 대진표 읽기 전용 === */}
+      {!canEdit && (
         <LineupView lineup={session.lineup ?? []} sitOutIds={session.sitOutIds ?? []} name={name} />
       )}
 
-      {/* === 관리자: 대진 편집/점수 입력 === */}
-      {isAdmin && (
+      {/* === 관리자 또는 번개모임: 대진 편집/점수 입력 === */}
+      {canEdit && (
         <>
           {editAttendees && (
             <AttendeeEditor
@@ -484,7 +478,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
                   <span className={win === g.playerBId ? 'win right' : 'right'}>
                     {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
                   </span>
-                  {isAdmin && (
+                  {canEdit && (
                     <button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>
                   )}
                 </li>
@@ -492,6 +486,11 @@ function Board({ session, members, sessions, selectedDate, onDateChange }: {
             })}
           </ul>
         </div>
+      )}
+
+      {/* 일반회원 번개모임: 기록전송 버튼 (관리자 승인 요청) */}
+      {!isAdmin && isFlash && !isApproved && (
+        <SendRecordsButton sessionId={session.id} hasGames={session.games.length > 0} />
       )}
 
       {lineupText !== null && (
@@ -576,6 +575,42 @@ function LineupModal({ text, onPublish, onClose }: { text: string; onPublish: ()
         </div>
       </div>
     </div>
+  )
+}
+
+function SendRecordsButton({ hasGames }: { sessionId: string; hasGames: boolean }) {
+  const [status, setStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
+
+  const send = async () => {
+    if (!hasGames) { alert('먼저 경기 결과를 입력해 주세요.'); return }
+    if (!window.confirm('입력한 기록을 관리자에게 전송할까요?\n관리자 승인 후 정규 통계에 반영됩니다.')) return
+    setStatus('sending')
+    try {
+      const s = useApp.getState()
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+      setStatus('done')
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  if (status === 'done') {
+    return (
+      <div style={{ background: '#e1f5ee', borderRadius: 8, padding: '12px 16px', textAlign: 'center', fontSize: 14, color: '#0f6e56', fontWeight: 600 }}>
+        ✅ 기록이 관리자에게 전송되었습니다. 승인 후 통계에 반영됩니다.
+      </div>
+    )
+  }
+
+  return (
+    <button
+      className="primary block"
+      disabled={status === 'sending' || !hasGames}
+      onClick={send}
+      style={{ marginTop: 8 }}
+    >
+      {status === 'sending' ? '전송 중...' : status === 'error' ? '⚠️ 전송 실패 — 다시 시도' : '📤 기록전송 (관리자 승인 요청)'}
+    </button>
   )
 }
 
