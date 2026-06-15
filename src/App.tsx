@@ -144,7 +144,12 @@ export function App() {
           </button>
         ))}
         <button onClick={() => { if (window.confirm('앱을 종료할까요?')) memberLogout() }}>
-          <span className="nav-icon" aria-hidden="true">⏻</span>
+          <span className="nav-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2v10" />
+              <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
+            </svg>
+          </span>
           <span className="nav-label">종료</span>
         </button>
       </nav>
