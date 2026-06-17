@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useApp } from '../store/appStore'
 import type { LineupMatch, Member, Session } from '../types'
-import { buildMeetCount, matchTwoRounds, pairKey } from '../logic/matching'
+import { buildMeetCount, matchAll, matchTwoRounds, pairKey } from '../logic/matching'
 import { winnerId } from '../logic/game'
 import { todayStr } from '../lib/date'
 import { fmtScore } from '../lib/format'
@@ -275,6 +275,16 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     setManualSel(null)
   }
 
+  const autoMatchFlash = () => {
+    const ids = [...session.attendeeIds]
+    const pairs = matchAll({ waitingIds: ids, meetCount, todayGameCount: new Map() })
+    const matchedIds = new Set(pairs.flatMap((p) => [p.aId, p.bId]))
+    const leftOut = ids.filter((id) => !matchedIds.has(id))
+    setOngoing(pairs.map((p) => makeOngoing(p.aId, p.bId, 1)))
+    setSitOut(leftOut)
+    setManualSel(null)
+  }
+
   // 미대진자 칩 탭 → 같은 라운드 두 명 선택 시 매칭
   const tapUnmatched = (round: number, id: string) => {
     if (!manualSel || manualSel.round !== round) { setManualSel({ round, id }); return }
@@ -292,12 +302,18 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     const scoreA = Math.max(0, parseInt(o.scoreA || '0', 10) || 0)
     const scoreB = Math.max(0, parseInt(o.scoreB || '0', 10) || 0)
     const endType = scoreA >= o.handicapA || scoreB >= o.handicapB ? 'cleared' : 'time'
+    const isPending = isFlash && !isAdmin
     addGame(session.id, {
       playerAId: o.aId, playerBId: o.bId,
       handicapA: o.handicapA, handicapB: o.handicapB,
       scoreA, scoreB, endType, round: o.round,
+      ...(isPending ? { pending: true } : {}),
     })
     cancel(o.key)
+    if (isPending) {
+      const st = useApp.getState()
+      uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings }).catch(() => {})
+    }
   }
 
   // 카톡 배포용 대진표 텍스트 생성 (1부/2부 + 대기자)
@@ -351,10 +367,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     const matches = ongoing.filter((o) => o.round === round)
     const unmatched = unmatchedInRound(round)
     if (matches.length === 0 && unmatched.length === 0) return null
+    const roundLabel = isFlash
+      ? '⚡ 번개모임'
+      : round === 1 ? '1부 (16:00~17:00)' : '2부 (17:00~18:00)'
     return (
       <div key={round} style={{ marginTop: 6 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, margin: '6px 0', color: '#072B61' }}>
-          {round === 1 ? '1부 (16:00~17:00)' : '2부 (17:00~18:00)'}
+          {roundLabel}
         </h3>
         <div className="court-grid">
           {matches.map((o, i) => (
@@ -374,7 +393,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
                   onScore={(v) => patch(o.key, 'scoreB', v)} />
               </div>
               <div className="court-buttons">
-                <button className="primary grow" onClick={() => save(o)}>결과 저장</button>
+                <button className="primary grow" onClick={() => save(o)}>저장</button>
                 <button onClick={() => cancel(o.key)}>취소</button>
               </div>
             </div>
@@ -383,7 +402,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         {unmatched.length >= 1 && (
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: '#c0392b' }}>
-              ({round}라운드 미대진자) {unmatched.map(name).join(', ')}
+              ({isFlash ? '대기' : `${round}라운드 미대진자`}) {unmatched.map(name).join(', ')}
               {manualSel?.round === round ? ` — ${name(manualSel.id)} 선택됨, 상대 선택` : unmatched.length >= 2 ? ' — 두 명을 눌러 매칭' : ''}
             </span>
             {unmatched.length >= 2 && (
@@ -488,16 +507,24 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
           )}
 
           <div className="board-actions">
-            <button className="primary grow" disabled={session.attendeeIds.length < 2} onClick={autoMatch2Rounds}>
-              🔀 자동매칭 (2라운드)
-            </button>
-            <button className="grow" disabled={ongoing.length === 0} onClick={() => setLineupText(buildLineupText())}>
-              📋 카톡 대진표
-            </button>
+            {isFlash ? (
+              <button className="primary grow" disabled={session.attendeeIds.length < 2} onClick={autoMatchFlash}>
+                🔀 자동매칭
+              </button>
+            ) : (
+              <>
+                <button className="primary grow" disabled={session.attendeeIds.length < 2} onClick={autoMatch2Rounds}>
+                  🔀 자동매칭 (2라운드)
+                </button>
+                <button className="grow" disabled={ongoing.length === 0} onClick={() => setLineupText(buildLineupText())}>
+                  📋 카톡 대진표
+                </button>
+              </>
+            )}
           </div>
 
           {started && renderRoundGroup(1)}
-          {started && renderRoundGroup(2)}
+          {!isFlash && started && renderRoundGroup(2)}
 
           {sitOut.length > 0 && (
             <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>⏸ 대기: {sitOut.map(name).join(', ')}</div>
@@ -505,10 +532,15 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         </>
       )}
 
-      {session.games.length > 0 && (
+      {session.games.filter((g) => isAdmin || !g.pending).length > 0 && (
         <div className="results">
           <div className="results-head">
             <span className="muted">완료된 경기</span>
+            {isAdmin && session.games.some((g) => g.pending) && (
+              <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 3, background: '#fff3cd', color: '#856404', fontWeight: 600 }}>
+                승인대기 {session.games.filter((g) => g.pending).length}건
+              </span>
+            )}
             <div className="share-buttons">
               <button onClick={async () => {
                 const copied = await shareText(buildResultText(session, members))
@@ -520,10 +552,10 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             </div>
           </div>
           <ul className="result-list" ref={resultsRef}>
-            {session.games.map((g) => {
+            {session.games.filter((g) => isAdmin || !g.pending).map((g) => {
               const win = winnerId(g)
               return (
-                <li key={g.id} className="card result-row">
+                <li key={g.id} className="card result-row" style={g.pending ? { opacity: 0.75 } : undefined}>
                   <span className={win === g.playerAId ? 'win' : ''}>
                     {name(g.playerAId)} {fmtScore(g.scoreA, g.handicapA)}
                   </span>
@@ -531,6 +563,11 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
                   <span className={win === g.playerBId ? 'win right' : 'right'}>
                     {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
                   </span>
+                  {g.pending && (
+                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#fff3cd', color: '#856404', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      승인대기
+                    </span>
+                  )}
                   {canEdit && (
                     <button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>
                   )}
@@ -539,11 +576,6 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             })}
           </ul>
         </div>
-      )}
-
-      {/* 일반회원 번개모임: 기록전송 버튼 (관리자 승인 요청) */}
-      {!isAdmin && isFlash && !isApproved && (
-        <SendRecordsButton sessionId={session.id} hasGames={session.games.length > 0} />
       )}
 
       {lineupText !== null && (
@@ -631,41 +663,6 @@ function LineupModal({ text, onPublish, onClose }: { text: string; onPublish: ()
   )
 }
 
-function SendRecordsButton({ hasGames }: { sessionId: string; hasGames: boolean }) {
-  const [status, setStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
-
-  const send = async () => {
-    if (!hasGames) { alert('먼저 경기 결과를 입력해 주세요.'); return }
-    if (!window.confirm('입력한 기록을 관리자에게 전송할까요?\n관리자 승인 후 정규 통계에 반영됩니다.')) return
-    setStatus('sending')
-    try {
-      const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
-      setStatus('done')
-    } catch {
-      setStatus('error')
-    }
-  }
-
-  if (status === 'done') {
-    return (
-      <div style={{ background: '#e1f5ee', borderRadius: 8, padding: '12px 16px', textAlign: 'center', fontSize: 14, color: '#0f6e56', fontWeight: 600 }}>
-        ✅ 기록이 관리자에게 전송되었습니다. 승인 후 통계에 반영됩니다.
-      </div>
-    )
-  }
-
-  return (
-    <button
-      className="primary block"
-      disabled={status === 'sending' || !hasGames}
-      onClick={send}
-      style={{ marginTop: 8 }}
-    >
-      {status === 'sending' ? '전송 중...' : status === 'error' ? '⚠️ 전송 실패 — 다시 시도' : '📤 기록전송 (관리자 승인 요청)'}
-    </button>
-  )
-}
 
 function ScoreCell({ handicap, score, onHcap, onScore }: {
   handicap: number; score: string

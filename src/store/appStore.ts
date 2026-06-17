@@ -15,6 +15,9 @@ interface Store extends AppState {
   setAttendees: (sessionId: string, attendeeIds: string[]) => void
   addGame: (sessionId: string, game: Omit<Game, 'id' | 'playedAt'>) => void
   deleteGame: (sessionId: string, gameId: string) => void
+  confirmGame: (sessionId: string, gameId: string) => void
+  updateGameResult: (sessionId: string, gameId: string, patch: Partial<Pick<Game, 'scoreA' | 'scoreB' | 'handicapA' | 'handicapB'>>) => void
+  cleanupOldPending: () => void
   touchBackup: () => void
   applyHandicapCsv: (rows: import('../lib/backup').HandicapRow[]) => void
   applyMemberCsv: (rows: import('../lib/backup').MemberRow[]) => void
@@ -105,6 +108,48 @@ export const useApp = create<Store>()(
             ss.id === sessionId ? { ...ss, games: ss.games.filter((g) => g.id !== gameId) } : ss,
           ),
         })),
+
+      confirmGame: (sessionId, gameId) =>
+        set((s) => ({
+          sessions: s.sessions.map((ss) =>
+            ss.id === sessionId
+              ? { ...ss, games: ss.games.map((g) => g.id === gameId ? { ...g, pending: false } : g) }
+              : ss,
+          ),
+        })),
+
+      updateGameResult: (sessionId, gameId, patch) =>
+        set((s) => ({
+          sessions: s.sessions.map((ss) =>
+            ss.id === sessionId
+              ? {
+                  ...ss,
+                  games: ss.games.map((g) => {
+                    if (g.id !== gameId) return g
+                    const updated = { ...g, ...patch }
+                    const endType: 'cleared' | 'time' =
+                      updated.scoreA >= updated.handicapA || updated.scoreB >= updated.handicapB
+                        ? 'cleared'
+                        : 'time'
+                    return { ...updated, endType }
+                  }),
+                }
+              : ss,
+          ),
+        })),
+
+      cleanupOldPending: () =>
+        set((s) => {
+          const cutoff = new Date()
+          cutoff.setDate(cutoff.getDate() - 30)
+          const cutoffIso = cutoff.toISOString()
+          return {
+            sessions: s.sessions.map((ss) => ({
+              ...ss,
+              games: ss.games.filter((g) => !g.pending || g.playedAt >= cutoffIso),
+            })),
+          }
+        }),
 
       touchBackup: () => set((s) => ({ settings: { ...s.settings, lastBackupAt: now() } })),
 

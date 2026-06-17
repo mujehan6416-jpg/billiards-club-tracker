@@ -29,7 +29,7 @@ export function memberStats(sessions: Session[]): MemberStat[] {
   }
 
   for (const s of approvedSessions(sessions)) {
-    for (const game of s.games) {
+    for (const game of s.games.filter((g) => !g.pending)) {
       const win = winnerId(game)
       const sides = [
         [game.playerAId, game.scoreA, game.handicapA],
@@ -71,7 +71,7 @@ export interface H2H {
 export function headToHead(sessions: Session[], aId: string, bId: string): H2H {
   const r: H2H = { aWins: 0, bWins: 0, draws: 0, games: 0 }
   for (const s of approvedSessions(sessions)) {
-    for (const game of s.games) {
+    for (const game of s.games.filter((g) => !g.pending)) {
       const ids = [game.playerAId, game.playerBId]
       if (!ids.includes(aId) || !ids.includes(bId)) continue
       r.games++
@@ -101,7 +101,7 @@ export interface TimelineEntry {
 export function memberTimeline(sessions: Session[], memberId: string): TimelineEntry[] {
   const entries: TimelineEntry[] = []
   for (const s of approvedSessions(sessions)) {
-    for (const game of s.games) {
+    for (const game of s.games.filter((g) => !g.pending)) {
       const isA = game.playerAId === memberId
       const isB = game.playerBId === memberId
       if (!isA && !isB) continue

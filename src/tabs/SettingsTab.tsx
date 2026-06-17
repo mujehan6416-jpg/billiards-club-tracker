@@ -7,7 +7,7 @@ import { uploadToCloud, downloadFromCloud } from '../lib/cloudSync'
 import { todayStr } from '../lib/date'
 import { winnerId } from '../logic/game'
 import { fmtScore } from '../lib/format'
-import type { Member, Session } from '../types'
+import type { Game, Member, Session } from '../types'
 
 function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
   const { login } = useAdmin()
@@ -60,6 +60,114 @@ function ChangePinCard() {
       <input type="password" placeholder="새 PIN 확인" value={newPin2} onChange={(e) => setNewPin2(e.target.value)} style={{ width: '100%' }} />
       {msg && <span style={{ fontSize: 13, color: msg.includes('변경') ? '#1d9e75' : 'var(--danger)' }}>{msg}</span>}
       <button className="block" onClick={doChange}>PIN 변경</button>
+    </div>
+  )
+}
+
+// 경기결과 승인 대기 — 일반회원이 제출한 게임 (날짜 검색 + 수정 + 저장)
+function PendingGameRow({ game, sessionId, sessionDate, name }: {
+  game: Game
+  sessionId: string
+  sessionDate: string
+  name: (id: string) => string
+}) {
+  const confirmGame = useApp((s) => s.confirmGame)
+  const updateGameResult = useApp((s) => s.updateGameResult)
+  const deleteGame = useApp((s) => s.deleteGame)
+  const [scoreA, setScoreA] = useState(String(game.scoreA))
+  const [scoreB, setScoreB] = useState(String(game.scoreB))
+  const [hA, setHA] = useState(game.handicapA)
+  const [hB, setHB] = useState(game.handicapB)
+  const [saving, setSaving] = useState(false)
+
+  const doSave = async () => {
+    const sA = Math.max(0, parseInt(scoreA || '0', 10) || 0)
+    const sB = Math.max(0, parseInt(scoreB || '0', 10) || 0)
+    setSaving(true)
+    updateGameResult(sessionId, game.id, { scoreA: sA, scoreB: sB, handicapA: hA, handicapB: hB })
+    confirmGame(sessionId, game.id)
+    try {
+      const s = useApp.getState()
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+    } catch { /* ignore */ }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 6 }}>
+      <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>
+        📅 {sessionDate} — {name(game.playerAId)} vs {name(game.playerBId)}
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 110 }}>
+          <span style={{ fontSize: 11, color: '#888' }}>{name(game.playerAId)} 득점 / 핸디</span>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <input type="number" min={0} value={scoreA} onChange={(e) => setScoreA(e.target.value)}
+              style={{ width: 52 }} inputMode="numeric" />
+            <input type="number" min={1} value={hA} onChange={(e) => setHA(Math.max(1, +e.target.value))}
+              style={{ width: 52 }} />
+          </div>
+        </div>
+        <span className="vs" style={{ paddingBottom: 4 }}>vs</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 110 }}>
+          <span style={{ fontSize: 11, color: '#888' }}>{name(game.playerBId)} 득점 / 핸디</span>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <input type="number" min={0} value={scoreB} onChange={(e) => setScoreB(e.target.value)}
+              style={{ width: 52 }} inputMode="numeric" />
+            <input type="number" min={1} value={hB} onChange={(e) => setHB(Math.max(1, +e.target.value))}
+              style={{ width: 52 }} />
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <button className="primary" style={{ fontSize: 12 }} disabled={saving} onClick={doSave}>
+          {saving ? '저장 중...' : '저장'}
+        </button>
+        <button style={{ fontSize: 12, color: '#c0392b', borderColor: '#e0a0a0' }}
+          onClick={() => { if (window.confirm('이 경기 결과를 삭제할까요?')) deleteGame(sessionId, game.id) }}>
+          삭제
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function PendingGamesCard({ sessions, members }: { sessions: Session[]; members: Member[] }) {
+  const [filterDate, setFilterDate] = useState('')
+
+  const name = (id: string) => members.find((m) => m.id === id)?.name ?? id
+
+  const allPending = sessions.flatMap((s) =>
+    s.games.filter((g) => g.pending).map((g) => ({ game: g, sessionId: s.id, sessionDate: s.date }))
+  )
+  const filtered = allPending
+    .filter((item) => !filterDate || item.sessionDate === filterDate)
+    .sort((a, b) => b.sessionDate.localeCompare(a.sessionDate))
+
+  if (allPending.length === 0 && !filterDate) return null
+
+  return (
+    <div className="card col-card">
+      <span style={{ fontWeight: 600, fontSize: 14 }}>📤 경기결과 승인 대기 ({allPending.length}건)</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 13, whiteSpace: 'nowrap' }}>날짜 검색</span>
+        <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} style={{ flex: 1 }} />
+        {filterDate && (
+          <button style={{ fontSize: 12 }} onClick={() => setFilterDate('')}>초기화</button>
+        )}
+      </div>
+      {filtered.length === 0 && filterDate && (
+        <p className="muted" style={{ fontSize: 13, margin: '4px 0 0' }}>해당 날짜의 대기 경기가 없습니다.</p>
+      )}
+      {filtered.map((item) => (
+        <PendingGameRow
+          key={item.game.id}
+          game={item.game}
+          sessionId={item.sessionId}
+          sessionDate={item.sessionDate}
+          name={name}
+        />
+      ))}
     </div>
   )
 }
@@ -401,10 +509,13 @@ export function SettingsTab() {
 
       {isAdmin && (
         <>
-          {/* 1. 번개모임 승인 대기 (맨 위) */}
+          {/* 1. 번개모임 세션 승인 대기 (맨 위) */}
           <PendingFlashCard sessions={sessions} members={members} />
 
-          {/* 2. 클라우드 동기화 */}
+          {/* 2. 경기결과 승인 대기 (일반회원 제출 게임) */}
+          <PendingGamesCard sessions={sessions} members={members} />
+
+          {/* 3. 클라우드 동기화 */}
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>☁️ 클라우드 동기화</span>
             <span className="muted">PC와 휴대폰 간 데이터를 맞출 때 사용하세요.</span>
@@ -416,13 +527,13 @@ export function SettingsTab() {
             </button>
           </div>
 
-          {/* 3. 에버리지 직접 수정 */}
+          {/* 4. 에버리지 직접 수정 */}
           <HandicapEditCard members={members} />
 
-          {/* 4. 회원 비밀번호 관리 (관리자) */}
+          {/* 5. 회원 비밀번호 관리 (관리자) */}
           <AdminMemberPwCard members={members} />
 
-          {/* 5. 핸디 이력 CSV */}
+          {/* 6. 핸디 이력 CSV */}
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>핸디 이력 파일</span>
             <span className="muted">CSV 형식: <code>이름,날짜,핸디</code></span>

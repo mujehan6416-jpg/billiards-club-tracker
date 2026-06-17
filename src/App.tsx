@@ -105,9 +105,11 @@ export function App() {
   const { memberId, logout: memberLogout } = useAuth()
   const members = useApp((s) => s.members)
   const replaceAll = useApp((s) => s.replaceAll)
+  const cleanupOldPending = useApp((s) => s.cleanupOldPending)
   const { login } = useAuth()
 
   useEffect(() => {
+    cleanupOldPending()
     downloadFromCloud()
       .then((state) => { if (state) replaceAll(state) })
       .catch(() => {})

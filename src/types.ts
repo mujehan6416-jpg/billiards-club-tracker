@@ -30,6 +30,8 @@ export interface Game {
    * undefined이면 달성률(rate)로 자동 계산, null이면 무승부로 확정.
    */
   winnerId?: string | null
+  /** 일반회원이 제출한 번개모임 경기결과 — 관리자 승인 대기 중 */
+  pending?: boolean
 }
 
 /** 게시된 대진표의 한 경기(라운드별). */
