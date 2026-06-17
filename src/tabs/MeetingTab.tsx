@@ -266,7 +266,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   const autoMatch2Rounds = () => {
     const ids = [...session.attendeeIds]
     const sit = (ids.length % 2 !== 0 && sitOutId && ids.includes(sitOutId)) ? [sitOutId] : []
-    const { round1, round2 } = matchTwoRounds(ids, meetCount, sitOutId, forbiddenPairs)
+    const { round1, round2 } = matchTwoRounds(ids, meetCount, sitOutId, forbiddenPairs, hcapOf)
     setOngoing([
       ...round1.map((p) => makeOngoing(p.aId, p.bId, 1)),
       ...round2.map((p) => makeOngoing(p.aId, p.bId, 2)),

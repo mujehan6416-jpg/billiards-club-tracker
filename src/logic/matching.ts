@@ -26,6 +26,15 @@ export interface MatchContext {
   todayGameCount: Map<string, number>
   /** 테스트 주입용 난수 생성기 (기본 Math.random). */
   rng?: () => number
+  /**
+   * 라운드 모드 (정기모임 전용):
+   *   r1 — 1부: meetCount 우선, 핸디 차 2점 미만 쌍 회피
+   *   r2 — 2부: meetCount 우선, 핸디 허용범위 초과 쌍 회피
+   *             (상위핸디 ≥25 → 9점, 23~24 → 7점, ≤22 → 5점)
+   */
+  roundMode?: 'r1' | 'r2'
+  /** 선수 id → 현재 핸디 (roundMode 사용 시 필수) */
+  handicapOf?: (id: string) => number
 }
 
 export interface Pair {
@@ -41,9 +50,21 @@ function less(x: Triple, y: Triple): boolean {
   return x[2] < y[2]
 }
 
+/** 정기 2라운드 허용 최대 핸디 차이 (두 선수 중 높은 핸디 기준) */
+function maxAllowedDiff(higherHandicap: number): number {
+  if (higherHandicap >= 25) return 9
+  if (higherHandicap >= 23) return 7
+  return 5
+}
+
 /**
  * 대기자 중 한 짝을 추천.
- * 우선순위: ① 누적 맞대결 적은 순 → ② 오늘 적게 친 순 → ③ 랜덤.
+ *
+ * 기본 우선순위: ① 누적 맞대결 적은 순 → ② 오늘 적게 친 순 → ③ 랜덤.
+ *
+ * roundMode 지정 시 (정기모임):
+ *   r1 — ① meetCount → ② 핸디 차 2점 미만 쌍 회피(패널티 1) → ③ 랜덤
+ *   r2 — ① meetCount → ② 허용범위 초과 쌍 회피(패널티 1) → ③ 랜덤
  */
 export function recommendNext(ctx: MatchContext): Pair | null {
   const ids = ctx.waitingIds
@@ -56,8 +77,24 @@ export function recommendNext(ctx: MatchContext): Pair | null {
       const a = ids[i]
       const b = ids[j]
       const meet = ctx.meetCount.get(pairKey(a, b)) ?? 0
-      const today = (ctx.todayGameCount.get(a) ?? 0) + (ctx.todayGameCount.get(b) ?? 0)
-      const score: Triple = [meet, today, rng()]
+      let score: Triple
+      if (ctx.roundMode && ctx.handicapOf) {
+        const hA = ctx.handicapOf(a)
+        const hB = ctx.handicapOf(b)
+        const diff = Math.abs(hA - hB)
+        let penalty: number
+        if (ctx.roundMode === 'r1') {
+          // 1부: 핸디 차 2점 미만이면 패널티
+          penalty = diff < 2 ? 1 : 0
+        } else {
+          // 2부: 허용 범위 초과면 패널티
+          penalty = diff > maxAllowedDiff(Math.max(hA, hB)) ? 1 : 0
+        }
+        score = [meet, penalty, rng()]
+      } else {
+        const today = (ctx.todayGameCount.get(a) ?? 0) + (ctx.todayGameCount.get(b) ?? 0)
+        score = [meet, today, rng()]
+      }
       if (bestScore === null || less(score, bestScore)) {
         bestScore = score
         best = { aId: a, bId: b }
@@ -89,7 +126,8 @@ const FORBIDDEN_WEIGHT = 1_000_000
 /**
  * 정기모임 2라운드 자동매칭.
  * - 홀수 참가자면 sitOutId(이제한)를 제외한 뒤 매칭.
- * - 2라운드는 1라운드 대진 상대를 피함.
+ * - 1라운드(교육): 핸디 차이 큰 순 → 맞대결 적은 순.
+ * - 2라운드(승부): 핸디 차이 작은 순 → 맞대결 적은 순 (1라운드 상대 회피).
  * - forbiddenPairs(예: 엄재익↔이제한)는 서로 매칭하지 않음.
  */
 export function matchTwoRounds(
@@ -97,6 +135,7 @@ export function matchTwoRounds(
   meetCount: Map<string, number>,
   sitOutId: string | null,
   forbiddenPairs?: Set<string>,
+  handicapOf?: (id: string) => number,
 ): { round1: Pair[]; round2: Pair[] } {
   let ids = [...allIds]
 
@@ -113,16 +152,26 @@ export function matchTwoRounds(
 
   const empty = new Map<string, number>()
 
-  // 1라운드
-  const round1 = matchAll({ waitingIds: ids, meetCount: base, todayGameCount: empty })
+  // 1라운드 — meetCount 우선, 핸디 차 2점 미만 쌍 회피
+  const round1 = matchAll({
+    waitingIds: ids,
+    meetCount: base,
+    todayGameCount: empty,
+    ...(handicapOf ? { roundMode: 'r1' as const, handicapOf } : {}),
+  })
 
-  // 2라운드: 1라운드 대진 상대를 meetCount에 +999 가중치
+  // 2라운드 — 1라운드 상대 회피(+999), meetCount 우선, 허용범위 초과 쌍 회피
   const boosted = new Map(base)
   for (const p of round1) {
     const k = pairKey(p.aId, p.bId)
     boosted.set(k, (boosted.get(k) ?? 0) + 999)
   }
-  const round2 = matchAll({ waitingIds: ids, meetCount: boosted, todayGameCount: empty })
+  const round2 = matchAll({
+    waitingIds: ids,
+    meetCount: boosted,
+    todayGameCount: empty,
+    ...(handicapOf ? { roundMode: 'r2' as const, handicapOf } : {}),
+  })
 
   return { round1, round2 }
 }
