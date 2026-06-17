@@ -312,7 +312,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     cancel(o.key)
     if (isPending) {
       const st = useApp.getState()
-      uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings }).catch(() => {})
+      uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger }).catch(() => {})
     }
   }
 
@@ -337,7 +337,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     deleteSession(session.id)
     const s = useApp.getState()
     try {
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
     } catch {
       // 업로드 실패해도 로컬에서는 삭제됨
     }
@@ -350,7 +350,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
       .map((o) => ({ round: o.round!, aId: o.aId, bId: o.bId, handicapA: o.handicapA, handicapB: o.handicapB }))
     publishLineup(session.id, lineup, sitOut)
     const s = useApp.getState()
-    await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+    await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
   }
 
   const typeLabel = isFlash ? '⚡ 번개모임' : '📋 정기모임'

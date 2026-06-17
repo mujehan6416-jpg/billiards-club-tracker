@@ -3,6 +3,7 @@ import { MembersTab } from './tabs/MembersTab'
 import { MeetingTab } from './tabs/MeetingTab'
 import { DashboardTab } from './tabs/DashboardTab'
 import { SettingsTab } from './tabs/SettingsTab'
+import { LedgerTab } from './tabs/LedgerTab'
 import { HomeTab } from './tabs/HomeTab'
 import { LoginScreen } from './tabs/LoginScreen'
 import { useAdmin } from './store/adminStore'
@@ -10,14 +11,15 @@ import { useAuth } from './store/authStore'
 import { useApp } from './store/appStore'
 import { downloadFromCloud } from './lib/cloudSync'
 
-type Tab = 'home' | 'members' | 'meeting' | 'dashboard' | 'settings'
+type Tab = 'home' | 'members' | 'meeting' | 'dashboard' | 'settings' | 'ledger'
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'home',      label: '홈',       icon: '🏠' },
-  { key: 'members',   label: '회원',     icon: '👥' },
-  { key: 'meeting',   label: '모임',     icon: '🎱' },
-  { key: 'dashboard', label: '대시보드', icon: '📊' },
-  { key: 'settings',  label: '설정',     icon: '⚙️' },
+  { key: 'home',      label: '홈',   icon: '🏠' },
+  { key: 'members',   label: '회원', icon: '👥' },
+  { key: 'meeting',   label: '모임', icon: '🎱' },
+  { key: 'dashboard', label: '통계', icon: '📊' },
+  { key: 'settings',  label: '설정', icon: '⚙️' },
+  { key: 'ledger',    label: '장부', icon: '📒' },
 ]
 
 function PinModal({ onClose }: { onClose: () => void }) {
@@ -173,6 +175,7 @@ export function App() {
         {tab === 'meeting'   && <MeetingTab />}
         {tab === 'dashboard' && <DashboardTab />}
         {tab === 'settings'  && <SettingsTab />}
+        {tab === 'ledger'    && <LedgerTab />}
       </main>
       <nav className="bottom-nav">
         {TABS.map((t) => (

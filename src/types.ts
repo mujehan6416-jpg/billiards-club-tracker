@@ -54,8 +54,26 @@ export interface Session {
   games: Game[]
 }
 
+export interface LedgerRecord {
+  id: string
+  date: string
+  note?: string
+  // 수입
+  inCashMembership: number      // 현금 회비
+  inCashDonation: number        // 현금 찬조금
+  inTransferMembership: number  // 계좌이체 회비
+  inTransferDonation: number    // 계좌이체 찬조금
+  inCardDonation: number        // 카드 찬조
+  inAnnualFee: number           // 이달 연회비
+  // 지출
+  outCash: number               // 현금 지출
+  outCard: number               // 체크카드 지출
+  outTransfer: number           // 계좌이체 지출
+}
+
 export interface AppState {
   members: Member[]
   sessions: Session[]
   settings: { lastBackupAt: string | null }
+  ledger: LedgerRecord[]
 }

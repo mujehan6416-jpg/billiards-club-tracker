@@ -88,7 +88,7 @@ function PendingGameRow({ game, sessionId, sessionDate, name }: {
     confirmGame(sessionId, game.id)
     try {
       const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
     } catch { /* ignore */ }
     setSaving(false)
   }
@@ -202,7 +202,7 @@ function PendingFlashCard({ sessions, members }: { sessions: Session[]; members:
                 if (!window.confirm(`${s.date} 번개모임 기록을 승인할까요?\n정규 통계에 반영됩니다.`)) return
                 approveSession(s.id)
                 const st = useApp.getState()
-                try { await uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings }) } catch { /* ignore */ }
+                try { await uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger }) } catch { /* ignore */ }
               }}>승인</button>
             </div>
           </div>
@@ -258,7 +258,7 @@ function HandicapEditCard({ members }: { members: Member[] }) {
     updateMember(m.id, { handicap: latestHandicap, handicapHistory: newHistory })
     try {
       const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
       setMsg(`${m.name} 에버리지 ${latestHandicap} 반영 완료`)
     } catch {
       setMsg(`${m.name} 에버리지 ${latestHandicap} 반영 완료 (클라우드 저장 실패)`)
@@ -307,7 +307,7 @@ function AdminMemberPwCard({ members }: { members: Member[] }) {
     setMemberPassword(memberId, pw)
     try {
       const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
       const m = members.find((x) => x.id === memberId)
       setMsg(`${m?.name ?? ''} 비밀번호 변경 완료`)
       setPw('')
@@ -357,7 +357,7 @@ function MyPasswordCard({ open, onToggle }: { open: boolean; onToggle: () => voi
     setSaving(true); setMsg('저장 중...')
     try {
       const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings })
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
       setMsg('비밀번호가 변경되었습니다.')
       setCur(''); setNext(''); setNext2('')
     } catch {
@@ -389,6 +389,7 @@ export function SettingsTab() {
   const members = useApp((s) => s.members)
   const sessions = useApp((s) => s.sessions)
   const settings = useApp((s) => s.settings)
+  const ledger = useApp((s) => s.ledger)
   const replaceAll = useApp((s) => s.replaceAll)
   const applyHandicapCsv = useApp((s) => s.applyHandicapCsv)
   const applyMemberCsv = useApp((s) => s.applyMemberCsv)
@@ -406,7 +407,7 @@ export function SettingsTab() {
   const [myPwOpen, setMyPwOpen] = useState(false)
 
   const onExportJson = () => {
-    exportJson({ members, sessions, settings }, todayStr())
+    exportJson({ members, sessions, settings, ledger }, todayStr())
     touchBackup()
     setMsg('JSON 백업 파일을 다운로드했습니다.')
   }
@@ -471,7 +472,7 @@ export function SettingsTab() {
     if (!confirm('현재 데이터를 클라우드에 저장합니다. 계속할까요?')) return
     setSyncing(true)
     try {
-      await uploadToCloud({ members, sessions, settings })
+      await uploadToCloud({ members, sessions, settings, ledger })
       setMsg('클라우드에 저장했습니다.')
     } catch (e) {
       setMsg('클라우드 저장 실패: ' + (e instanceof Error ? e.message : String(e)))
@@ -594,7 +595,7 @@ export function SettingsTab() {
             <span className="muted">데이터는 이 기기(브라우저)에만 저장됩니다.</span>
             <button className="block danger" onClick={() => {
               if (confirm('모든 회원·경기 기록이 삭제됩니다. 되돌릴 수 없습니다.')) {
-                replaceAll({ members: [], sessions: [], settings: { lastBackupAt: null } })
+                replaceAll({ members: [], sessions: [], settings: { lastBackupAt: null }, ledger: [] })
                 setMsg('전체 데이터를 초기화했습니다.')
               }
             }}>전체 초기화</button>

@@ -1,6 +1,6 @@
 ﻿import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AppState, Member, Game } from '../types'
+import type { AppState, Member, Game, LedgerRecord } from '../types'
 import { SEED_MEMBERS } from '../data/seedMembers'
 
 interface Store extends AppState {
@@ -18,6 +18,8 @@ interface Store extends AppState {
   confirmGame: (sessionId: string, gameId: string) => void
   updateGameResult: (sessionId: string, gameId: string, patch: Partial<Pick<Game, 'scoreA' | 'scoreB' | 'handicapA' | 'handicapB'>>) => void
   cleanupOldPending: () => void
+  upsertLedger: (record: Omit<LedgerRecord, 'id'> & { id?: string }) => void
+  deleteLedger: (id: string) => void
   touchBackup: () => void
   applyHandicapCsv: (rows: import('../lib/backup').HandicapRow[]) => void
   applyMemberCsv: (rows: import('../lib/backup').MemberRow[]) => void
@@ -35,6 +37,7 @@ export const useApp = create<Store>()(
       members: SEED_MEMBERS,
       sessions: [],
       settings: { lastBackupAt: null },
+      ledger: [],
 
       addMember: (name, handicap) =>
         set((s) => ({
@@ -137,6 +140,22 @@ export const useApp = create<Store>()(
               : ss,
           ),
         })),
+
+      upsertLedger: (record) =>
+        set((s) => {
+          const id = record.id ?? uid()
+          const full: LedgerRecord = { ...record, id }
+          const idx = s.ledger.findIndex((r) => r.id === id)
+          if (idx >= 0) {
+            const updated = [...s.ledger]
+            updated[idx] = full
+            return { ledger: updated }
+          }
+          return { ledger: [...s.ledger, full] }
+        }),
+
+      deleteLedger: (id) =>
+        set((s) => ({ ledger: s.ledger.filter((r) => r.id !== id) })),
 
       cleanupOldPending: () =>
         set((s) => {
@@ -271,7 +290,7 @@ export const useApp = create<Store>()(
           return { sessions }
         }),
 
-      replaceAll: (state) => set(() => ({ ...state })),
+      replaceAll: (state) => set(() => ({ ...state, ledger: state.ledger ?? [] })),
     }),
     { name: 'billiards-club-state' },
   ),
