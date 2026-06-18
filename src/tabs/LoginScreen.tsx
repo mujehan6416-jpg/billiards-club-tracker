@@ -37,10 +37,10 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
 
   return (
     <div style={{
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      height: '100vh', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      background: '#fff', padding: '24px 20px',
-      position: 'relative',
+      background: '#fff', padding: '16px 20px',
+      position: 'relative', gap: 8,
     }}>
       {/* 관리자 아이콘 — 우상단 */}
       <button
@@ -57,14 +57,13 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
       </button>
 
       {/* 로고 */}
-      <img src={logoSrc} alt="로고" style={{ width: 160, height: 160, objectFit: 'contain', marginBottom: 24 }} />
+      <img src={logoSrc} alt="로고" style={{ width: '150%', maxWidth: 720, height: 'auto', objectFit: 'contain' }} />
 
       {/* 로그인 카드 */}
       <div style={{
-        background: '#fff', borderRadius: 16, padding: '24px 20px',
+        background: '#fff', borderRadius: 16, padding: '20px 20px',
         width: '100%', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 12,
         border: '0.5px solid #e0e0e0',
-        marginBottom: 20,
       }}>
         <select
           value={name}
@@ -92,8 +91,8 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
       </div>
 
       {/* 클럽명 */}
-      <div style={{ fontSize: 13, color: '#888', marginBottom: 2 }}>성균관대학교 부산동문</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: '#072B61' }}>당신회</div>
+      <div style={{ fontSize: 26, color: '#555' }}>성균관대학교 부산동문</div>
+      <div style={{ fontSize: 36, fontWeight: 700, color: '#072B61' }}>당신회</div>
 
       {/* 관리자 PIN 모달 */}
       {showAdminModal && (
