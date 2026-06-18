@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { CalendarPicker } from '../components/CalendarPicker'
 import { useApp } from '../store/appStore'
 import type { LineupMatch, Member, Session } from '../types'
 import { buildMeetCount, matchAll, matchTwoRounds, pairKey } from '../logic/matching'
@@ -46,6 +47,12 @@ export function MeetingTab() {
   const daySessions = sessions.filter((s) => s.date === selectedDate)
   const current = daySessions.find((s) => s.id === selectedId) ?? daySessions[0] ?? null
 
+  const markedDates = useMemo(() => {
+    const set = new Set<string>()
+    sessions.forEach((s) => { if (s.games.some((g) => !g.pending)) set.add(s.date) })
+    return set
+  }, [sessions])
+
   const handleDateChange = (d: string) => {
     setSelectedDate(d)
     setSelectedId(null)
@@ -66,6 +73,7 @@ export function MeetingTab() {
         onDateChange={handleDateChange}
         onStart={handleStart}
         flashOnly={!isAdmin || creatingFlash}
+        markedDates={markedDates}
         onCancel={creatingFlash ? () => setCreatingFlash(false) : undefined}
       />
     )
@@ -83,17 +91,19 @@ export function MeetingTab() {
       selectedId={current.id}
       onSelectSession={setSelectedId}
       onAddFlash={() => setCreatingFlash(true)}
+      markedDates={markedDates}
     />
   )
 }
 
-function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = false, onCancel }: {
+function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = false, onCancel, markedDates }: {
   members: Member[]
   date: string
   onDateChange: (d: string) => void
   onStart: (ids: string[], type: 'regular' | 'flash') => void
   flashOnly?: boolean
   onCancel?: () => void
+  markedDates?: Set<string>
 }) {
   const PINNED = ['엄재익', '이제한']
   const active = [...members.filter((m) => m.active)].sort((a, b) => {
@@ -119,14 +129,8 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
     <div className="tab">
       <h2 className="tab-title">모임 시작</h2>
 
-      <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>📅 날짜</span>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => { onDateChange(e.target.value); setSelected(new Set()) }}
-          style={{ flex: 1 }}
-        />
+      <div className="card">
+        <CalendarPicker value={date} onChange={(d) => { onDateChange(d); setSelected(new Set()) }} markedDates={markedDates} />
       </div>
 
       {!flashOnly && (
@@ -180,7 +184,7 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
   )
 }
 
-function Board({ session, members, sessions, selectedDate, onDateChange, daySessions, selectedId, onSelectSession, onAddFlash }: {
+function Board({ session, members, sessions, selectedDate, onDateChange, daySessions, selectedId, onSelectSession, onAddFlash, markedDates }: {
   session: Session
   members: Member[]
   sessions: Session[]
@@ -190,6 +194,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   selectedId: string
   onSelectSession: (id: string) => void
   onAddFlash: () => void
+  markedDates?: Set<string>
 }) {
   const { isAdmin } = useAdmin()
   const addGame = useApp((s) => s.addGame)
@@ -431,9 +436,8 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
   return (
     <div className="tab">
-      <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 14, whiteSpace: 'nowrap' }}>📅 날짜</span>
-        <input type="date" value={selectedDate} onChange={(e) => onDateChange(e.target.value)} style={{ flex: 1 }} />
+      <div className="card">
+        <CalendarPicker value={selectedDate} onChange={onDateChange} markedDates={markedDates} />
       </div>
 
       {/* 같은 날 여러 세션이 있을 때 탭 선택 */}
