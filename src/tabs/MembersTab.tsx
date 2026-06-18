@@ -3,6 +3,7 @@ import { useApp } from '../store/appStore'
 import { memberStats } from '../logic/stats'
 import type { Member } from '../types'
 import { useAdmin } from '../store/adminStore'
+import { useAuth } from '../store/authStore'
 
 function calcRanks(members: Member[]): Map<string, number> {
   const active = members.filter((m) => m.active)
@@ -85,6 +86,8 @@ export function MembersTab() {
   const [editHcap, setEditHcap] = useState(20)
   const [detailId, setDetailId] = useState<string | null>(null)
   const { isAdmin } = useAdmin()
+  const { isGuest } = useAuth()
+  const blind = (n: string) => isGuest ? '●●●' : n
 
   const stats = useMemo(() => memberStats(sessions), [sessions])
   const statOf = (id: string) => stats.find((s) => s.memberId === id)
@@ -222,11 +225,11 @@ export function MembersTab() {
                   </>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => toggleDetail(m.id)}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', cursor: isGuest ? 'default' : 'pointer' }} onClick={() => !isGuest && toggleDetail(m.id)}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                          <span className="member-name" style={{ textDecoration: 'underline dotted', textUnderlineOffset: 3 }}>{m.name}</span>
-                          {ROLES[m.name] && (
+                          <span className="member-name" style={{ textDecoration: isGuest ? undefined : 'underline dotted', textUnderlineOffset: 3 }}>{blind(m.name)}</span>
+                          {!isGuest && ROLES[m.name] && (
                             <span style={{ fontSize: 10, background: '#e1f5ee', color: '#0f6e56', borderRadius: 4, padding: '2px 5px', whiteSpace: 'nowrap' }}>
                               {ROLES[m.name]}
                             </span>

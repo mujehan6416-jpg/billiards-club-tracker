@@ -4,6 +4,7 @@ import type { Member, Session } from '../types'
 import { winnerId } from '../logic/game'
 import { headToHead, memberStats, memberTimeline, winStreaks } from '../logic/stats'
 import { fmtScore } from '../lib/format'
+import { useAuth } from '../store/authStore'
 
 type View = 'ranking' | 'byDate' | 'h2h' | 'trend'
 
@@ -11,9 +12,10 @@ export function DashboardTab() {
   const members = useApp((s) => s.members)
   const sessions = useApp((s) => s.sessions)
   const [view, setView] = useState<View>('ranking')
+  const { isGuest } = useAuth()
 
   const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
-  const name = (id: string) => memberMap.get(id)?.name ?? '알수없음'
+  const name = (id: string) => isGuest ? '●●●' : (memberMap.get(id)?.name ?? '알수없음')
 
   return (
     <div className="tab">
@@ -27,8 +29,8 @@ export function DashboardTab() {
 
       {view === 'ranking' && <Ranking sessions={sessions} name={name} />}
       {view === 'byDate' && <ByDate sessions={sessions} name={name} />}
-      {view === 'h2h' && <H2H sessions={sessions} members={members} name={name} />}
-      {view === 'trend' && <Trend sessions={sessions} members={members} name={name} />}
+      {view === 'h2h' && <H2H sessions={sessions} members={members} name={name} isGuest={isGuest} />}
+      {view === 'trend' && <Trend sessions={sessions} members={members} name={name} isGuest={isGuest} />}
     </div>
   )
 }
@@ -87,8 +89,9 @@ function ByDate({ sessions, name }: { sessions: Session[]; name: (id: string) =>
   )
 }
 
-function H2H({ sessions, members, name }: { sessions: Session[]; members: Member[]; name: (id: string) => string }) {
+function H2H({ sessions, members, name, isGuest }: { sessions: Session[]; members: Member[]; name: (id: string) => string; isGuest: boolean }) {
   const opts = [...members].sort((a, b) => a.name.localeCompare(b.name))
+  const optLabel = (m: Member) => isGuest ? '●●●' : m.name
   const [aId, setA] = useState(opts[0]?.id ?? '')
   const [bId, setB] = useState(opts[1]?.id ?? '')
   if (opts.length < 2) return <p className="muted">회원이 2명 이상 필요합니다.</p>
@@ -104,13 +107,13 @@ function H2H({ sessions, members, name }: { sessions: Session[]; members: Member
       <div className="h2h-pick">
         <select value={aId} onChange={(e) => setA(e.target.value)}>
           {opts.map((m) => (
-            <option key={m.id} value={m.id}>{m.name}</option>
+            <option key={m.id} value={m.id}>{optLabel(m)}</option>
           ))}
         </select>
         <span className="muted">vs</span>
         <select value={bId} onChange={(e) => setB(e.target.value)}>
           {opts.map((m) => (
-            <option key={m.id} value={m.id}>{m.name}</option>
+            <option key={m.id} value={m.id}>{optLabel(m)}</option>
           ))}
         </select>
       </div>
@@ -131,7 +134,7 @@ function H2H({ sessions, members, name }: { sessions: Session[]; members: Member
   )
 }
 
-function Trend({ sessions, members, name }: { sessions: Session[]; members: Member[]; name: (id: string) => string }) {
+function Trend({ sessions, members, name, isGuest }: { sessions: Session[]; members: Member[]; name: (id: string) => string; isGuest: boolean }) {
   const opts = [...members].sort((a, b) => a.name.localeCompare(b.name))
   const [id, setId] = useState(opts[0]?.id ?? '')
   if (opts.length === 0) return <p className="muted">회원이 없습니다.</p>
@@ -141,7 +144,7 @@ function Trend({ sessions, members, name }: { sessions: Session[]; members: Memb
     <div>
       <select className="block" value={id} onChange={(e) => setId(e.target.value)}>
         {opts.map((m) => (
-          <option key={m.id} value={m.id}>{m.name}</option>
+          <option key={m.id} value={m.id}>{isGuest ? '●●●' : m.name}</option>
         ))}
       </select>
       {timeline.length === 0 ? (

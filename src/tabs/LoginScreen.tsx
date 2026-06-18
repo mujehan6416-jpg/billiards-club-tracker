@@ -18,7 +18,10 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
 
   const logoSrc = (import.meta as unknown as { env: { BASE_URL: string } }).env.BASE_URL + 'ICON-SKKU.jpg'
 
+  const isGuest = name === '__guest__'
+
   const tryLogin = () => {
+    if (isGuest) { onLogin('__guest__', 'GUEST'); return }
     const member = active.find((m) => m.name === name)
     if (!member) { setError('이름을 선택해 주세요.'); return }
     const pw = member.password ?? '0000'
@@ -74,16 +77,19 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
           {active.map((m) => (
             <option key={m.id} value={m.name}>{m.name}</option>
           ))}
+          <option value="__guest__">GUEST</option>
         </select>
 
-        <input
-          type="password"
-          placeholder="비밀번호"
-          value={password}
-          onChange={(e) => { setPassword(e.target.value); setError('') }}
-          onKeyDown={(e) => e.key === 'Enter' && tryLogin()}
-          style={{ width: '100%' }}
-        />
+        {!isGuest && (
+          <input
+            type="password"
+            placeholder="비밀번호"
+            value={password}
+            onChange={(e) => { setPassword(e.target.value); setError('') }}
+            onKeyDown={(e) => e.key === 'Enter' && tryLogin()}
+            style={{ width: '100%' }}
+          />
+        )}
 
         {error && <span style={{ fontSize: 13, color: '#c0392b' }}>{error}</span>}
 

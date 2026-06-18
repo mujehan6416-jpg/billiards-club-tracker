@@ -65,7 +65,7 @@ function PinModal({ onClose }: { onClose: () => void }) {
 
 function TopBar() {
   const { isAdmin, logout: adminLogout } = useAdmin()
-  const { memberName } = useAuth()
+  const { memberName, isGuest } = useAuth()
   const [showPin, setShowPin] = useState(false)
 
   if (isAdmin) {
@@ -85,6 +85,17 @@ function TopBar() {
         </div>
         {showPin && <PinModal onClose={() => setShowPin(false)} />}
       </>
+    )
+  }
+
+  if (isGuest) {
+    return (
+      <div style={{
+        background: '#888', color: '#fff', fontSize: 12,
+        padding: '5px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+      }}>
+        <span>🔍 GUEST 모드 (읽기 전용)</span>
+      </div>
     )
   }
 

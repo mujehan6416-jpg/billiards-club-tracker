@@ -9,6 +9,7 @@ import { fmtScore } from '../lib/format'
 import { buildResultText, shareImage, shareText } from '../lib/share'
 import { uploadToCloud } from '../lib/cloudSync'
 import { useAdmin } from '../store/adminStore'
+import { useAuth } from '../store/authStore'
 
 // 카톡 대진표용: 기본 장소 + 날짜별 예외 장소
 const LOCATION_DEFAULT = '수영 센텀당구클럽'
@@ -40,6 +41,7 @@ export function MeetingTab() {
   const sessions = useApp((s) => s.sessions)
   const createSession = useApp((s) => s.createSession)
   const { isAdmin } = useAdmin()
+  const { isGuest } = useAuth()
   const [selectedDate, setSelectedDate] = useState(todayStr())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creatingFlash, setCreatingFlash] = useState(false)
@@ -63,6 +65,38 @@ export function MeetingTab() {
     const id = createSession(selectedDate, ids, type)
     setSelectedId(id)
     setCreatingFlash(false)
+  }
+
+  if (isGuest) {
+    if (current) {
+      return (
+        <Board
+          key={current.id}
+          session={current}
+          members={members}
+          sessions={sessions}
+          selectedDate={selectedDate}
+          onDateChange={handleDateChange}
+          daySessions={daySessions}
+          selectedId={current.id}
+          onSelectSession={setSelectedId}
+          onAddFlash={() => {}}
+          markedDates={markedDates}
+          guestMode
+        />
+      )
+    }
+    return (
+      <div className="tab">
+        <h2 className="tab-title">모임</h2>
+        <div className="card">
+          <CalendarPicker value={selectedDate} onChange={handleDateChange} markedDates={markedDates} />
+        </div>
+        <p className="muted" style={{ textAlign: 'center', marginTop: 16 }}>
+          파란 점이 있는 날짜를 선택하면 경기 결과를 확인할 수 있습니다.
+        </p>
+      </div>
+    )
   }
 
   if (!current || creatingFlash) {
@@ -184,7 +218,7 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
   )
 }
 
-function Board({ session, members, sessions, selectedDate, onDateChange, daySessions, selectedId, onSelectSession, onAddFlash, markedDates }: {
+function Board({ session, members, sessions, selectedDate, onDateChange, daySessions, selectedId, onSelectSession, onAddFlash, markedDates, guestMode }: {
   session: Session
   members: Member[]
   sessions: Session[]
@@ -195,6 +229,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   onSelectSession: (id: string) => void
   onAddFlash: () => void
   markedDates?: Set<string>
+  guestMode?: boolean
 }) {
   const { isAdmin } = useAdmin()
   const addGame = useApp((s) => s.addGame)
@@ -205,7 +240,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   const publishLineup = useApp((s) => s.publishLineup)
 
   const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
-  const name = (id: string) => memberMap.get(id)?.name ?? '알수없음'
+  const name = (id: string) => guestMode ? '●●●' : (memberMap.get(id)?.name ?? '알수없음')
   const hcapOf = (id: string) => memberMap.get(id)?.handicap ?? 20
 
   // 게시된 대진표(session.lineup)를 작업 상태로 초기화 (이미 결과 입력된 경기는 제외)
@@ -229,8 +264,8 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
   const isFlash = session.type === 'flash'
   const isApproved = session.approved !== false
-  // 번개모임은 일반회원도 편집 가능
-  const canEdit = isAdmin || isFlash
+  // 번개모임은 일반회원도 편집 가능, GUEST는 편집 불가
+  const canEdit = !guestMode && (isAdmin || isFlash)
 
   // 이제한 ID (홀수 시 대기)
   const sitOutId = members.find((m) => m.name === '이제한')?.id ?? null

@@ -396,6 +396,7 @@ export function SettingsTab() {
   const applyGameCsv = useApp((s) => s.applyGameCsv)
   const touchBackup = useApp((s) => s.touchBackup)
   const { isAdmin } = useAdmin()
+  const { isGuest } = useAuth()
 
   const fileRef = useRef<HTMLInputElement>(null)
   const hcapFileRef = useRef<HTMLInputElement>(null)
@@ -496,19 +497,25 @@ export function SettingsTab() {
     <div className="tab">
       <h2 className="tab-title">설정</h2>
 
-      {!isAdmin && !showLogin && (
+      {isGuest && (
+        <div className="card col-card">
+          <span className="muted" style={{ textAlign: 'center' }}>GUEST 모드에서는 설정을 변경할 수 없습니다.</span>
+        </div>
+      )}
+
+      {!isGuest && !isAdmin && !showLogin && (
         <div className="card col-card">
           <span className="muted">관리자 기능을 사용하려면 PIN을 입력하세요.</span>
           <button className="block" onClick={() => setShowLogin(true)}>🔑 관리자 로그인</button>
         </div>
       )}
 
-      {!isAdmin && showLogin && <AdminLogin onSuccess={() => setShowLogin(false)} />}
+      {!isGuest && !isAdmin && showLogin && <AdminLogin onSuccess={() => setShowLogin(false)} />}
 
-      {/* 내 비밀번호 변경 (일반회원 항상 표시) */}
-      <MyPasswordCard open={myPwOpen} onToggle={() => setMyPwOpen((v) => !v)} />
+      {/* 내 비밀번호 변경 (일반회원 항상 표시, GUEST 제외) */}
+      {!isGuest && <MyPasswordCard open={myPwOpen} onToggle={() => setMyPwOpen((v) => !v)} />}
 
-      {isAdmin && (
+      {!isGuest && isAdmin && (
         <>
           {/* 1. 번개모임 세션 승인 대기 (맨 위) */}
           <PendingFlashCard sessions={sessions} members={members} />
