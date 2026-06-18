@@ -301,6 +301,10 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   const save = (o: Ongoing) => {
     const scoreA = Math.max(0, parseInt(o.scoreA || '0', 10) || 0)
     const scoreB = Math.max(0, parseInt(o.scoreB || '0', 10) || 0)
+    if (scoreA > o.handicapA || scoreB > o.handicapB) {
+      alert('오류: 핸디보다 많은 점수 입력')
+      return
+    }
     const endType = scoreA >= o.handicapA || scoreB >= o.handicapB ? 'cleared' : 'time'
     const isPending = isFlash && !isAdmin
     addGame(session.id, {
