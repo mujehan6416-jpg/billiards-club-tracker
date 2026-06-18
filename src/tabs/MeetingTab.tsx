@@ -494,11 +494,6 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         </div>
       )}
 
-      {/* === 일반회원 + 정기모임: 게시된 대진표 읽기 전용 === */}
-      {!canEdit && (
-        <LineupView lineup={session.lineup ?? []} sitOutIds={session.sitOutIds ?? []} name={name} />
-      )}
-
       {/* === 관리자 또는 번개모임: 대진 편집/점수 입력 === */}
       {canEdit && (
         <>
@@ -534,6 +529,10 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>⏸ 대기: {sitOut.map(name).join(', ')}</div>
           )}
         </>
+      )}
+
+      {!canEdit && session.games.filter((g) => !g.pending).length === 0 && (
+        <p className="muted" style={{ textAlign: 'center', padding: '20px 0' }}>아직 등록된 경기 결과가 없습니다.</p>
       )}
 
       {session.games.filter((g) => isAdmin || !g.pending).length > 0 && (
@@ -589,43 +588,6 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   )
 }
 
-// 일반회원용 읽기 전용 대진표
-function LineupView({ lineup, sitOutIds, name }: {
-  lineup: LineupMatch[]
-  sitOutIds: string[]
-  name: (id: string) => string
-}) {
-  if (lineup.length === 0) {
-    return <p className="muted" style={{ textAlign: 'center', padding: '20px 0' }}>대진표가 아직 게시되지 않았습니다.</p>
-  }
-  const renderRound = (round: number, label: string) => {
-    const matches = lineup.filter((m) => m.round === round)
-    if (matches.length === 0) return null
-    return (
-      <div style={{ marginTop: 6 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, margin: '6px 0', color: '#072B61' }}>{label}</h3>
-        <ul className="result-list">
-          {matches.map((m, i) => (
-            <li key={i} className="card result-row">
-              <span>{name(m.aId)}({m.handicapA})</span>
-              <span className="vs">vs</span>
-              <span className="right">{name(m.bId)}({m.handicapB})</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    )
-  }
-  return (
-    <div>
-      {renderRound(1, '1부 (16:00~17:00)')}
-      {renderRound(2, '2부 (17:00~18:00)')}
-      {sitOutIds.length > 0 && (
-        <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>⏸ 대기: {sitOutIds.map(name).join(', ')}</div>
-      )}
-    </div>
-  )
-}
 
 function LineupModal({ text, onPublish, onClose }: { text: string; onPublish: () => Promise<void>; onClose: () => void }) {
   const [status, setStatus] = useState<'idle' | 'saving' | 'done' | 'error'>('idle')
