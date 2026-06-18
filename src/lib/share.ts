@@ -34,10 +34,11 @@ const pct = (n: number) => (n * 100).toFixed(0) + '%'
 export function buildResultText(session: Session, members: Member[]): string {
   const name = (id: string) => members.find((m) => m.id === id)?.name ?? id
   const lines = [`[${session.date} 당구 모임 결과]`, '']
-  if (session.games.length === 0) {
+  const games = session.games.filter((g) => !g.pending)
+  if (games.length === 0) {
     lines.push('아직 경기 없음')
-  } else {
-    session.games.forEach((g, i) => {
+  } else if (session.type === 'flash') {
+    games.forEach((g, i) => {
       const win = winnerId(g)
       const mark = (id: string) => (win === id ? ' (승)' : '')
       lines.push(
@@ -45,6 +46,24 @@ export function buildResultText(session: Session, members: Member[]): string {
           ` vs ${name(g.playerBId)} ${g.scoreB}/${g.handicapB}(${pct(rate(g.scoreB, g.handicapB))})${mark(g.playerBId)}`,
       )
     })
+  } else {
+    const r1 = games.filter((g) => !g.round || g.round === 1)
+    const r2 = games.filter((g) => g.round === 2)
+    const addRound = (label: string, list: typeof games) => {
+      if (list.length === 0) return
+      lines.push(label)
+      list.forEach((g, i) => {
+        const win = winnerId(g)
+        const mark = (id: string) => (win === id ? ' (승)' : '')
+        lines.push(
+          `${i + 1}. ${name(g.playerAId)} ${g.scoreA}/${g.handicapA}(${pct(rate(g.scoreA, g.handicapA))})${mark(g.playerAId)}` +
+            ` vs ${name(g.playerBId)} ${g.scoreB}/${g.handicapB}(${pct(rate(g.scoreB, g.handicapB))})${mark(g.playerBId)}`,
+        )
+      })
+      lines.push('')
+    }
+    addRound('▶ 1라운드', r1)
+    addRound('▶ 2라운드', r2)
   }
   return lines.join('\n')
 }
