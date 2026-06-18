@@ -37,10 +37,10 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
 
   return (
     <div style={{
-      height: '100vh', display: 'flex', flexDirection: 'column',
+      height: '100dvh', display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      background: '#fff', padding: '16px 20px',
-      position: 'relative', gap: 8,
+      background: '#fff', padding: '12px 20px',
+      position: 'relative', gap: 6,
     }}>
       {/* 관리자 아이콘 — 우상단 */}
       <button
@@ -57,7 +57,7 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
       </button>
 
       {/* 로고 */}
-      <img src={logoSrc} alt="로고" style={{ width: '150%', maxWidth: 720, height: 'auto', objectFit: 'contain' }} />
+      <img src={logoSrc} alt="로고" style={{ width: '150%', maxWidth: 720, height: 'auto', objectFit: 'contain', marginBottom: '-14vw' }} />
 
       {/* 로그인 카드 */}
       <div style={{
