@@ -109,6 +109,7 @@ export function App() {
   const replaceAll = useApp((s) => s.replaceAll)
   const cleanupOldPending = useApp((s) => s.cleanupOldPending)
   const { login } = useAuth()
+  const { login: adminLogin } = useAdmin()
 
   useEffect(() => {
     cleanupOldPending()
@@ -153,7 +154,16 @@ export function App() {
   }
 
   if (!memberId) {
-    return <LoginScreen members={members} onLogin={login} />
+    return (
+      <LoginScreen
+        members={members}
+        onLogin={login}
+        onAdminLogin={(pin) => {
+          if (adminLogin(pin)) { login('__admin__', '관리자'); return true }
+          return false
+        }}
+      />
+    )
   }
 
   return (
