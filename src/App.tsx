@@ -19,7 +19,6 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'meeting',   label: '모임', icon: '🎱' },
   { key: 'dashboard', label: '통계', icon: '📊' },
   { key: 'settings',  label: '설정', icon: '⚙️' },
-  { key: 'ledger',    label: '장부', icon: '📒' },
 ]
 
 function PinModal({ onClose }: { onClose: () => void }) {

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { CalendarPicker } from '../components/CalendarPicker'
 import { useApp } from '../store/appStore'
 import type { LineupMatch, Member, Session } from '../types'
@@ -539,51 +539,71 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         <p className="muted" style={{ textAlign: 'center', padding: '20px 0' }}>아직 등록된 경기 결과가 없습니다.</p>
       )}
 
-      {session.games.filter((g) => isAdmin || !g.pending).length > 0 && (
-        <div className="results">
-          <div className="results-head">
-            <span className="muted">완료된 경기</span>
-            {isAdmin && session.games.some((g) => g.pending) && (
-              <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 3, background: '#fff3cd', color: '#856404', fontWeight: 600 }}>
-                승인대기 {session.games.filter((g) => g.pending).length}건
+      {session.games.filter((g) => isAdmin || !g.pending).length > 0 && (() => {
+        const visibleGames = session.games.filter((g) => isAdmin || !g.pending)
+        const renderGameRow = (g: typeof visibleGames[0]) => {
+          const win = winnerId(g)
+          return (
+            <li key={g.id} className="card result-row" style={g.pending ? { opacity: 0.75 } : undefined}>
+              <span className={win === g.playerAId ? 'win' : ''}>
+                {name(g.playerAId)} {fmtScore(g.scoreA, g.handicapA)}
               </span>
-            )}
-            <div className="share-buttons">
-              <button onClick={async () => {
-                const copied = await shareText(buildResultText(session, members))
-                if (copied) alert('결과를 클립보드에 복사했습니다.')
-              }}>텍스트 공유</button>
-              <button onClick={() => {
-                if (resultsRef.current) shareImage(resultsRef.current, `당구결과-${session.date}.png`)
-              }}>이미지 공유</button>
+              <span className="vs">vs</span>
+              <span className={win === g.playerBId ? 'win right' : 'right'}>
+                {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
+              </span>
+              {g.pending && (
+                <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#fff3cd', color: '#856404', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  승인대기
+                </span>
+              )}
+              {canEdit && (
+                <button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>
+              )}
+            </li>
+          )
+        }
+        const r1 = visibleGames.filter((g) => !g.round || g.round === 1)
+        const r2 = visibleGames.filter((g) => g.round === 2)
+        return (
+          <div className="results">
+            <div className="results-head">
+              <span className="muted">완료된 경기</span>
+              {isAdmin && session.games.some((g) => g.pending) && (
+                <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 3, background: '#fff3cd', color: '#856404', fontWeight: 600 }}>
+                  승인대기 {session.games.filter((g) => g.pending).length}건
+                </span>
+              )}
+              <div className="share-buttons">
+                <button onClick={async () => {
+                  const copied = await shareText(buildResultText(session, members))
+                  if (copied) alert('결과를 클립보드에 복사했습니다.')
+                }}>텍스트 공유</button>
+                <button onClick={() => {
+                  if (resultsRef.current) shareImage(resultsRef.current, `당구결과-${session.date}.png`)
+                }}>이미지 공유</button>
+              </div>
+            </div>
+            <div ref={resultsRef as unknown as React.RefObject<HTMLDivElement>}>
+              {!isFlash && r1.length > 0 && (
+                <>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#072B61', margin: '6px 0 4px' }}>1라운드</div>
+                  <ul className="result-list">{r1.map(renderGameRow)}</ul>
+                </>
+              )}
+              {!isFlash && r2.length > 0 && (
+                <>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#072B61', margin: '10px 0 4px' }}>2라운드</div>
+                  <ul className="result-list">{r2.map(renderGameRow)}</ul>
+                </>
+              )}
+              {isFlash && (
+                <ul className="result-list">{visibleGames.map(renderGameRow)}</ul>
+              )}
             </div>
           </div>
-          <ul className="result-list" ref={resultsRef}>
-            {session.games.filter((g) => isAdmin || !g.pending).map((g) => {
-              const win = winnerId(g)
-              return (
-                <li key={g.id} className="card result-row" style={g.pending ? { opacity: 0.75 } : undefined}>
-                  <span className={win === g.playerAId ? 'win' : ''}>
-                    {name(g.playerAId)} {fmtScore(g.scoreA, g.handicapA)}
-                  </span>
-                  <span className="vs">vs</span>
-                  <span className={win === g.playerBId ? 'win right' : 'right'}>
-                    {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
-                  </span>
-                  {g.pending && (
-                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#fff3cd', color: '#856404', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                      승인대기
-                    </span>
-                  )}
-                  {canEdit && (
-                    <button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
+        )
+      })()}
 
       {lineupText !== null && (
         <LineupModal text={lineupText} onPublish={doPublish} onClose={() => setLineupText(null)} />
