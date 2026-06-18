@@ -498,47 +498,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         </div>
       )}
 
-      {/* === 관리자 또는 번개모임: 대진 편집/점수 입력 === */}
-      {canEdit && (
-        <>
-          {editAttendees && (
-            <AttendeeEditor
-              members={members}
-              attendeeIds={session.attendeeIds}
-              onChange={(ids) => setAttendees(session.id, ids)}
-            />
-          )}
-
-          <div className="board-actions">
-            {isFlash ? (
-              <button className="primary grow" disabled={session.attendeeIds.length < 2} onClick={autoMatchFlash}>
-                🔀 자동매칭
-              </button>
-            ) : (
-              <>
-                <button className="primary grow" disabled={session.attendeeIds.length < 2} onClick={autoMatch2Rounds}>
-                  🔀 자동매칭 (2라운드)
-                </button>
-                <button className="grow" disabled={ongoing.length === 0} onClick={() => setLineupText(buildLineupText())}>
-                  📋 카톡 대진표
-                </button>
-              </>
-            )}
-          </div>
-
-          {started && renderRoundGroup(1)}
-          {!isFlash && started && renderRoundGroup(2)}
-
-          {sitOut.length > 0 && (
-            <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>⏸ 대기: {sitOut.map(name).join(', ')}</div>
-          )}
-        </>
-      )}
-
-      {!canEdit && session.games.filter((g) => !g.pending).length === 0 && (
-        <p className="muted" style={{ textAlign: 'center', padding: '20px 0' }}>아직 등록된 경기 결과가 없습니다.</p>
-      )}
-
+      {/* 결과가 있으면 결과 먼저, 그 다음 매칭 편집 UI */}
       {session.games.filter((g) => isAdmin || !g.pending).length > 0 && (() => {
         const visibleGames = session.games.filter((g) => isAdmin || !g.pending)
         const renderGameRow = (g: typeof visibleGames[0]) => {
@@ -604,6 +564,47 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
           </div>
         )
       })()}
+
+      {!canEdit && session.games.filter((g) => !g.pending).length === 0 && (
+        <p className="muted" style={{ textAlign: 'center', padding: '20px 0' }}>아직 등록된 경기 결과가 없습니다.</p>
+      )}
+
+      {/* === 관리자 또는 번개모임: 대진 편집/점수 입력 === */}
+      {canEdit && (
+        <>
+          {editAttendees && (
+            <AttendeeEditor
+              members={members}
+              attendeeIds={session.attendeeIds}
+              onChange={(ids) => setAttendees(session.id, ids)}
+            />
+          )}
+
+          <div className="board-actions">
+            {isFlash ? (
+              <button className="primary grow" disabled={session.attendeeIds.length < 2} onClick={autoMatchFlash}>
+                🔀 자동매칭
+              </button>
+            ) : (
+              <>
+                <button className="primary grow" disabled={session.attendeeIds.length < 2} onClick={autoMatch2Rounds}>
+                  🔀 자동매칭 (2라운드)
+                </button>
+                <button className="grow" disabled={ongoing.length === 0} onClick={() => setLineupText(buildLineupText())}>
+                  📋 카톡 대진표
+                </button>
+              </>
+            )}
+          </div>
+
+          {started && renderRoundGroup(1)}
+          {!isFlash && started && renderRoundGroup(2)}
+
+          {sitOut.length > 0 && (
+            <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>⏸ 대기: {sitOut.map(name).join(', ')}</div>
+          )}
+        </>
+      )}
 
       {lineupText !== null && (
         <LineupModal text={lineupText} onPublish={doPublish} onClose={() => setLineupText(null)} />
