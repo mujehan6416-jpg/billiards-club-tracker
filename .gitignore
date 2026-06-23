@@ -9,3 +9,6 @@ coverage
 # 개인 데이터는 공개 저장소에 올리지 않음 (회원 실명 등)
 *.csv
 billiards-seed-import.json
+
+# 내부 트러블슈팅 메모 (공개 저장소에 올리지 않음)
+TROUBLESHOOTING.md
