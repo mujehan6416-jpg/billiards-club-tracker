@@ -7,13 +7,19 @@ interface Props {
   onAdminLogin?: (pin: string) => boolean
 }
 
-// 마지막으로 로그인한 회원 id (기기별 정보 — 앱 상태와 분리 저장)
+// 마지막으로 로그인한 회원 (기기별 정보 — 앱 상태와 분리 저장)
+// id가 기본 키, 이름은 클라우드 동기화 등으로 id가 바뀌었을 때의 예비 키
 const LAST_LOGIN_KEY = 'billiards-last-login-id'
+const LAST_LOGIN_NAME_KEY = 'billiards-last-login-name'
 
 export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
   const sorted = [...members.filter((m) => m.active)].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   // 마지막 로그인 회원이 활성 회원이면 리스트 맨 위로 (없으면 기존 정렬 그대로)
-  const lastMember = sorted.find((m) => m.id === localStorage.getItem(LAST_LOGIN_KEY)) ?? null
+  const lastId = localStorage.getItem(LAST_LOGIN_KEY)
+  const lastName = localStorage.getItem(LAST_LOGIN_NAME_KEY)
+  const lastMember = sorted.find((m) => m.id === lastId)
+    ?? (lastName ? sorted.find((m) => m.name === lastName) : undefined)
+    ?? null
   const active = lastMember
     ? [lastMember, ...sorted.filter((m) => m.id !== lastMember.id)]
     : sorted
@@ -35,6 +41,7 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
     const pw = member.password ?? '0000'
     if (password !== pw) { setError('비밀번호가 틀렸습니다.'); return }
     localStorage.setItem(LAST_LOGIN_KEY, member.id)
+    localStorage.setItem(LAST_LOGIN_NAME_KEY, member.name)
     onLogin(member.id, member.name)
   }
 
@@ -77,6 +84,15 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
         width: '100%', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 12,
         border: '0.5px solid #e0e0e0',
       }}>
+        {lastMember && (
+          <div style={{
+            fontSize: 15, lineHeight: 1.5, color: '#072B61', background: '#eef3fb',
+            borderRadius: 8, padding: '10px 12px',
+          }}>
+            👤 최근 로그인: <b>{lastMember.name}</b>
+            {name === lastMember.name && ' — 비밀번호만 입력하세요'}
+          </div>
+        )}
         <select
           value={name}
           onChange={(e) => { setName(e.target.value); setError('') }}

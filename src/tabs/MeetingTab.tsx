@@ -65,6 +65,9 @@ export function MeetingTab() {
     const id = createSession(selectedDate, ids, type)
     setSelectedId(id)
     setCreatingFlash(false)
+    // 참석자 선택 화면에서 아래로 스크롤된 상태 그대로 남으면
+    // 자동/수동매칭 버튼이 화면 위쪽 밖에 있게 되므로 맨 위로 이동
+    window.scrollTo({ top: 0 })
   }
 
   if (isGuest) {
@@ -172,14 +175,14 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
           <button
             className={meetingType === 'regular' ? 'primary grow' : 'grow'}
             onClick={() => setMeetingType('regular')}
-            style={{ flex: 1, fontSize: 16, padding: '13px 8px' }}
+            style={{ flex: 1, fontSize: 18, padding: '15px 8px' }}
           >
             📋 정기모임
           </button>
           <button
             className={meetingType === 'flash' ? 'primary grow' : 'grow'}
             onClick={() => setMeetingType('flash')}
-            style={{ flex: 1, fontSize: 16, padding: '13px 8px' }}
+            style={{ flex: 1, fontSize: 18, padding: '15px 8px' }}
           >
             ⚡ 번개모임
           </button>
@@ -187,7 +190,7 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
       )}
 
       {(meetingType === 'flash' || flashOnly) && (
-        <div style={{ fontSize: 15, lineHeight: 1.5, color: '#c07000', background: '#fff8e1', borderRadius: 8, padding: '12px 14px' }}>
+        <div style={{ fontSize: 16, lineHeight: 1.5, color: '#c07000', background: '#fff8e1', borderRadius: 8, padding: '12px 14px' }}>
           ⚡ 번개모임 기록은 관리자 승인 후 정규 통계에 반영됩니다.
         </div>
       )}
@@ -208,12 +211,12 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
         className="primary block"
         disabled={selected.size < 2}
         onClick={() => onStart([...selected], flashOnly ? 'flash' : meetingType)}
-        style={{ fontSize: 17, padding: 14 }}
+        style={{ fontSize: 18, padding: 15 }}
       >
         {selected.size}명으로 {(flashOnly || meetingType === 'flash') ? '번개' : '정기'}모임 시작
       </button>
       {onCancel && (
-        <button className="block" onClick={onCancel} style={{ marginTop: 4, fontSize: 15, padding: 12 }}>취소</button>
+        <button className="block" onClick={onCancel} style={{ marginTop: 4, fontSize: 16, padding: 13 }}>취소</button>
       )}
     </div>
   )
@@ -257,7 +260,8 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   )
   const [sitOut, setSitOut] = useState<string[]>(() => session.sitOutIds ?? [])
   const [editAttendees, setEditAttendees] = useState(false)
-  const [manualStarted, setManualStarted] = useState(false)
+  // 선택된 매칭 방식 (null = 아직 선택 안 함) — 선택된 버튼만 녹색 표시
+  const [matchMode, setMatchMode] = useState<'auto' | 'manual' | null>(null)
   const [manualSel, setManualSel] = useState<{ round: number; id: string } | null>(null)
   const [lineupText, setLineupText] = useState<string | null>(null)
   const resultsRef = useRef<HTMLUListElement>(null)
@@ -319,6 +323,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     setOngoing(round1.map((p) => makeOngoing(p.aId, p.bId, 1)))
     setSitOut(sit)
     setManualSel(null)
+    setMatchMode('auto')
   }
 
   const autoMatchFlash = () => {
@@ -330,6 +335,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     setOngoing(pairs.map((p) => makeOngoing(p.aId, p.bId, 1)))
     setSitOut(leftOut)
     setManualSel(null)
+    setMatchMode('auto')
   }
 
   // 미대진자 칩 탭 → 같은 라운드 두 명 선택 시 매칭
@@ -413,13 +419,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
   const typeLabel = isFlash ? '⚡ 번개모임' : '📋 정기모임'
   const typeBadgeStyle: React.CSSProperties = {
-    fontSize: 13, padding: '3px 9px', borderRadius: 4, fontWeight: 600,
+    fontSize: 14, padding: '4px 10px', borderRadius: 4, fontWeight: 600,
     background: isFlash ? '#fff3cd' : '#e1f5ee',
     color: isFlash ? '#856404' : '#0f6e56',
   }
 
   // 매칭이 시작된 후(자동/수동매칭/게시/결과)에만 라운드 그룹 표시
-  const started = ongoing.length > 0 || session.games.length > 0 || (session.lineup?.length ?? 0) > 0 || manualStarted
+  const started = ongoing.length > 0 || session.games.length > 0 || (session.lineup?.length ?? 0) > 0 || matchMode === 'manual'
 
   const renderRoundGroup = (round: number) => {
     const matches = ongoing.filter((o) => o.round === round)
@@ -430,25 +436,27 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
       : round === 1 ? '1부 (16:00~17:00)' : '2부 (17:00~18:00)'
     return (
       <div key={round} style={{ marginTop: 6 }}>
-        <h3 style={{ fontSize: 17, fontWeight: 700, margin: '6px 0', color: '#072B61' }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '6px 0', color: '#072B61' }}>
           {roundLabel}
         </h3>
         <div className="court-grid">
           {matches.map((o, i) => (
             <div key={o.key} className="card court">
               <div className="court-label">테이블 {i + 1}</div>
-              <div className="court-row">
-                <span className="court-name">{name(o.aId)}</span>
+              <div className="court-players">
+                <div className="court-player">
+                  <span className="court-name">{name(o.aId)}</span>
+                  <ScoreCell handicap={o.handicapA} score={o.scoreA}
+                    onHcap={(v) => patch(o.key, 'handicapA', v)}
+                    onScore={(v) => patch(o.key, 'scoreA', v)} />
+                </div>
                 <span className="vs">vs</span>
-                <span className="court-name right">{name(o.bId)}</span>
-              </div>
-              <div className="court-inputs">
-                <ScoreCell handicap={o.handicapA} score={o.scoreA}
-                  onHcap={(v) => patch(o.key, 'handicapA', v)}
-                  onScore={(v) => patch(o.key, 'scoreA', v)} />
-                <ScoreCell handicap={o.handicapB} score={o.scoreB}
-                  onHcap={(v) => patch(o.key, 'handicapB', v)}
-                  onScore={(v) => patch(o.key, 'scoreB', v)} />
+                <div className="court-player">
+                  <span className="court-name">{name(o.bId)}</span>
+                  <ScoreCell handicap={o.handicapB} score={o.scoreB}
+                    onHcap={(v) => patch(o.key, 'handicapB', v)}
+                    onScore={(v) => patch(o.key, 'scoreB', v)} />
+                </div>
               </div>
               <div className="court-buttons">
                 <button className="primary grow" onClick={() => save(o)}>저장</button>
@@ -459,20 +467,29 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         </div>
         {unmatched.length >= 1 && (
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
-            <span style={{ fontSize: 15, lineHeight: 1.5, fontWeight: 600, color: '#c0392b' }}>
+            <span style={{ fontSize: 16, lineHeight: 1.5, fontWeight: 600, color: '#c0392b' }}>
               ({isFlash ? '대기' : `${round}라운드 미대진자`}) {unmatched.map(name).join(', ')}
               {manualSel?.round === round ? ` — ${name(manualSel.id)} 선택됨, 상대 선택` : unmatched.length >= 2 ? ' — 두 명을 눌러 매칭' : ''}
             </span>
             {unmatched.length >= 2 && (
               <div className="chip-grid">
-                {unmatched.map((id) => (
-                  <button key={id}
-                    className={`chip${manualSel?.round === round && manualSel.id === id ? ' on' : ''}`}
-                    onClick={() => tapUnmatched(round, id)}>
-                    {name(id)}
-                  </button>
-                ))}
+                {unmatched.map((id) => {
+                  const isSel = manualSel?.round === round && manualSel.id === id
+                  return (
+                    <button key={id}
+                      className={`chip${isSel ? ' on' : ''}`}
+                      onClick={() => tapUnmatched(round, id)}>
+                      {isSel ? '✓ ' : ''}{name(id)}
+                    </button>
+                  )
+                })}
               </div>
+            )}
+            {manualSel?.round === round && (
+              <button style={{ alignSelf: 'flex-start', fontSize: 15, padding: '9px 16px' }}
+                onClick={() => setManualSel(null)}>
+                선택 취소
+              </button>
             )}
           </div>
         )}
@@ -507,7 +524,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
       {/* 번개모임이 없을 때 추가 버튼 */}
       {!hasFlashToday && (
-        <button style={{ fontSize: 15, padding: 12 }} onClick={onAddFlash}>⚡ 번개모임 추가</button>
+        <button style={{ fontSize: 16, padding: 13 }} onClick={onAddFlash}>⚡ 번개모임 추가</button>
       )}
 
       <div className="board-head">
@@ -516,7 +533,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             <h2 className="tab-title" style={{ margin: 0 }}>{session.date} 모임</h2>
             <span style={typeBadgeStyle}>{typeLabel}</span>
             {isFlash && !isApproved && (
-              <span style={{ fontSize: 13, padding: '3px 9px', borderRadius: 4, background: '#fce8e8', color: '#c0392b', fontWeight: 600 }}>
+              <span style={{ fontSize: 14, padding: '4px 10px', borderRadius: 4, background: '#fce8e8', color: '#c0392b', fontWeight: 600 }}>
                 승인 대기
               </span>
             )}
@@ -535,14 +552,14 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
       {isFlash && !isApproved && isAdmin && (
         <div style={{ background: '#fff8e1', borderRadius: 8, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <span style={{ fontSize: 15, lineHeight: 1.4 }}>⚡ 번개모임 기록을 정규 통계에 반영할까요?</span>
-          <button className="primary" style={{ fontSize: 15, padding: '12px 16px' }} onClick={() => { if (window.confirm('이 번개모임 기록을 승인할까요?')) approveSession(session.id) }}>
+          <span style={{ fontSize: 16, lineHeight: 1.4 }}>⚡ 번개모임 기록을 정규 통계에 반영할까요?</span>
+          <button className="primary" style={{ fontSize: 16, padding: '13px 18px' }} onClick={() => { if (window.confirm('이 번개모임 기록을 승인할까요?')) approveSession(session.id) }}>
             승인
           </button>
         </div>
       )}
       {isFlash && isApproved && (
-        <div style={{ fontSize: 15, color: '#0f6e56', background: '#e1f5ee', borderRadius: 8, padding: '10px 14px' }}>
+        <div style={{ fontSize: 16, color: '#0f6e56', background: '#e1f5ee', borderRadius: 8, padding: '11px 14px' }}>
           ✅ 승인됨 — 정규 통계에 반영됩니다.
         </div>
       )}
@@ -629,19 +646,21 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             />
           )}
 
-          {/* 매칭 방식 선택: 자동(1라운드 생성) / 수동(두 명씩 직접 선택) */}
+          {/* 매칭 방식 선택: 자동(1라운드 생성) / 수동(두 명씩 직접 선택) — 선택된 쪽만 녹색 */}
           <div className="board-actions">
-            <button className="primary grow" disabled={session.attendeeIds.length < 2}
+            <button className={matchMode === 'auto' ? 'primary grow' : 'grow'}
+              disabled={session.attendeeIds.length < 2}
               onClick={isFlash ? autoMatchFlash : autoMatchRegular}>
               🔀 자동매칭
             </button>
-            <button className="grow" disabled={session.attendeeIds.length < 2}
-              onClick={() => setManualStarted(true)}>
+            <button className={matchMode === 'manual' ? 'primary grow' : 'grow'}
+              disabled={session.attendeeIds.length < 2}
+              onClick={() => setMatchMode('manual')}>
               ✋ 수동매칭
             </button>
           </div>
           {!isFlash && (
-            <button className="block" style={{ fontSize: 15, padding: 12, marginBottom: 10 }}
+            <button className="block" style={{ fontSize: 16, padding: 13, marginBottom: 10 }}
               disabled={ongoing.length === 0} onClick={() => setLineupText(buildLineupText())}>
               📋 카톡 대진표
             </button>
@@ -714,7 +733,7 @@ function ScoreCell({ handicap, score, onHcap, onScore }: {
       <input className="score" inputMode="numeric" placeholder="득점" value={score}
         onChange={(e) => onScore(e.target.value.replace(/[^0-9]/g, ''))} />
       <label className="hcap-mini">
-        / 핸디
+        핸디
         <input type="number" min={1} value={handicap} onChange={(e) => onHcap(Math.max(1, +e.target.value))} />
       </label>
     </div>
