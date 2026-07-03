@@ -172,14 +172,14 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
           <button
             className={meetingType === 'regular' ? 'primary grow' : 'grow'}
             onClick={() => setMeetingType('regular')}
-            style={{ flex: 1 }}
+            style={{ flex: 1, fontSize: 16, padding: '13px 8px' }}
           >
             📋 정기모임
           </button>
           <button
             className={meetingType === 'flash' ? 'primary grow' : 'grow'}
             onClick={() => setMeetingType('flash')}
-            style={{ flex: 1 }}
+            style={{ flex: 1, fontSize: 16, padding: '13px 8px' }}
           >
             ⚡ 번개모임
           </button>
@@ -187,7 +187,7 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
       )}
 
       {(meetingType === 'flash' || flashOnly) && (
-        <div style={{ fontSize: 12, color: '#c07000', background: '#fff8e1', borderRadius: 8, padding: '8px 12px' }}>
+        <div style={{ fontSize: 15, lineHeight: 1.5, color: '#c07000', background: '#fff8e1', borderRadius: 8, padding: '12px 14px' }}>
           ⚡ 번개모임 기록은 관리자 승인 후 정규 통계에 반영됩니다.
         </div>
       )}
@@ -208,11 +208,12 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
         className="primary block"
         disabled={selected.size < 2}
         onClick={() => onStart([...selected], flashOnly ? 'flash' : meetingType)}
+        style={{ fontSize: 17, padding: 14 }}
       >
         {selected.size}명으로 {(flashOnly || meetingType === 'flash') ? '번개' : '정기'}모임 시작
       </button>
       {onCancel && (
-        <button className="block" onClick={onCancel} style={{ marginTop: 4 }}>취소</button>
+        <button className="block" onClick={onCancel} style={{ marginTop: 4, fontSize: 15, padding: 12 }}>취소</button>
       )}
     </div>
   )
@@ -256,6 +257,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   )
   const [sitOut, setSitOut] = useState<string[]>(() => session.sitOutIds ?? [])
   const [editAttendees, setEditAttendees] = useState(false)
+  const [manualStarted, setManualStarted] = useState(false)
   const [manualSel, setManualSel] = useState<{ round: number; id: string } | null>(null)
   const [lineupText, setLineupText] = useState<string | null>(null)
   const resultsRef = useRef<HTMLUListElement>(null)
@@ -308,15 +310,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     ongoing.length === 0 ||
     window.confirm('기존 대진과 입력 중인 점수가 사라질 수 있습니다.\n자동매칭을 다시 실행할까요?')
 
-  const autoMatch2Rounds = () => {
+  // 정기모임 자동매칭 — 1라운드만 생성 (2라운드는 수동 또는 재실행으로)
+  const autoMatchRegular = () => {
     if (!confirmRematch()) return
     const ids = [...session.attendeeIds]
     const sit = (ids.length % 2 !== 0 && sitOutId && ids.includes(sitOutId)) ? [sitOutId] : []
-    const { round1, round2 } = matchTwoRounds(ids, meetCount, sitOutId, forbiddenPairs, hcapOf)
-    setOngoing([
-      ...round1.map((p) => makeOngoing(p.aId, p.bId, 1)),
-      ...round2.map((p) => makeOngoing(p.aId, p.bId, 2)),
-    ])
+    const { round1 } = matchTwoRounds(ids, meetCount, sitOutId, forbiddenPairs, hcapOf)
+    setOngoing(round1.map((p) => makeOngoing(p.aId, p.bId, 1)))
     setSitOut(sit)
     setManualSel(null)
   }
@@ -413,13 +413,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
   const typeLabel = isFlash ? '⚡ 번개모임' : '📋 정기모임'
   const typeBadgeStyle: React.CSSProperties = {
-    fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 600,
+    fontSize: 13, padding: '3px 9px', borderRadius: 4, fontWeight: 600,
     background: isFlash ? '#fff3cd' : '#e1f5ee',
     color: isFlash ? '#856404' : '#0f6e56',
   }
 
-  // 매칭이 시작된 후(자동매칭/게시/결과)에만 라운드 그룹 표시
-  const started = ongoing.length > 0 || session.games.length > 0 || (session.lineup?.length ?? 0) > 0
+  // 매칭이 시작된 후(자동/수동매칭/게시/결과)에만 라운드 그룹 표시
+  const started = ongoing.length > 0 || session.games.length > 0 || (session.lineup?.length ?? 0) > 0 || manualStarted
 
   const renderRoundGroup = (round: number) => {
     const matches = ongoing.filter((o) => o.round === round)
@@ -430,7 +430,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
       : round === 1 ? '1부 (16:00~17:00)' : '2부 (17:00~18:00)'
     return (
       <div key={round} style={{ marginTop: 6 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, margin: '6px 0', color: '#072B61' }}>
+        <h3 style={{ fontSize: 17, fontWeight: 700, margin: '6px 0', color: '#072B61' }}>
           {roundLabel}
         </h3>
         <div className="court-grid">
@@ -459,7 +459,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         </div>
         {unmatched.length >= 1 && (
           <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#c0392b' }}>
+            <span style={{ fontSize: 15, lineHeight: 1.5, fontWeight: 600, color: '#c0392b' }}>
               ({isFlash ? '대기' : `${round}라운드 미대진자`}) {unmatched.map(name).join(', ')}
               {manualSel?.round === round ? ` — ${name(manualSel.id)} 선택됨, 상대 선택` : unmatched.length >= 2 ? ' — 두 명을 눌러 매칭' : ''}
             </span>
@@ -507,7 +507,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
       {/* 번개모임이 없을 때 추가 버튼 */}
       {!hasFlashToday && (
-        <button style={{ fontSize: 13 }} onClick={onAddFlash}>⚡ 번개모임 추가</button>
+        <button style={{ fontSize: 15, padding: 12 }} onClick={onAddFlash}>⚡ 번개모임 추가</button>
       )}
 
       <div className="board-head">
@@ -516,7 +516,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             <h2 className="tab-title" style={{ margin: 0 }}>{session.date} 모임</h2>
             <span style={typeBadgeStyle}>{typeLabel}</span>
             {isFlash && !isApproved && (
-              <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 4, background: '#fce8e8', color: '#c0392b', fontWeight: 600 }}>
+              <span style={{ fontSize: 13, padding: '3px 9px', borderRadius: 4, background: '#fce8e8', color: '#c0392b', fontWeight: 600 }}>
                 승인 대기
               </span>
             )}
@@ -534,15 +534,15 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
       </div>
 
       {isFlash && !isApproved && isAdmin && (
-        <div style={{ background: '#fff8e1', borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <span style={{ fontSize: 13 }}>⚡ 번개모임 기록을 정규 통계에 반영할까요?</span>
-          <button className="primary" onClick={() => { if (window.confirm('이 번개모임 기록을 승인할까요?')) approveSession(session.id) }}>
+        <div style={{ background: '#fff8e1', borderRadius: 8, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ fontSize: 15, lineHeight: 1.4 }}>⚡ 번개모임 기록을 정규 통계에 반영할까요?</span>
+          <button className="primary" style={{ fontSize: 15, padding: '12px 16px' }} onClick={() => { if (window.confirm('이 번개모임 기록을 승인할까요?')) approveSession(session.id) }}>
             승인
           </button>
         </div>
       )}
       {isFlash && isApproved && (
-        <div style={{ fontSize: 12, color: '#0f6e56', background: '#e1f5ee', borderRadius: 8, padding: '6px 12px' }}>
+        <div style={{ fontSize: 15, color: '#0f6e56', background: '#e1f5ee', borderRadius: 8, padding: '10px 14px' }}>
           ✅ 승인됨 — 정규 통계에 반영됩니다.
         </div>
       )}
@@ -629,22 +629,23 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             />
           )}
 
+          {/* 매칭 방식 선택: 자동(1라운드 생성) / 수동(두 명씩 직접 선택) */}
           <div className="board-actions">
-            {isFlash ? (
-              <button className="primary grow" disabled={session.attendeeIds.length < 2} onClick={autoMatchFlash}>
-                🔀 자동매칭
-              </button>
-            ) : (
-              <>
-                <button className="primary grow" disabled={session.attendeeIds.length < 2} onClick={autoMatch2Rounds}>
-                  🔀 자동매칭 (2라운드)
-                </button>
-                <button className="grow" disabled={ongoing.length === 0} onClick={() => setLineupText(buildLineupText())}>
-                  📋 카톡 대진표
-                </button>
-              </>
-            )}
+            <button className="primary grow" disabled={session.attendeeIds.length < 2}
+              onClick={isFlash ? autoMatchFlash : autoMatchRegular}>
+              🔀 자동매칭
+            </button>
+            <button className="grow" disabled={session.attendeeIds.length < 2}
+              onClick={() => setManualStarted(true)}>
+              ✋ 수동매칭
+            </button>
           </div>
+          {!isFlash && (
+            <button className="block" style={{ fontSize: 15, padding: 12, marginBottom: 10 }}
+              disabled={ongoing.length === 0} onClick={() => setLineupText(buildLineupText())}>
+              📋 카톡 대진표
+            </button>
+          )}
 
           {started && renderRoundGroup(1)}
           {!isFlash && started && renderRoundGroup(2)}

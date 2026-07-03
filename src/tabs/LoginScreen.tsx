@@ -7,9 +7,17 @@ interface Props {
   onAdminLogin?: (pin: string) => boolean
 }
 
+// 마지막으로 로그인한 회원 id (기기별 정보 — 앱 상태와 분리 저장)
+const LAST_LOGIN_KEY = 'billiards-last-login-id'
+
 export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
-  const active = [...members.filter((m) => m.active)].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  const [name, setName] = useState('')
+  const sorted = [...members.filter((m) => m.active)].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  // 마지막 로그인 회원이 활성 회원이면 리스트 맨 위로 (없으면 기존 정렬 그대로)
+  const lastMember = sorted.find((m) => m.id === localStorage.getItem(LAST_LOGIN_KEY)) ?? null
+  const active = lastMember
+    ? [lastMember, ...sorted.filter((m) => m.id !== lastMember.id)]
+    : sorted
+  const [name, setName] = useState(lastMember?.name ?? '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [showAdminModal, setShowAdminModal] = useState(false)
@@ -26,6 +34,7 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
     if (!member) { setError('이름을 선택해 주세요.'); return }
     const pw = member.password ?? '0000'
     if (password !== pw) { setError('비밀번호가 틀렸습니다.'); return }
+    localStorage.setItem(LAST_LOGIN_KEY, member.id)
     onLogin(member.id, member.name)
   }
 
@@ -75,7 +84,9 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
         >
           <option value="">이름 선택</option>
           {active.map((m) => (
-            <option key={m.id} value={m.name}>{m.name}</option>
+            <option key={m.id} value={m.name}>
+              {m.name}{lastMember && m.id === lastMember.id ? ' (최근 로그인)' : ''}
+            </option>
           ))}
           <option value="__guest__">GUEST</option>
         </select>

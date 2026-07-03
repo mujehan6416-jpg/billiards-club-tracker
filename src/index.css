@@ -92,7 +92,8 @@ body {
 input,
 select {
   font: inherit;
-  padding: 8px 10px;
+  font-size: 16px; /* 16px 미만이면 iOS에서 포커스 시 화면이 확대됨 */
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -189,9 +190,9 @@ button.block {
   margin: 8px 0;
 }
 .chip {
-  padding: 7px 12px;
-  border-radius: 16px;
-  font-size: 13px;
+  padding: 10px 16px;
+  border-radius: 20px;
+  font-size: 15px;
 }
 .chip.on {
   background: var(--green);
@@ -214,21 +215,25 @@ button.block {
   gap: 8px;
   margin: 10px 0;
 }
+.board-actions button {
+  padding: 13px 8px;
+  font-size: 16px;
+}
 
-/* court grid */
+/* court grid — 60세 이상 가독성을 위해 1열 + 큰 글자 */
 .court-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 .court {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .court-label {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
 }
 .court-row {
@@ -236,7 +241,7 @@ button.block {
   align-items: center;
   justify-content: space-between;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 18px;
 }
 .court-name {
   flex: 1;
@@ -246,35 +251,41 @@ button.block {
 }
 .vs {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
   padding: 0 4px;
 }
 .court-inputs {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 .score-cell {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 .score-cell .score {
   width: 100%;
   text-align: center;
+  font-size: 20px;
+  padding: 12px 10px;
+}
+.hcap-mini {
+  font-size: 14px;
 }
 .hcap-mini input {
-  width: 48px;
-  padding: 4px 6px;
+  width: 64px;
+  padding: 8px;
+  font-size: 16px;
 }
 .court-buttons {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 .court-buttons button {
-  padding: 8px;
-  font-size: 13px;
+  padding: 13px;
+  font-size: 16px;
 }
 .court.empty {
   align-items: center;
@@ -316,7 +327,7 @@ button.block {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 15px;
 }
 .result-row > span:first-child {
   flex: 1;
