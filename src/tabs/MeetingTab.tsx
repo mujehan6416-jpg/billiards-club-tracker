@@ -303,7 +303,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     round,
   })
 
+  // 자동매칭 재실행 시 기존 대진·입력 중 점수가 사라지므로 확인
+  const confirmRematch = () =>
+    ongoing.length === 0 ||
+    window.confirm('기존 대진과 입력 중인 점수가 사라질 수 있습니다.\n자동매칭을 다시 실행할까요?')
+
   const autoMatch2Rounds = () => {
+    if (!confirmRematch()) return
     const ids = [...session.attendeeIds]
     const sit = (ids.length % 2 !== 0 && sitOutId && ids.includes(sitOutId)) ? [sitOutId] : []
     const { round1, round2 } = matchTwoRounds(ids, meetCount, sitOutId, forbiddenPairs, hcapOf)
@@ -316,6 +322,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   }
 
   const autoMatchFlash = () => {
+    if (!confirmRematch()) return
     const ids = [...session.attendeeIds]
     const pairs = matchAll({ waitingIds: ids, meetCount, todayGameCount: new Map() })
     const matchedIds = new Set(pairs.flatMap((p) => [p.aId, p.bId]))
@@ -354,10 +361,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
       ...(isPending ? { pending: true } : {}),
     })
     cancel(o.key)
-    if (isPending) {
-      const st = useApp.getState()
-      uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger }).catch(() => {})
-    }
+    // 저장 직후 클라우드 반영 (관리자 정기/번개, 일반회원 pending 모두 동일)
+    const st = useApp.getState()
+    uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
+      .catch((err) => {
+        console.error('클라우드 업로드 실패:', err)
+        alert('경기는 기기에 저장되었지만 클라우드 동기화에 실패했습니다.\n네트워크 확인 후 설정 탭에서 수동 업로드해 주세요.')
+      })
   }
 
   // 카톡 배포용 대진표 텍스트 생성 (1부/2부 + 대기자)
