@@ -7,7 +7,7 @@ import { winnerId } from '../logic/game'
 import { todayStr } from '../lib/date'
 import { fmtScore } from '../lib/format'
 import { buildResultText, shareImage, shareText } from '../lib/share'
-import { uploadToCloud } from '../lib/cloudSync'
+import { uploadToCloud, UploadCancelledError } from '../lib/cloudSync'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
 
@@ -365,6 +365,10 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     const st = useApp.getState()
     uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
       .catch((err) => {
+        if (err instanceof UploadCancelledError) {
+          alert('클라우드 업로드를 취소했습니다.\n경기는 이 기기에만 저장되었습니다.')
+          return
+        }
         console.error('클라우드 업로드 실패:', err)
         alert('경기는 기기에 저장되었지만 클라우드 동기화에 실패했습니다.\n네트워크 확인 후 설정 탭에서 수동 업로드해 주세요.')
       })

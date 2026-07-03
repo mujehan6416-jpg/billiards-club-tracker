@@ -3,7 +3,7 @@ import { useApp } from '../store/appStore'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
 import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv, importGameCsv } from '../lib/backup'
-import { uploadToCloud, downloadFromCloud } from '../lib/cloudSync'
+import { uploadToCloud, downloadFromCloud, markSynced, UploadCancelledError } from '../lib/cloudSync'
 import { todayStr } from '../lib/date'
 import { winnerId } from '../logic/game'
 import { fmtScore } from '../lib/format'
@@ -476,7 +476,8 @@ export function SettingsTab() {
       await uploadToCloud({ members, sessions, settings, ledger })
       setMsg('클라우드에 저장했습니다.')
     } catch (e) {
-      setMsg('클라우드 저장 실패: ' + (e instanceof Error ? e.message : String(e)))
+      if (e instanceof UploadCancelledError) setMsg('업로드를 취소했습니다.')
+      else setMsg('클라우드 저장 실패: ' + (e instanceof Error ? e.message : String(e)))
     } finally { setSyncing(false) }
   }
 
@@ -484,9 +485,10 @@ export function SettingsTab() {
     if (!confirm('클라우드 데이터를 불러옵니다. 현재 데이터가 교체됩니다. 계속할까요?')) return
     setSyncing(true)
     try {
-      const state = await downloadFromCloud()
-      if (!state) { setMsg('클라우드에 저장된 데이터가 없습니다.'); return }
-      replaceAll(state)
+      const cloud = await downloadFromCloud()
+      if (!cloud) { setMsg('클라우드에 저장된 데이터가 없습니다.'); return }
+      replaceAll(cloud.state)
+      markSynced(cloud.updatedAt)
       setMsg('클라우드에서 불러왔습니다.')
     } catch (e) {
       setMsg('클라우드 불러오기 실패: ' + (e instanceof Error ? e.message : String(e)))

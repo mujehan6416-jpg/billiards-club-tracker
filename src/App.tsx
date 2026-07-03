@@ -9,7 +9,7 @@ import { LoginScreen } from './tabs/LoginScreen'
 import { useAdmin } from './store/adminStore'
 import { useAuth } from './store/authStore'
 import { useApp } from './store/appStore'
-import { downloadFromCloud } from './lib/cloudSync'
+import { downloadFromCloud, markSynced } from './lib/cloudSync'
 
 type Tab = 'home' | 'members' | 'meeting' | 'dashboard' | 'settings' | 'ledger'
 
@@ -124,7 +124,21 @@ export function App() {
   useEffect(() => {
     cleanupOldPending()
     downloadFromCloud()
-      .then((state) => { if (state) replaceAll(state) })
+      .then((cloud) => {
+        if (!cloud) return
+        // 이 기기에 클라우드보다 많은 기록이 있으면(업로드 누락 가능성) 덮어쓰기 전에 확인
+        const local = useApp.getState()
+        const gameCount = (ss: { games: unknown[] }[]) => ss.reduce((n, s) => n + s.games.length, 0)
+        const localAhead =
+          gameCount(local.sessions) > gameCount(cloud.state.sessions) ||
+          local.sessions.length > cloud.state.sessions.length ||
+          local.ledger.length > (cloud.state.ledger ?? []).length
+        if (localAhead && !window.confirm(
+          '이 기기에 클라우드보다 많은 기록이 저장되어 있습니다.\n클라우드 데이터로 덮어쓰면 이 기기의 최근 기록이 사라질 수 있습니다.\n클라우드 데이터를 불러올까요?',
+        )) return
+        replaceAll(cloud.state)
+        markSynced(cloud.updatedAt)
+      })
       .catch(() => {})
       .finally(() => setSyncing(false))
   }, [])
