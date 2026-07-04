@@ -1,6 +1,7 @@
-﻿import { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useApp } from '../store/appStore'
 import { memberStats } from '../logic/stats'
+import type { MemberStat } from '../logic/stats'
 import type { Member } from '../types'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
@@ -15,6 +16,103 @@ function calcRanks(members: Member[]): Map<string, number> {
     rankMap.set(sorted[i].id, rank)
   }
   return rankMap
+}
+
+// 핸디 구간별 아바타 색상 (UI 표시 전용, 데이터는 변경하지 않음)
+function getHandicapColor(handicap: number): string {
+  const h = typeof handicap === 'number' && Number.isFinite(handicap) ? handicap : -1
+  if (h < 10) return '#9CA3AF' // 입문/초급 (핸디 없음/0~9 포함)
+  if (h < 15) return '#2563EB' // 기본 실력
+  if (h < 20) return '#22C55E' // 중급
+  if (h < 25) return '#FACC15' // 상급 진입
+  if (h < 30) return '#F97316' // 상급
+  if (h < 35) return '#EF4444' // 고수
+  return '#8B5CF6' // 35점 이상: 최상급
+}
+// 배경색 위에서 아이콘이 잘 보이도록 대비색 결정 (노랑만 진한 글자)
+const avatarIconColor = (bg: string) => (bg === '#FACC15' ? '#111827' : '#FFFFFF')
+
+// 단순화된 당구 자세 실루엣 (큐대를 잡고 몸을 숙여 조준하는 모습) — currentColor로 색상 제어
+function BilliardsAvatarIcon({ size, color }: { size: number; color: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ color }}>
+      <circle cx="7.2" cy="5" r="2.1" fill="currentColor" />
+      <path d="M7.6 7.3 L12.5 12 L20.5 18.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 9.6 L6 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12.5 12 L10.3 18.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12.5 12 L15.3 17.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="21" cy="18.8" r="1.3" fill="currentColor" />
+    </svg>
+  )
+}
+
+function Avatar({ handicap, size }: { handicap: number; size: number }) {
+  const bg = getHandicapColor(handicap)
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%', background: bg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    }}>
+      <BilliardsAvatarIcon size={Math.round(size * 0.62)} color={avatarIconColor(bg)} />
+    </div>
+  )
+}
+
+// 직책별 배지 색상: 회장(초록) / 총무(파랑) / 그 외(회색)
+function roleBadgeStyle(role: string): { background: string; color: string } {
+  if (role.includes('회장')) return { background: '#DCFCE7', color: '#15803D' }
+  if (role.includes('총무')) return { background: '#DBEAFE', color: '#1D4ED8' }
+  return { background: '#F1F5F9', color: '#475569' }
+}
+
+// 승패 / 승률 표기 — 대시보드(stats.ts memberStats)와 동일한 값을 그대로 사용
+function winLossText(st: MemberStat | undefined): string {
+  if (!st || st.games === 0) return '0승 0패'
+  return `${st.wins}승 ${st.losses}패${st.draws ? ` ${st.draws}무` : ''}`
+}
+function winRateText(st: MemberStat | undefined): string {
+  if (!st || st.games === 0) return '승률 0%'
+  return `승률 ${Math.round(st.winRate * 100)}%`
+}
+
+const CARD_SIZES = {
+  hero: { avatar: 64, name: 30, badge: 16, hcapLabel: 16, hcapNum: 30, wl: 23, wr: 21 },
+  list: { avatar: 48, name: 24, badge: 15, hcapLabel: 15, hcapNum: 21, wl: 19, wr: 19 },
+} as const
+
+function MemberCardBody({ displayName, roleLabel, handicap, stat, size }: {
+  displayName: string
+  roleLabel?: string
+  handicap: number
+  stat: MemberStat | undefined
+  size: keyof typeof CARD_SIZES
+}) {
+  const s = CARD_SIZES[size]
+  const badge = roleLabel ? roleBadgeStyle(roleLabel) : null
+  return (
+    <div className="member-lines">
+      <Avatar handicap={handicap} size={s.avatar} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span className="member-name" style={{ fontSize: s.name }}>{displayName}</span>
+        {roleLabel && badge && (
+          <span className="role-badge" style={{ fontSize: s.badge, background: badge.background, color: badge.color }}>
+            {roleLabel}
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+        <span className="muted" style={{ fontSize: s.hcapLabel }}>핸디</span>
+        <span style={{ fontSize: s.hcapNum, fontWeight: 800 }}>{handicap}</span>
+      </div>
+      <span style={{ fontSize: s.wl, color: 'var(--muted)' }}>{winLossText(stat)}</span>
+      <span style={{
+        fontSize: s.wr, fontWeight: 700,
+        color: size === 'hero' ? '#2563EB' : 'var(--muted)',
+      }}>
+        {winRateText(stat)}
+      </span>
+    </div>
+  )
 }
 
 function MemberDetail({ member, rank, total, onClose }: {
@@ -71,11 +169,6 @@ function MemberDetail({ member, rank, total, onClose }: {
   )
 }
 
-// 승패(%) 텍스트: "10승 5패(66%)" / 기록 없으면 "기록 없음"
-function statText(st: ReturnType<typeof memberStats>[number] | undefined) {
-  return st ? `${st.wins}승 ${st.losses}패(${Math.round(st.winRate * 100)}%)` : '기록 없음'
-}
-
 export function MembersTab() {
   const members = useApp((s) => s.members)
   const sessions = useApp((s) => s.sessions)
@@ -108,8 +201,9 @@ export function MembersTab() {
     '현응렬': '고문',
     '조영일': '고문',
   }
-  // 카드에는 "당신회" 접두어 없이 짧게 표시 (예: 엄재익(회장))
+  // 카드에는 "당신회" 접두어 없이 짧게 표시 (예: [회장])
   const shortRole = (role: string) => role.replace(/^당신회\s*/, '')
+  const roleOf = (m: Member) => (!isGuest && ROLES[m.name]) ? shortRole(ROLES[m.name]) : undefined
 
   const me = !isGuest ? members.find((m) => m.id === memberId) : undefined
 
@@ -129,10 +223,12 @@ export function MembersTab() {
     return a.name.localeCompare(b.name)
   })
 
+  // 내 실적 카드에 이미 나온 로그인 회원은 목록에서 제외
+  const listSource = me ? sorted.filter((m) => m.id !== me.id) : sorted
   const searchTerm = search.trim()
   const filtered = searchTerm
-    ? sorted.filter((m) => m.name.includes(searchTerm))
-    : sorted
+    ? listSource.filter((m) => m.name.includes(searchTerm) || (ROLES[m.name] ?? '').includes(searchTerm))
+    : listSource
 
   const startEdit = (id: string, curName: string, curHcap: number) => {
     setEditId(id)
@@ -159,27 +255,30 @@ export function MembersTab() {
     <div className="tab">
       <h2 className="tab-title">회원</h2>
 
-      {me && (
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 8 }}>
-          <span className="muted" style={{ fontSize: 15 }}>내 실적</span>
-          <div className="member-lines">
-            <span className="member-name">
-              {me.name}{ROLES[me.name] ? `(${shortRole(ROLES[me.name])})` : ''}
-            </span>
-            <span className="member-hcap">핸디 {me.handicap}</span>
-            <span className="member-stat">{statText(statOf(me.id))}</span>
-          </div>
-        </div>
-      )}
-
       {!isGuest && (
         <input
           value={search}
           placeholder="회원 이름 검색"
-          className="block"
-          style={{ marginBottom: 10 }}
+          className="block member-search"
           onChange={(e) => setSearch(e.target.value)}
         />
+      )}
+
+      {me ? (
+        <div className="card member-hero">
+          <span className="hero-badge">내 실적</span>
+          <MemberCardBody
+            displayName={me.name}
+            roleLabel={roleOf(me)}
+            handicap={me.handicap}
+            stat={statOf(me.id)}
+            size="hero"
+          />
+        </div>
+      ) : (
+        <p className="muted" style={{ textAlign: 'center', padding: '10px 0' }}>
+          회원 로그인 시 내 실적이 표시됩니다.
+        </p>
       )}
 
       {isAdmin && (
@@ -265,15 +364,16 @@ export function MembersTab() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 10 }}>
                     <div
-                      className="member-lines"
                       style={{ cursor: isGuest ? 'default' : 'pointer' }}
                       onClick={() => !isGuest && toggleDetail(m.id)}
                     >
-                      <span className="member-name" style={{ textDecoration: isGuest ? undefined : 'underline dotted', textUnderlineOffset: 4 }}>
-                        {blind(m.name)}{!isGuest && ROLES[m.name] ? `(${shortRole(ROLES[m.name])})` : ''}
-                      </span>
-                      <span className="member-hcap">핸디 {m.handicap}</span>
-                      <span className="member-stat">{statText(st)}</span>
+                      <MemberCardBody
+                        displayName={blind(m.name)}
+                        roleLabel={roleOf(m)}
+                        handicap={m.handicap}
+                        stat={st}
+                        size="list"
+                      />
                     </div>
                     {isAdmin && (
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -299,4 +399,3 @@ export function MembersTab() {
     </div>
   )
 }
-
