@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useApp } from '../store/appStore'
 import { memberStats } from '../logic/stats'
 import type { MemberStat } from '../logic/stats'
@@ -29,33 +29,27 @@ function getHandicapColor(handicap: number): string {
   if (h < 35) return '#EF4444' // 고수
   return '#8B5CF6' // 35점 이상: 최상급
 }
-// 배경색 위에서 아이콘이 잘 보이도록 대비색 결정 (노랑만 진한 글자)
-const avatarIconColor = (bg: string) => (bg === '#FACC15' ? '#111827' : '#FFFFFF')
-
-// 단순화된 당구 자세 실루엣 (큐대를 잡고 몸을 숙여 조준하는 모습) — currentColor로 색상 제어
-function BilliardsAvatarIcon({ size, color }: { size: number; color: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ color }}>
-      <circle cx="7.2" cy="5" r="2.1" fill="currentColor" />
-      <path d="M7.6 7.3 L12.5 12 L20.5 18.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M10 9.6 L6 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M12.5 12 L10.3 18.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M12.5 12 L15.3 17.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <circle cx="21" cy="18.8" r="1.3" fill="currentColor" />
-    </svg>
-  )
-}
+// 사용자가 제공한 당구 자세 아이콘(public/billiards_player.png)을 CSS mask로 사용 —
+// 원본은 배경이 불투명한 흰색(RGB, 알파 채널 없음)이라 CSS mask가 실루엣을 인식하지 못해,
+// 흰 배경을 투명 알파로 변환한 마스크 전용 파생 파일(billiards_player_icon.png)을 사용한다.
+// PNG를 색상별로 여러 장 복제하지 않고, 실루엣 형태(mask)만 가져와 배경색으로 핸디별 색을 입힌다.
+const BILLIARDS_ICON_URL = `${(import.meta as unknown as { env: { BASE_URL: string } }).env.BASE_URL}billiards_player_icon.png`
 
 function Avatar({ handicap, size }: { handicap: number; size: number }) {
-  const bg = getHandicapColor(handicap)
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: '50%', background: bg,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    }}>
-      <BilliardsAvatarIcon size={Math.round(size * 0.62)} color={avatarIconColor(bg)} />
-    </div>
-  )
+  const color = getHandicapColor(handicap)
+  const maskStyle: React.CSSProperties = {
+    width: size, height: size, flexShrink: 0,
+    backgroundColor: color,
+    WebkitMaskImage: `url("${BILLIARDS_ICON_URL}")`,
+    maskImage: `url("${BILLIARDS_ICON_URL}")`,
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'center',
+    maskPosition: 'center',
+  }
+  return <div role="img" aria-label="당구 자세 아이콘" style={maskStyle} />
 }
 
 // 직책별 배지 색상: 회장(초록) / 총무(파랑) / 그 외(회색)
