@@ -21,13 +21,13 @@ function calcRanks(members: Member[]): Map<string, number> {
 // 핸디 구간별 아바타 색상 (UI 표시 전용, 데이터는 변경하지 않음)
 function getHandicapColor(handicap: number): string {
   const h = typeof handicap === 'number' && Number.isFinite(handicap) ? handicap : -1
-  if (h < 10) return '#9CA3AF' // 입문/초급 (핸디 없음/0~9 포함)
+  if (h < 10) return '#6B7280' // 입문/초급 (핸디 없음/0~9 포함)
   if (h < 15) return '#2563EB' // 기본 실력
-  if (h < 20) return '#22C55E' // 중급
-  if (h < 25) return '#FACC15' // 상급 진입
-  if (h < 30) return '#F97316' // 상급
-  if (h < 35) return '#EF4444' // 고수
-  return '#8B5CF6' // 35점 이상: 최상급
+  if (h < 20) return '#16A34A' // 중급
+  if (h < 25) return '#EAB308' // 상급 진입
+  if (h < 30) return '#EA580C' // 상급
+  if (h < 35) return '#DC2626' // 고수
+  return '#7C3AED' // 35점 이상: 최상급
 }
 // 사용자가 제공한 당구 자세 아이콘(public/billiards_player.png)을 CSS mask로 사용 —
 // 원본은 배경이 불투명한 흰색(RGB, 알파 채널 없음)이라 CSS mask가 실루엣을 인식하지 못해,
@@ -88,11 +88,11 @@ function MemberCardBody({ displayName, roleLabel, handicap, stat, size }: {
 
   if (size === 'hero') {
     return (
-      <div className="member-card-inner">
+      <div className="member-card-inner hero-card">
         <CardIconBackground
           handicap={handicap}
-          opacity={0.14}
-          style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 150, height: 150 }}
+          opacity={0.25}
+          style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '90%', height: '90%' }}
         />
         <div className="member-lines">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -119,8 +119,8 @@ function MemberCardBody({ displayName, roleLabel, handicap, stat, size }: {
     <div className="member-card-inner list-card">
       <CardIconBackground
         handicap={handicap}
-        opacity={0.19}
-        style={{ left: -4, top: 8, width: 124, height: 88 }}
+        opacity={0.35}
+        style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '90%', height: '90%' }}
       />
       <div className="member-lines list-card-lines">
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'center' }}>

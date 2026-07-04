@@ -201,7 +201,13 @@ button.block {
 }
 /* 일반 회원 카드: 참고 이미지처럼 작고 촘촘하게 (왼쪽 아이콘 + 오른쪽 정보) */
 .list-card {
-  min-height: 82px;
+  height: 112px;
+  display: flex;
+  align-items: center;
+}
+/* 내 실적 카드 텍스트 블록 — 고정 높이를 줘야 아이콘의 height:90% 가 제대로 계산됨 */
+.hero-card {
+  height: 205px;
   display: flex;
   align-items: center;
 }
