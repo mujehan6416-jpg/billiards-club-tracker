@@ -36,27 +36,27 @@ export function CalendarPicker({ value, onChange, markedDates }: {
 
   return (
     <div style={{ padding: '4px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <button
           onClick={prevMonth}
-          style={{ fontSize: 20, padding: '4px 12px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg)' }}
+          style={{ fontSize: 24, padding: '4px 12px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg)' }}
         >‹</button>
-        <span style={{ fontWeight: 700, fontSize: 15 }}>{year}년 {month}월</span>
+        <span style={{ fontWeight: 700, fontSize: 24 }}>{year}년 {month}월</span>
         <button
           onClick={nextMonth}
-          style={{ fontSize: 20, padding: '4px 12px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg)' }}
+          style={{ fontSize: 24, padding: '4px 12px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg)' }}
         >›</button>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', marginBottom: 4 }}>
         {WEEK.map((d, i) => (
-          <span key={i} style={{ fontSize: 11, color: i === 0 ? '#e74c3c' : i === 6 ? '#3498db' : '#888' }}>{d}</span>
+          <span key={i} style={{ fontSize: 24, fontWeight: 600, color: i === 0 ? '#e74c3c' : i === 6 ? '#3498db' : '#888' }}>{d}</span>
         ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
         {cells.map((d, i) => {
-          if (d === null) return <div key={i} style={{ height: 38 }} />
+          if (d === null) return <div key={i} style={{ height: 50 }} />
           const ds = `${year}-${pad(month)}-${pad(d)}`
           const isSelected = ds === value
           const isToday = ds === today
@@ -72,7 +72,7 @@ export function CalendarPicker({ value, onChange, markedDates }: {
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                height: 38,
+                height: 50,
                 cursor: 'pointer',
                 borderRadius: 8,
                 background: isSelected ? '#072B61' : 'none',
@@ -81,12 +81,12 @@ export function CalendarPicker({ value, onChange, markedDates }: {
                 userSelect: 'none',
               }}
             >
-              <span style={{ fontSize: 14, fontWeight: isToday ? 700 : 400, lineHeight: 1 }}>{d}</span>
+              <span style={{ fontSize: 24, fontWeight: isToday ? 700 : 400, lineHeight: 1 }}>{d}</span>
               {hasResult && (
                 <span style={{
                   width: 4, height: 4, borderRadius: '50%',
                   background: isSelected ? 'rgba(255,255,255,0.7)' : '#072B61',
-                  marginTop: 2,
+                  marginTop: 3,
                 }} />
               )}
             </div>

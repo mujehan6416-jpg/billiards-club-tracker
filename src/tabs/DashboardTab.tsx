@@ -42,31 +42,33 @@ function Ranking({ sessions, name }: { sessions: Session[]; name: (id: string) =
   )
   if (stats.length === 0) return <p className="muted">아직 경기 기록이 없습니다.</p>
   return (
-    <table className="rank-table">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th className="l">회원</th>
-          <th>전적</th>
-          <th>승률</th>
-          <th>평균달성</th>
-        </tr>
-      </thead>
-      <tbody>
-        {stats.map((s, i) => (
-          <tr key={s.memberId}>
-            <td>{i + 1}</td>
-            <td className="l">{name(s.memberId)}</td>
-            <td>
-              {s.wins}-{s.losses}
-              {s.draws ? `-${s.draws}` : ''}
-            </td>
-            <td className="strong">{Math.round(s.winRate * 100)}%</td>
-            <td>{Math.round(s.avgRate * 100)}%</td>
+    <div className="table-scroll">
+      <table className="rank-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th className="l">회원</th>
+            <th>전적</th>
+            <th>승률</th>
+            <th>평균</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {stats.map((s, i) => (
+            <tr key={s.memberId}>
+              <td>{i + 1}</td>
+              <td className="l">{name(s.memberId)}</td>
+              <td>
+                {s.wins}-{s.losses}
+                {s.draws ? `-${s.draws}` : ''}
+              </td>
+              <td className="strong">{Math.round(s.winRate * 100)}%</td>
+              <td>{Math.round(s.avgRate * 100)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -155,6 +157,10 @@ function Trend({ sessions, members, name, isGuest }: { sessions: Session[]; memb
             <Metric label="경기" value={`${timeline.length}`} />
             <Metric label="현재 연승" value={`${streak.current}`} />
             <Metric label="최장 연승" value={`${streak.max}`} />
+          </div>
+          <div className="spark-caption">
+            <div className="spark-title">최근 경기 달성률 추이</div>
+            <div className="spark-desc">단위: % · 계산식: 친 개수 ÷ 핸디</div>
           </div>
           <Sparkline rates={timeline.map((t) => t.rate)} />
           <ul className="trend-list">

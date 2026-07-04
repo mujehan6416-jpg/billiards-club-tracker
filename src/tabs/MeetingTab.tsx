@@ -196,7 +196,7 @@ function AttendeePicker({ members, date, onDateChange, onStart, flashOnly = fals
       )}
 
       {active.length === 0 && <p className="muted">먼저 회원 탭에서 회원을 추가하세요.</p>}
-      <div className="chip-grid">
+      <div className="chip-grid chip-grid-5">
         {active.map((m) => (
           <button
             key={m.id}

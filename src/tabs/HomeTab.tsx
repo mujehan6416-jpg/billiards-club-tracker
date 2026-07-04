@@ -68,15 +68,6 @@ export function HomeTab({ onNavigate }: Props) {
           ))}
         </div>
       </div>
-
-      <div style={{ textAlign: 'center', paddingBottom: 16, flexShrink: 0, background: '#fff' }}>
-        <button
-          onClick={() => onNavigate('settings')}
-          style={{ background: 'none', border: 'none', color: '#aaa', fontSize: 13, cursor: 'pointer' }}
-        >
-          ⚙️ 설정
-        </button>
-      </div>
     </div>
   )
 }
