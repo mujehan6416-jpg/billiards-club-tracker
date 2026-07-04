@@ -35,11 +35,16 @@ function getHandicapColor(handicap: number): string {
 // PNG를 색상별로 여러 장 복제하지 않고, 실루엣 형태(mask)만 가져와 배경색으로 핸디별 색을 입힌다.
 const BILLIARDS_ICON_URL = `${(import.meta as unknown as { env: { BASE_URL: string } }).env.BASE_URL}billiards_player_icon.png`
 
-function Avatar({ handicap, size }: { handicap: number; size: number }) {
+// 카드에 연하게 깔리는 배경 아이콘 (텍스트 뒤 워터마크) — 핸디별 색상 유지.
+// 위치/크기는 호출부에서 style로 지정 (내 실적 카드=중앙, 일반 카드=좌측).
+function CardIconBackground({ handicap, opacity, style }: { handicap: number; opacity: number; style: React.CSSProperties }) {
   const color = getHandicapColor(handicap)
   const maskStyle: React.CSSProperties = {
-    width: size, height: size, flexShrink: 0,
+    position: 'absolute',
+    zIndex: 0,
     backgroundColor: color,
+    opacity,
+    pointerEvents: 'none',
     WebkitMaskImage: `url("${BILLIARDS_ICON_URL}")`,
     maskImage: `url("${BILLIARDS_ICON_URL}")`,
     WebkitMaskSize: 'contain',
@@ -48,8 +53,9 @@ function Avatar({ handicap, size }: { handicap: number; size: number }) {
     maskRepeat: 'no-repeat',
     WebkitMaskPosition: 'center',
     maskPosition: 'center',
+    ...style,
   }
-  return <div role="img" aria-label="당구 자세 아이콘" style={maskStyle} />
+  return <div aria-hidden="true" style={maskStyle} />
 }
 
 // 직책별 배지 색상: 회장(초록) / 총무(파랑) / 그 외(회색)
@@ -69,42 +75,68 @@ function winRateText(st: MemberStat | undefined): string {
   return `승률 ${Math.round(st.winRate * 100)}%`
 }
 
-const CARD_SIZES = {
-  hero: { avatar: 64, name: 30, badge: 16, hcapLabel: 16, hcapNum: 30, wl: 23, wr: 21 },
-  list: { avatar: 48, name: 24, badge: 15, hcapLabel: 15, hcapNum: 21, wl: 19, wr: 19 },
-} as const
+type CardSize = 'hero' | 'list'
 
 function MemberCardBody({ displayName, roleLabel, handicap, stat, size }: {
   displayName: string
   roleLabel?: string
   handicap: number
   stat: MemberStat | undefined
-  size: keyof typeof CARD_SIZES
+  size: CardSize
 }) {
-  const s = CARD_SIZES[size]
   const badge = roleLabel ? roleBadgeStyle(roleLabel) : null
+
+  if (size === 'hero') {
+    return (
+      <div className="member-card-inner">
+        <CardIconBackground
+          handicap={handicap}
+          opacity={0.15}
+          style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 120, height: 120 }}
+        />
+        <div className="member-lines">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="member-name" style={{ fontSize: 30 }}>{displayName}</span>
+            {roleLabel && badge && (
+              <span className="role-badge" style={{ fontSize: 16, background: badge.background, color: badge.color }}>
+                {roleLabel}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+            <span className="muted" style={{ fontSize: 16 }}>핸디</span>
+            <span style={{ fontSize: 30, fontWeight: 800 }}>{handicap}</span>
+          </div>
+          <span style={{ fontSize: 23, color: 'var(--muted)' }}>{winLossText(stat)}</span>
+          <span style={{ fontSize: 21, fontWeight: 700, color: '#2563EB' }}>{winRateText(stat)}</span>
+        </div>
+      </div>
+    )
+  }
+
+  // 일반 회원 카드: 왼쪽에 연한 아이콘, 오른쪽 위주로 정보를 작고 촘촘하게 배치
   return (
-    <div className="member-lines">
-      <Avatar handicap={handicap} size={s.avatar} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span className="member-name" style={{ fontSize: s.name }}>{displayName}</span>
-        {roleLabel && badge && (
-          <span className="role-badge" style={{ fontSize: s.badge, background: badge.background, color: badge.color }}>
-            {roleLabel}
-          </span>
-        )}
+    <div className="member-card-inner list-card">
+      <CardIconBackground
+        handicap={handicap}
+        opacity={0.2}
+        style={{ left: 6, top: 10, width: 88, height: 62 }}
+      />
+      <div className="member-lines list-card-lines">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'center' }}>
+          <span className="member-name" style={{ fontSize: 19 }}>{displayName}</span>
+          {roleLabel && badge && (
+            <span className="role-badge" style={{ fontSize: 11.5, background: badge.background, color: badge.color }}>
+              {roleLabel}
+            </span>
+          )}
+        </div>
+        <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>핸디 {handicap}</span>
+        <div className="list-card-bottom-row">
+          <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{winLossText(stat)}</span>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: '#2563EB' }}>{winRateText(stat)}</span>
+        </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-        <span className="muted" style={{ fontSize: s.hcapLabel }}>핸디</span>
-        <span style={{ fontSize: s.hcapNum, fontWeight: 800 }}>{handicap}</span>
-      </div>
-      <span style={{ fontSize: s.wl, color: 'var(--muted)' }}>{winLossText(stat)}</span>
-      <span style={{
-        fontSize: s.wr, fontWeight: 700,
-        color: size === 'hero' ? '#2563EB' : 'var(--muted)',
-      }}>
-        {winRateText(stat)}
-      </span>
     </div>
   )
 }

@@ -174,10 +174,12 @@ button.block {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 18px 12px;
+  padding: 11px 12px;
   flex: 1;
-  border-radius: 16px;
+  border-radius: 13px;
+  border-color: #E5E7EB;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
 }
 .member-row.inactive {
   opacity: 0.5;
@@ -187,8 +189,31 @@ button.block {
   display: flex;
   flex-direction: column;
 }
-/* 회원 카드 구조: 아바타 / 이름+직책 / 핸디 / 승패 / 승률 — 가운데 정렬 */
+/* 카드 안에서 배경 아이콘(CardIconBackground)과 텍스트(member-lines)를 겹쳐 쌓는 컨테이너 */
+.member-card-inner {
+  position: relative;
+  width: 100%;
+}
+/* 일반 회원 카드: 참고 이미지처럼 작고 촘촘하게 (왼쪽 아이콘 + 오른쪽 정보) */
+.list-card {
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+}
+.list-card-lines {
+  gap: 3px;
+}
+.list-card-bottom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  margin-top: 3px;
+}
+/* 회원 카드 구조: 이름+직책 / 핸디 / 승패 / 승률 — 가운데 정렬, 배경 아이콘 위로 표시 */
 .member-lines {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -221,6 +246,7 @@ button.block {
   border-radius: 18px;
   gap: 10px;
   padding: 18px 14px;
+  overflow: hidden;
 }
 .hero-badge {
   font-size: 13px;
