@@ -30,20 +30,25 @@ body {
 }
 .app-main {
   flex: 1;
-  padding: 12px 14px calc(72px + env(safe-area-inset-bottom));
+  padding: 12px 14px calc(96px + env(safe-area-inset-bottom));
 }
 
-/* bottom nav */
+/* bottom nav — 완전 불투명 배경 + 그림자로 본문과 확실히 구분 (본문 카드가 절대 비쳐 보이지 않게) */
 .bottom-nav {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: 50;
   max-width: 480px;
   margin: 0 auto;
   display: flex;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  background: #FFFFFF;
+  opacity: 1;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-top: 1px solid #E5E7EB;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06);
   padding-bottom: env(safe-area-inset-bottom);
 }
 .bottom-nav button {

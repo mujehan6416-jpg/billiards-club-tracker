@@ -91,8 +91,8 @@ function MemberCardBody({ displayName, roleLabel, handicap, stat, size }: {
       <div className="member-card-inner">
         <CardIconBackground
           handicap={handicap}
-          opacity={0.15}
-          style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 120, height: 120 }}
+          opacity={0.14}
+          style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 150, height: 150 }}
         />
         <div className="member-lines">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -119,8 +119,8 @@ function MemberCardBody({ displayName, roleLabel, handicap, stat, size }: {
     <div className="member-card-inner list-card">
       <CardIconBackground
         handicap={handicap}
-        opacity={0.2}
-        style={{ left: 6, top: 10, width: 88, height: 62 }}
+        opacity={0.19}
+        style={{ left: -4, top: 8, width: 124, height: 88 }}
       />
       <div className="member-lines list-card-lines">
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'center' }}>
