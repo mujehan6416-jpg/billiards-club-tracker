@@ -6,12 +6,15 @@ import { SettingsTab } from './tabs/SettingsTab'
 import { LedgerTab } from './tabs/LedgerTab'
 import { HomeTab } from './tabs/HomeTab'
 import { LoginScreen } from './tabs/LoginScreen'
+import { SettlementAdminTab } from './tabs/SettlementAdminTab'
 import { useAdmin } from './store/adminStore'
 import { useAuth } from './store/authStore'
 import { useApp } from './store/appStore'
 import { downloadFromCloud, markSynced } from './lib/cloudSync'
 
-type Tab = 'home' | 'members' | 'meeting' | 'dashboard' | 'settings' | 'ledger'
+// 'settlement'은 일부러 TABS(하단 탭바) 배열에 넣지 않는다 — 일반 회원 화면에는 전혀 노출되지 않고,
+// 아래 TopBar의 관리자 모드(PIN) 전용 버튼으로만 진입 가능하다.
+type Tab = 'home' | 'members' | 'meeting' | 'dashboard' | 'settings' | 'ledger' | 'settlement'
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'home',      label: '홈',   icon: '🏠' },
@@ -63,7 +66,7 @@ function PinModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-function TopBar() {
+function TopBar({ onOpenSettlement }: { onOpenSettlement: () => void }) {
   const { isAdmin, logout: adminLogout } = useAdmin()
   const { memberName, isGuest } = useAuth()
   const [showPin, setShowPin] = useState(false)
@@ -77,6 +80,8 @@ function TopBar() {
         }}>
           <span>🔑 관리자 모드 {memberName && `· ${memberName}`}</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button onClick={onOpenSettlement} title="정기모임 정산"
+              style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 13, padding: '2px 7px', borderRadius: 4 }}>🧾 정산</button>
             <button onClick={() => setShowPin(true)} title="PIN 변경"
               style={{ background: 'none', border: '1px solid rgba(255,255,255,0.5)', color: '#fff', fontSize: 13, padding: '2px 7px', borderRadius: 4 }}>🔒</button>
             <button onClick={adminLogout}
@@ -192,7 +197,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar />
+      <TopBar onOpenSettlement={() => setTab('settlement')} />
       {backToast && (
         <div style={{
           position: 'fixed', bottom: 72, left: '50%', transform: 'translateX(-50%)',
@@ -210,6 +215,7 @@ export function App() {
         {tab === 'dashboard' && <DashboardTab />}
         {tab === 'settings'  && <SettingsTab />}
         {tab === 'ledger'    && <LedgerTab />}
+        {tab === 'settlement' && <SettlementAdminTab onBack={() => setTab('home')} />}
       </main>
       <nav className="bottom-nav">
         {TABS.map((t) => (
