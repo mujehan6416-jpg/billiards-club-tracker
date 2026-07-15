@@ -126,6 +126,26 @@ export function buildScenarioCSession(): Session {
   }
 }
 
+/** 참석 기록이 없는(0명) 가상 세션 — "참석 기록 없음" 안내 문구를 UI에서 직접 검증할 때 쓴다. */
+export function buildScenarioCEmptySession(): Session {
+  return { id: 'dev-session-c-empty', date: '2026-04-01', type: 'regular', attendeeIds: [], games: [] }
+}
+
+/**
+ * 탈퇴·삭제된 회원(가상회원8과 회원명부에 아예 없는 유령 ID)이 섞인 가상 세션 —
+ * "이름 확인 필요" 표시를 UI에서 직접 검증할 때 쓴다. buildScenarioCMembers()는 8명까지만
+ * 만들므로 'dev-mem-999-ghost'는 일부러 그 목록에 없는 ID다.
+ */
+export function buildScenarioCGhostSession(): Session {
+  return {
+    id: 'dev-session-c-ghost',
+    date: '2026-05-01',
+    type: 'regular',
+    attendeeIds: ['dev-mem-1', 'dev-mem-999-ghost'],
+    games: [],
+  }
+}
+
 /** 시나리오 C 정산: 참가자 0명으로 시작 — 화면에서 "참석자 자동 불러오기"를 직접 눌러 검증한다. */
 export function buildScenarioC(): RegularSettlement {
   return {

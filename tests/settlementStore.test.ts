@@ -216,4 +216,53 @@ describe('Member/Session 연결 (시나리오 C)', () => {
     expect(guest.memberId).toBeNull()
     expect(guest.participantType).toBe('guest')
   })
+
+  it('initFromAttendees는 addedCount 등 결과 요약을 반환한다(참석자 5명 케이스)', () => {
+    const id = createDraftSettlement()
+    const res = useSettlementStore.getState().initFromAttendees(id, fakeSession, fakeMembers)
+    expect(res).toMatchObject({ ok: true, addedCount: 5, unresolvedCount: 0, duplicateSkippedCount: 0, totalAttendees: 5 })
+  })
+
+  it('참석 기록이 없는(0명) 모임은 addedCount 0과 totalAttendees 0을 반환한다', () => {
+    const id = createDraftSettlement()
+    const emptySession: Session = { id: 'dev-session-empty', date: '2026-04-01', type: 'regular', attendeeIds: [], games: [] }
+    const res = useSettlementStore.getState().initFromAttendees(id, emptySession, fakeMembers)
+    expect(res).toMatchObject({ ok: true, addedCount: 0, totalAttendees: 0 })
+    expect(useSettlementStore.getState().getById(id)!.participants).toHaveLength(0)
+  })
+
+  it('탈퇴·삭제되어 회원명부에 없는 ID는 "이름 확인 필요"로 표시되고 제외되지 않는다', () => {
+    const id = createDraftSettlement()
+    const sessionWithGhost: Session = {
+      id: 'dev-session-ghost', date: '2026-05-01', type: 'regular',
+      attendeeIds: ['dev-mem-1', 'dev-mem-999-deleted'],
+      games: [],
+    }
+    const res = useSettlementStore.getState().initFromAttendees(id, sessionWithGhost, fakeMembers)
+    expect(res).toMatchObject({ ok: true, addedCount: 2, unresolvedCount: 1 })
+    const participants = useSettlementStore.getState().getById(id)!.participants
+    expect(participants).toHaveLength(2)
+    const ghost = participants.find((p) => p.memberId === 'dev-mem-999-deleted')!
+    expect(ghost).toBeDefined()
+    expect(ghost.displayName).toBe('이름 확인 필요')
+    expect(ghost.participantType).toBe('member')
+  })
+
+  it('같은 세션을 다시 불러오면 이미 있는 참가자는 중복 추가되지 않는다(duplicateSkippedCount)', () => {
+    const id = createDraftSettlement()
+    useSettlementStore.getState().initFromAttendees(id, fakeSession, fakeMembers)
+    const res = useSettlementStore.getState().initFromAttendees(id, fakeSession, fakeMembers)
+    expect(res).toMatchObject({ ok: true, addedCount: 0, duplicateSkippedCount: 5 })
+    expect(useSettlementStore.getState().getById(id)!.participants).toHaveLength(5)
+  })
+
+  it('먼저 추가해 둔 비회원 참가자는 세션 불러오기 이후에도 그대로 유지된다', () => {
+    const id = createDraftSettlement()
+    useSettlementStore.getState().addGuestParticipant(id, '가상비회원선등록')
+    const res = useSettlementStore.getState().initFromAttendees(id, fakeSession, fakeMembers)
+    expect(res.ok).toBe(true)
+    const participants = useSettlementStore.getState().getById(id)!.participants
+    expect(participants).toHaveLength(6) // 비회원 1명 + 세션 참석자 5명
+    expect(participants.some((p) => p.displayName === '가상비회원선등록')).toBe(true)
+  })
 })

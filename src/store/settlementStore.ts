@@ -50,9 +50,19 @@ const now = () => new Date().toISOString()
 export type StoreResult = { ok: true } | { ok: false; error: string }
 export type SyncStatus = 'idle' | 'loading' | 'saving' | 'error'
 
-const NOT_FOUND: StoreResult = { ok: false, error: '정산을 찾을 수 없습니다.' }
-const LOCKED_ERROR: StoreResult = { ok: false, error: '확정된 정산은 수정할 수 없습니다. 먼저 "정산 수정"을 눌러주세요.' }
-const NOT_AUTHORIZED: StoreResult = { ok: false, error: '관리자 인증이 필요합니다. Firebase 관리자 로그인 후 다시 시도해주세요.' }
+/** 이름 찾을 수 없는(탈퇴·삭제된) 회원 ID를 참가자로 넣을 때 표시하는 자리표시 이름. */
+export const UNKNOWN_MEMBER_NAME = '이름 확인 필요'
+
+export type ImportAttendeesResult =
+  | { ok: true; addedCount: number; unresolvedCount: number; duplicateSkippedCount: number; totalAttendees: number }
+  | { ok: false; error: string }
+
+// 실패만 나타내는 좁은 타입 — StoreResult뿐 아니라 ImportAttendeesResult 같은 확장 결과 타입에도
+// 그대로 대입할 수 있어야 하므로 { ok: true } 분기가 섞이지 않게 별도로 둔다.
+type ErrorResult = { ok: false; error: string }
+const NOT_FOUND: ErrorResult = { ok: false, error: '정산을 찾을 수 없습니다.' }
+const LOCKED_ERROR: ErrorResult = { ok: false, error: '확정된 정산은 수정할 수 없습니다. 먼저 "정산 수정"을 눌러주세요.' }
+const NOT_AUTHORIZED: ErrorResult = { ok: false, error: '관리자 인증이 필요합니다. Firebase 관리자 로그인 후 다시 시도해주세요.' }
 
 interface SettlementStoreState {
   settlements: RegularSettlement[]
@@ -73,8 +83,12 @@ interface SettlementStoreState {
     actorDisplayName: string
   }) => string
 
-  /** 세션 참석자를 정산 대상자로 초기화한다(이미 참가자가 있으면 없는 사람만 추가). */
-  initFromAttendees: (settlementId: string, session: Session, members: Member[]) => StoreResult
+  /**
+   * 세션 참석자를 정산 대상자로 불러온다(이미 참가자로 들어와 있는 회원은 건너뜀 — memberId 기준 중복 방지).
+   * 현재 회원명부에서 이름을 찾을 수 없는 ID(탈퇴·삭제된 회원)는 제외하지 않고
+   * UNKNOWN_MEMBER_NAME("이름 확인 필요")로 표시해 그대로 추가한다 — 관리자가 눈으로 보고 정리할 수 있게.
+   */
+  initFromAttendees: (settlementId: string, session: Session, members: Member[]) => ImportAttendeesResult
   addMemberParticipant: (settlementId: string, member: Member) => StoreResult
   addGuestParticipant: (settlementId: string, displayName: string) => StoreResult
   removeParticipant: (settlementId: string, participantId: string) => StoreResult
@@ -128,7 +142,7 @@ function patchSettlement(
 
 export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
   /** 잠금 상태면 LOCKED_ERROR를, 정산이 없으면 NOT_FOUND를 반환. 통과하면 null. */
-  function guard(settlementId: string): StoreResult | null {
+  function guard(settlementId: string): { ok: false; error: string } | null {
     const settlement = get().getById(settlementId)
     if (!settlement) return NOT_FOUND
     if (isLocked(settlement.status)) return LOCKED_ERROR
@@ -208,20 +222,41 @@ export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
     initFromAttendees: (settlementId, session, members) => {
       const blocked = guard(settlementId)
       if (blocked) return blocked
+      const settlementBefore = get().getById(settlementId)
+      if (!settlementBefore) return NOT_FOUND
+
+      const existingMemberIds = new Set(settlementBefore.participants.map((p) => p.memberId).filter(Boolean))
+      const targetIds = session.attendeeIds.filter((mid) => !existingMemberIds.has(mid))
+      const duplicateSkippedCount = session.attendeeIds.length - targetIds.length
+
+      let unresolvedCount = 0
+      const toAdd: SettlementParticipant[] = targetIds.map((mid) => {
+        const member = members.find((m) => m.id === mid)
+        if (!member) unresolvedCount += 1
+        return {
+          id: uid(),
+          participantType: 'member',
+          memberId: mid,
+          displayName: member ? member.name : UNKNOWN_MEMBER_NAME,
+          addedVia: 'meeting_attendee',
+        }
+      })
+
       set((s) => ({
-        settlements: patchSettlement(s.settlements, settlementId, (settlement) => {
-          const existingMemberIds = new Set(settlement.participants.map((p) => p.memberId).filter(Boolean))
-          const toAdd: SettlementParticipant[] = session.attendeeIds
-            .filter((mid) => !existingMemberIds.has(mid))
-            .map((mid) => members.find((m) => m.id === mid))
-            .filter((m): m is Member => !!m)
-            .map((m) => ({
-              id: uid(), participantType: 'member', memberId: m.id, displayName: m.name, addedVia: 'meeting_attendee',
-            }))
-          return { ...settlement, sessionId: session.id, participants: [...settlement.participants, ...toAdd] }
-        }),
+        settlements: patchSettlement(s.settlements, settlementId, (settlement) => ({
+          ...settlement,
+          sessionId: session.id,
+          participants: [...settlement.participants, ...toAdd],
+        })),
       }))
-      return { ok: true }
+
+      return {
+        ok: true,
+        addedCount: toAdd.length,
+        unresolvedCount,
+        duplicateSkippedCount,
+        totalAttendees: session.attendeeIds.length,
+      }
     },
 
     addMemberParticipant: (settlementId, member) => {

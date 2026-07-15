@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useApp } from '../store/appStore'
 import { useAuth } from '../store/authStore'
 import { useSettlementStore } from '../store/settlementStore'
+import type { ImportAttendeesResult } from '../store/settlementStore'
 import { SettlementParticipantForm } from '../components/settlement/SettlementParticipantForm'
 import { SettlementExpenseForm } from '../components/settlement/SettlementExpenseForm'
 import { DinnerContributionForm } from '../components/settlement/DinnerContributionForm'
@@ -28,13 +29,40 @@ const SECTIONS: { key: Section; label: string }[] = [
   { key: 'share', label: '공유' },
 ]
 
-function CreateSettlementForm({ onCreated }: { onCreated: (id: string) => void }) {
+/** initFromAttendees 결과를 사람이 읽을 안내 문구로 바꾼다. */
+function describeImportResult(result: ImportAttendeesResult): string {
+  if (!result.ok) return result.error
+  if (result.totalAttendees === 0) return '선택한 모임은 참석 기록이 없습니다. 참가자를 직접 추가해주세요.'
+  const parts = [`참가자 ${result.addedCount}명 자동 추가됨`]
+  if (result.unresolvedCount > 0) parts.push(`이름 확인 필요 ${result.unresolvedCount}명(탈퇴·삭제된 회원)`)
+  if (result.duplicateSkippedCount > 0) parts.push(`이미 포함되어 건너뜀 ${result.duplicateSkippedCount}명`)
+  return parts.join(' · ')
+}
+
+function useRegularSessions(sessionsOverride?: Session[]) {
+  const realSessions = useApp((s) => s.sessions)
+  const sessions = sessionsOverride ?? realSessions
+  return [...sessions].filter((s) => s.type !== 'flash').sort((a, b) => b.date.localeCompare(a.date))
+}
+
+function CreateSettlementForm({ onCreated, membersOverride, sessionsOverride }: {
+  onCreated: (id: string) => void; membersOverride?: Member[]; sessionsOverride?: Session[]
+}) {
   const createSettlement = useSettlementStore((s) => s.createSettlement)
+  const initFromAttendees = useSettlementStore((s) => s.initFromAttendees)
+  const realMembers = useApp((s) => s.members)
+  const realSessions = useApp((s) => s.sessions)
+  // override는 개발 미리보기에서 가상 모임/회원으로 흐름을 테스트할 때만 쓰인다(실제 useApp 데이터는 안 건드림).
+  const members = membersOverride ?? realMembers
+  const sessions = sessionsOverride ?? realSessions
+  const regularSessions = useRegularSessions(sessionsOverride)
   const { memberName } = useAuth()
   const [meetingName, setMeetingName] = useState('')
   const [meetingDate, setMeetingDate] = useState(todayStr())
   const [meetingType, setMeetingType] = useState<MeetingType>('regular')
   const [meetingRound, setMeetingRound] = useState('')
+  const [sourceSessionId, setSourceSessionId] = useState('')
+  const [importMsg, setImportMsg] = useState('')
 
   const submit = () => {
     if (!meetingName.trim()) return
@@ -43,6 +71,14 @@ function CreateSettlementForm({ onCreated }: { onCreated: (id: string) => void }
       meetingRound: meetingRound ? Number(meetingRound) : undefined,
       actorDisplayName: memberName ?? '관리자',
     })
+    setImportMsg('')
+    if (sourceSessionId) {
+      const session = sessions.find((s) => s.id === sourceSessionId)
+      if (session) {
+        const result = initFromAttendees(id, session, members)
+        setImportMsg(describeImportResult(result))
+      }
+    }
     onCreated(id)
   }
 
@@ -58,7 +94,17 @@ function CreateSettlementForm({ onCreated }: { onCreated: (id: string) => void }
         <option value="regular">일반 정기모임</option>
         <option value="tournament">정기대회</option>
       </select>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span className="muted" style={{ fontSize: 12 }}>기존 정기모임 선택 (참석자 자동 불러오기, 선택사항)</span>
+        <select value={sourceSessionId} onChange={(e) => setSourceSessionId(e.target.value)}>
+          <option value="">선택 안 함</option>
+          {regularSessions.map((s) => (
+            <option key={s.id} value={s.id}>{s.date} (참석 {s.attendeeIds.length}명)</option>
+          ))}
+        </select>
+      </div>
       <button type="button" className="primary block" onClick={submit}>정산 만들기</button>
+      {importMsg && <p className="info-msg">{importMsg}</p>}
     </div>
   )
 }
@@ -73,8 +119,9 @@ function AttendeeImport({ settlementId, membersOverride, sessionsOverride }: {
   const members = membersOverride ?? realMembers
   const initFromAttendees = useSettlementStore((s) => s.initFromAttendees)
   const [sessionId, setSessionId] = useState('')
+  const [msg, setMsg] = useState('')
 
-  const regularSessions = [...sessions].filter((s) => s.type !== 'flash').sort((a, b) => b.date.localeCompare(a.date))
+  const regularSessions = useRegularSessions(sessionsOverride)
 
   return (
     <div className="card col-card">
@@ -89,11 +136,12 @@ function AttendeeImport({ settlementId, membersOverride, sessionsOverride }: {
         type="button" className="primary block" disabled={!sessionId}
         onClick={() => {
           const session = sessions.find((s) => s.id === sessionId)
-          if (session) initFromAttendees(settlementId, session, members)
+          if (session) setMsg(describeImportResult(initFromAttendees(settlementId, session, members)))
         }}
       >
         참석자 자동 불러오기
       </button>
+      {msg && <p className="info-msg">{msg}</p>}
     </div>
   )
 }
@@ -123,7 +171,7 @@ export function SettlementTab({ devMembers, devSessions }: { devMembers?: Member
         </div>
       )}
 
-      <CreateSettlementForm onCreated={setCurrentId} />
+      <CreateSettlementForm onCreated={setCurrentId} membersOverride={devMembers} sessionsOverride={devSessions} />
 
       {!settlement && <p className="muted">정산을 만들거나 위 목록에서 선택해주세요.</p>}
 

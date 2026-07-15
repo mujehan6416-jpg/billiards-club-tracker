@@ -3,7 +3,10 @@ import { useSettlementStore } from '../store/settlementStore'
 import { useAdminAuthStore } from '../store/adminAuthStore'
 import { SettlementTab } from '../tabs/SettlementTab'
 import { SettlementSyncControls } from '../components/admin/SettlementSyncControls'
-import { buildScenarioA, buildScenarioB, buildScenarioC, buildScenarioCMembers, buildScenarioCSession } from './settlementDevSeed'
+import {
+  buildScenarioA, buildScenarioB, buildScenarioC,
+  buildScenarioCMembers, buildScenarioCSession, buildScenarioCEmptySession, buildScenarioCGhostSession,
+} from './settlementDevSeed'
 
 // 개발 전용 임시 미리보기. main.tsx에서 import.meta.env.DEV + ?devSettlement=1 일 때만 로드된다.
 // 실제 useApp(회원·모임) 저장소는 전혀 건드리지 않는다.
@@ -14,7 +17,7 @@ import { buildScenarioA, buildScenarioB, buildScenarioC, buildScenarioCMembers, 
 // 버튼을 직접 눌러야만 실제 clubs/skkubc/settlements 컬렉션에 읽기/쓰기가 일어난다.
 // 반드시 가상 정산(dev-scenario-*)에 대해서만 사용하고, 실제 회원 실명·회비·통장 잔액은 입력하지 않는다.
 const devMembers = buildScenarioCMembers()
-const devSession = buildScenarioCSession()
+const devSessions = [buildScenarioCSession(), buildScenarioCEmptySession(), buildScenarioCGhostSession()]
 
 export default function DevSettlementPreview() {
   const [showSyncPanel, setShowSyncPanel] = useState(false)
@@ -44,7 +47,7 @@ export default function DevSettlementPreview() {
         아래 "Firestore 동기화 테스트"를 열면 실제 Firebase 프로젝트와 통신합니다 — 가상 정산에만 사용하세요.
       </div>
       <div className="app-main" style={{ paddingBottom: 24 }}>
-        <SettlementTab devMembers={devMembers} devSessions={[devSession]} />
+        <SettlementTab devMembers={devMembers} devSessions={devSessions} />
 
         <div className="card">
           <button type="button" className="block" onClick={() => setShowSyncPanel((v) => !v)}>
