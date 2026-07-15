@@ -50,7 +50,19 @@ export interface Session {
   approved?: boolean           // 번개모임: 관리자 승인 여부
   attendeeIds: string[]
   lineup?: LineupMatch[]       // 게시된 대진표 (일반회원 열람용)
-  sitOutIds?: string[]         // 대진표상 대기자
+  sitOutIds?: string[]         // 대진표상 대기자 (과거 버전 호환용 — round1ParticipantIds가 없으면 이 값으로 유추)
+  /**
+   * 라운드별 "이번 라운드 경기 참가" 명단(관리자가 직접 선택). 미지정이면 attendeeIds 전체를
+   * 기본값으로 쓴다(기존 세션과 100% 호환). 참가자에 없는 attendeeIds 인원은 그 라운드의
+   * 미대진자(대기)로 취급한다 — 별도의 sitOut 배열을 두지 않고 참가자 명단 하나로 표현한다.
+   */
+  round1ParticipantIds?: string[]
+  /**
+   * 2라운드 참가자 명단. round1ParticipantIds와 달리 attendeeIds가 나중에 늘어나도(1라운드 이후
+   * 늦게 온 참석자) 자동으로 반영되지 않는다 — 관리자가 이 목록에 명시적으로 추가해야
+   * 2라운드에 참가할 수 있다. 마찬가지로 중도 귀가자는 이 목록에서만 빼면 1라운드 결과는 그대로 남는다.
+   */
+  round2ParticipantIds?: string[]
   games: Game[]
 }
 

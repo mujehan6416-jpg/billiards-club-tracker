@@ -60,3 +60,30 @@ describe('approveSession — 번개모임 승인 시 회원 입력 경기의 pen
     expect(session.approved).toBe(true)
   })
 })
+
+describe('setRoundParticipants — 라운드별 참가자 명단 저장', () => {
+  it('round1과 round2를 각각 독립적으로 저장한다(한쪽을 바꿔도 다른 쪽은 그대로)', () => {
+    const sessionId = useApp.getState().createSession('2026-07-04', ['m1', 'm2', 'm3'], 'regular')
+    useApp.getState().setRoundParticipants(sessionId, 1, ['m1', 'm2'])
+    useApp.getState().setRoundParticipants(sessionId, 2, ['m1', 'm3'])
+    const session = useApp.getState().sessions.find((s) => s.id === sessionId)!
+    expect(session.round1ParticipantIds).toEqual(['m1', 'm2'])
+    expect(session.round2ParticipantIds).toEqual(['m1', 'm3'])
+  })
+
+  it('round1을 다시 저장해도 이미 저장된 round2는 바뀌지 않는다', () => {
+    const sessionId = useApp.getState().createSession('2026-07-05', ['m1', 'm2', 'm3'], 'regular')
+    useApp.getState().setRoundParticipants(sessionId, 2, ['m1', 'm3'])
+    useApp.getState().setRoundParticipants(sessionId, 1, ['m2', 'm3'])
+    const session = useApp.getState().sessions.find((s) => s.id === sessionId)!
+    expect(session.round1ParticipantIds).toEqual(['m2', 'm3'])
+    expect(session.round2ParticipantIds).toEqual(['m1', 'm3']) // 1라운드 저장으로 영향받지 않음
+  })
+
+  it('필드가 없는 기존 세션은 undefined로 남아 attendeeIds 전체를 기본값으로 쓸 수 있다', () => {
+    const sessionId = useApp.getState().createSession('2026-07-06', ['m1', 'm2'], 'regular')
+    const session = useApp.getState().sessions.find((s) => s.id === sessionId)!
+    expect(session.round1ParticipantIds).toBeUndefined()
+    expect(session.round2ParticipantIds).toBeUndefined()
+  })
+})

@@ -1,8 +1,11 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarPicker } from '../components/CalendarPicker'
 import { useApp } from '../store/appStore'
 import type { LineupMatch, Member, Session } from '../types'
-import { buildMeetCount, matchAll, matchTwoRounds, pairKey } from '../logic/matching'
+import {
+  buildMeetCount, matchAll, matchRoundOne, matchRoundTwo, pairKey,
+  canRematchRound, toggleParticipant, replaceRound, applyNewAttendees,
+} from '../logic/matching'
 import { winnerId } from '../logic/game'
 import { todayStr } from '../lib/date'
 import { fmtScore } from '../lib/format'
@@ -242,6 +245,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   const approveSession = useApp((s) => s.approveSession)
   const deleteSession = useApp((s) => s.deleteSession)
   const publishLineup = useApp((s) => s.publishLineup)
+  const setRoundParticipants = useApp((s) => s.setRoundParticipants)
 
   const memberMap = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
   const name = (id: string) => guestMode ? '●●●' : (memberMap.get(id)?.name ?? '알수없음')
@@ -258,7 +262,30 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         scoreA: '', scoreB: '', round: m.round,
       })),
   )
-  const [sitOut, setSitOut] = useState<string[]>(() => session.sitOutIds ?? [])
+  // 라운드별 "이번 라운드 경기 참가" 선택(관리자가 직접 지정). 세션에 저장된 값이 있으면 그걸,
+  // 없으면(기존 세션 호환) attendeeIds 전체를 기본값으로 삼는다 — 선택 안 된 사람이 그 라운드의 미대진자.
+  const [round1Sel, setRound1Sel] = useState<Set<string>>(
+    () => new Set(session.round1ParticipantIds ?? session.attendeeIds),
+  )
+  const [round2Sel, setRound2Sel] = useState<Set<string>>(
+    () => new Set(session.round2ParticipantIds ?? session.attendeeIds),
+  )
+  // 참석자 편집(늦게 온 사람 추가 등)으로 attendeeIds가 늘어나면, 새로 추가된 사람의 기본
+  // 선택 상태를 applyNewAttendees(순수 함수, logic/matching.ts)로 계산한다 — 2라운드는 항상
+  // 기본 선택(관리자가 그대로 해제 가능=중도 미참가 처리), 1라운드는 이미 시작됐으면 절대 안 건드림.
+  const prevAttendeeIdsRef = useRef(session.attendeeIds)
+  useEffect(() => {
+    const round1Started =
+      !!session.round1ParticipantIds ||
+      session.games.some((g) => g.round === 1 || !g.round) ||
+      (session.lineup?.some((m) => m.round === 1) ?? false)
+    const next = applyNewAttendees(prevAttendeeIdsRef.current, session.attendeeIds, round1Sel, round2Sel, round1Started)
+    if (next.round1Sel !== round1Sel) setRound1Sel(next.round1Sel)
+    if (next.round2Sel !== round2Sel) setRound2Sel(next.round2Sel)
+    prevAttendeeIdsRef.current = session.attendeeIds
+    // round1Sel/round2Sel은 의도적으로 deps에서 뺐다 — applyNewAttendees가 매번 그 값을 읽어
+    // 새 Set을 계산하므로, 여기 넣으면 setState 직후 자기 자신을 다시 트리거하는 루프가 된다.
+  }, [session.attendeeIds, session.round1ParticipantIds, session.games, session.lineup])
   const [editAttendees, setEditAttendees] = useState(false)
   // 선택된 매칭 방식 (null = 아직 선택 안 함) — 선택된 버튼만 녹색 표시
   const [matchMode, setMatchMode] = useState<'auto' | 'manual' | null>(null)
@@ -273,9 +300,6 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   // 번개모임은 일반회원도 편집 가능, GUEST는 편집 불가
   const canEdit = !guestMode && (isAdmin || isFlash)
 
-  // 이제한 ID (홀수 시 대기)
-  const sitOutId = members.find((m) => m.name === '이제한')?.id ?? null
-
   // 금지 대진: 엄재익 회장 ↔ 이제한 총무는 서로 대진하지 않음
   const forbiddenPairs = useMemo(() => {
     const set = new Set<string>()
@@ -285,9 +309,9 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     return set
   }, [members])
 
-  // 라운드별 매칭/미대진자
-  const sitOutSet = new Set(sitOut)
-  const playingIds = session.attendeeIds.filter((id) => !sitOutSet.has(id))
+  // 라운드별 매칭/미대진자 — round1Sel/round2Sel(관리자가 직접 선택한 참가자)만 그 라운드의 대상이다.
+  const round1PlayingIds = session.attendeeIds.filter((id) => round1Sel.has(id))
+  const round2PlayingIds = session.attendeeIds.filter((id) => round2Sel.has(id))
   const matchedInRound = (round: number) => {
     const s = new Set<string>()
     ongoing.filter((o) => o.round === round).forEach((o) => { s.add(o.aId); s.add(o.bId) })
@@ -296,9 +320,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     return s
   }
   const unmatchedInRound = (round: number) => {
+    const playing = round === 2 ? round2PlayingIds : round1PlayingIds
     const m = matchedInRound(round)
-    return playingIds.filter((id) => !m.has(id))
+    return playing.filter((id) => !m.has(id))
   }
+  // 2라운드에 실제로 저장된 경기 결과(hasRecordedResult 기준)가 하나라도 있으면 재매칭을 막는다
+  // (결과 손실 방지 우선). 대진만 생성되고 점수가 없는 상태는 session.games에 없으므로 막지 않는다.
+  const round2Locked = !canRematchRound(session, 2)
 
   const makeOngoing = (aId: string, bId: string, round: number): Ongoing => ({
     key: crypto.randomUUID(),
@@ -314,14 +342,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     ongoing.length === 0 ||
     window.confirm('기존 대진과 입력 중인 점수가 사라질 수 있습니다.\n자동매칭을 다시 실행할까요?')
 
-  // 정기모임 자동매칭 — 1라운드만 생성 (2라운드는 수동 또는 재실행으로)
+  // 정기모임 1라운드 자동매칭 — round1Sel(관리자가 직접 선택한 참가자)만 매칭한다.
   const autoMatchRegular = () => {
+    if (round1PlayingIds.length < 2) { alert('1라운드에 참가할 인원을 2명 이상 선택해주세요.'); return }
     if (!confirmRematch()) return
-    const ids = [...session.attendeeIds]
-    const sit = (ids.length % 2 !== 0 && sitOutId && ids.includes(sitOutId)) ? [sitOutId] : []
-    const { round1 } = matchTwoRounds(ids, meetCount, sitOutId, forbiddenPairs, hcapOf)
-    setOngoing(round1.map((p) => makeOngoing(p.aId, p.bId, 1)))
-    setSitOut(sit)
+    setRoundParticipants(session.id, 1, round1PlayingIds)
+    const round1 = matchRoundOne(round1PlayingIds, meetCount, forbiddenPairs, hcapOf)
+    setOngoing((prev) => replaceRound(prev, 1, round1.map((p) => makeOngoing(p.aId, p.bId, 1))))
     setManualSel(null)
     setMatchMode('auto')
   }
@@ -331,11 +358,35 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     const ids = [...session.attendeeIds]
     const pairs = matchAll({ waitingIds: ids, meetCount, todayGameCount: new Map() })
     const matchedIds = new Set(pairs.flatMap((p) => [p.aId, p.bId]))
-    const leftOut = ids.filter((id) => !matchedIds.has(id))
     setOngoing(pairs.map((p) => makeOngoing(p.aId, p.bId, 1)))
-    setSitOut(leftOut)
+    setRound1Sel(new Set(matchedIds)) // 번개모임은 매칭된 사람만 "참가"로 표시(미매칭=대기, 기존 동작과 동일)
     setManualSel(null)
     setMatchMode('auto')
+  }
+
+  // 2라운드 자동매칭 — 이미 확정된(저장된·게시된·입력 중인) 1라운드 대진은 절대 건드리지 않고,
+  // round2Sel(관리자가 직접 선택한 2라운드 참가자)만 매칭한다. 2라운드 결과가 하나라도 저장돼
+  // 있으면(round2Locked) 아예 실행하지 않는다 — 결과 손실 가능성이 있으면 차단을 우선한다.
+  const autoMatchRoundTwo = () => {
+    if (round2Locked) {
+      alert('이미 2라운드 결과가 입력되어 있어 재매칭할 수 없습니다.\n다시 매칭하려면 먼저 2라운드 경기 결과를 하나씩 삭제한 뒤 다시 시도해주세요.')
+      return
+    }
+    if (round2PlayingIds.length < 2) { alert('2라운드에 참가할 인원을 2명 이상 선택해주세요.'); return }
+    const hasOngoingRound2 = ongoing.some((o) => o.round === 2)
+    if (hasOngoingRound2 && !window.confirm('기존 2라운드 대진을 새로 만들까요?\n아직 입력된 경기 결과는 없습니다.')) return
+    setRoundParticipants(session.id, 2, round2PlayingIds)
+    // 1라운드 대진(저장된 게임/게시된 대진표/입력 중인 대진 전부)만 회피 기준으로 읽고,
+    // 이 함수는 1라운드 쪽 데이터를 절대 쓰거나 지우지 않는다 — round2 대진만 계산해서
+    // 아래 replaceRound(prev, 2, ...)로 ongoing의 2라운드 항목만 교체한다.
+    const round1Pairs = [
+      ...ongoing.filter((o) => o.round === 1).map((o) => ({ aId: o.aId, bId: o.bId })),
+      ...session.games.filter((g) => g.round === 1 || !g.round).map((g) => ({ aId: g.playerAId, bId: g.playerBId })),
+      ...(session.lineup ?? []).filter((m) => m.round === 1).map((m) => ({ aId: m.aId, bId: m.bId })),
+    ]
+    const round2 = matchRoundTwo(round2PlayingIds, meetCount, round1Pairs, forbiddenPairs, hcapOf)
+    setOngoing((prev) => replaceRound(prev, 2, round2.map((p) => makeOngoing(p.aId, p.bId, 2))))
+    setManualSel(null)
   }
 
   // 미대진자 칩 탭 → 같은 라운드 두 명 선택 시 매칭
@@ -385,12 +436,16 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     const line = (o: Ongoing) => `${name(o.aId)}(${o.handicapA}) - ${name(o.bId)}(${o.handicapB})`
     const r1 = ongoing.filter((o) => o.round === 1)
     const r2 = ongoing.filter((o) => o.round === 2)
+    // 이 대진표(1부+2부)에 아예 나오지 않는 사람 = 대기. 라운드별로 따로 쉬는 사람은
+    // 각 라운드 참가자 선택 화면에서 이미 확인할 수 있으므로 여기서는 합쳐서만 안내한다.
+    const inLineup = new Set([...r1, ...r2].flatMap((o) => [o.aId, o.bId]))
+    const sitOutForText = session.attendeeIds.filter((id) => !inLineup.has(id))
     const round = ROUND_BY_DATE[session.date]
     const title = round ? `🎱 제${round}차 당신회 정기모임 대진표 🎱` : `🎱 당신회 정기모임 대진표 🎱`
     let txt = `${title}\n📅 ${session.date}\n📍 ${locationOf(session.date)}\n`
     if (r1.length) txt += `\n━━━ 1부 (16:00~17:00) ━━━\n${r1.map(line).join('\n')}\n`
     if (r2.length) txt += `\n━━━ 2부 (17:00~18:00) ━━━\n${r2.map(line).join('\n')}\n`
-    if (sitOut.length) txt += `\n⏸ 대기: ${sitOut.map(name).join(', ')}\n`
+    if (sitOutForText.length) txt += `\n⏸ 대기: ${sitOutForText.map(name).join(', ')}\n`
     txt += `\n⏰ 시간 엄수 바랍니다.`
     return txt
   }
@@ -412,7 +467,9 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     const lineup: LineupMatch[] = ongoing
       .filter((o) => o.round === 1 || o.round === 2)
       .map((o) => ({ round: o.round!, aId: o.aId, bId: o.bId, handicapA: o.handicapA, handicapB: o.handicapB }))
-    publishLineup(session.id, lineup, sitOut)
+    const inLineup = new Set(lineup.flatMap((m) => [m.aId, m.bId]))
+    const sitOutIds = session.attendeeIds.filter((id) => !inLineup.has(id))
+    publishLineup(session.id, lineup, sitOutIds)
     const s = useApp.getState()
     await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
   }
@@ -646,12 +703,24 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             />
           )}
 
+          {!isFlash && (
+            <RoundParticipantPicker
+              label="1라운드"
+              attendeeIds={session.attendeeIds}
+              selected={round1Sel}
+              onToggle={(id) => setRound1Sel((s) => toggleParticipant(s, id))}
+              onSelectAll={() => setRound1Sel(new Set(session.attendeeIds))}
+              onSelectNone={() => setRound1Sel(new Set())}
+              name={name}
+            />
+          )}
+
           {/* 매칭 방식 선택: 자동(1라운드 생성) / 수동(두 명씩 직접 선택) — 선택된 쪽만 녹색 */}
           <div className="board-actions">
             <button className={matchMode === 'auto' ? 'primary grow' : 'grow'}
-              disabled={session.attendeeIds.length < 2}
+              disabled={(isFlash ? session.attendeeIds.length : round1PlayingIds.length) < 2}
               onClick={isFlash ? autoMatchFlash : autoMatchRegular}>
-              🔀 자동매칭
+              🔀 {isFlash ? '자동매칭' : '1라운드 자동매칭'}
             </button>
             <button className={matchMode === 'manual' ? 'primary grow' : 'grow'}
               disabled={session.attendeeIds.length < 2}
@@ -659,6 +728,31 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
               ✋ 수동매칭
             </button>
           </div>
+
+          {!isFlash && (
+            <>
+              <RoundParticipantPicker
+                label="2라운드"
+                attendeeIds={session.attendeeIds}
+                selected={round2Sel}
+                onToggle={(id) => setRound2Sel((s) => toggleParticipant(s, id))}
+                onSelectAll={() => setRound2Sel(new Set(session.attendeeIds))}
+                onSelectNone={() => setRound2Sel(new Set())}
+                name={name}
+              />
+              <button className="block" style={{ fontSize: 16, padding: 13, marginBottom: 10 }}
+                disabled={round2PlayingIds.length < 2 || round2Locked}
+                onClick={autoMatchRoundTwo}>
+                🔀 2라운드 자동매칭
+              </button>
+              {round2Locked && (
+                <p className="muted" style={{ fontSize: 13, marginTop: -6, marginBottom: 10, color: '#c0392b' }}>
+                  이미 2라운드 결과가 있어 재매칭할 수 없습니다. 다시 매칭하려면 먼저 2라운드 경기를 하나씩 삭제하세요.
+                </p>
+              )}
+            </>
+          )}
+
           {!isFlash && (
             <button className="block" style={{ fontSize: 16, padding: 13, marginBottom: 10 }}
               disabled={ongoing.length === 0} onClick={() => setLineupText(buildLineupText())}>
@@ -668,10 +762,6 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
           {started && renderRoundGroup(1)}
           {!isFlash && started && renderRoundGroup(2)}
-
-          {sitOut.length > 0 && (
-            <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>⏸ 대기: {sitOut.map(name).join(', ')}</div>
-          )}
         </>
       )}
 
@@ -736,6 +826,50 @@ function ScoreCell({ handicap, score, onHcap, onScore }: {
         핸디
         <input type="number" min={1} value={handicap} onChange={(e) => onHcap(Math.max(1, +e.target.value))} />
       </label>
+    </div>
+  )
+}
+
+/** 라운드별 "이번 라운드 경기 참가" 선택 UI. 선택 안 된 사람은 그 라운드의 미대진자(대기)로 취급한다. */
+function RoundParticipantPicker({ label, attendeeIds, selected, onToggle, onSelectAll, onSelectNone, name }: {
+  label: string
+  attendeeIds: string[]
+  selected: Set<string>
+  onToggle: (id: string) => void
+  onSelectAll: () => void
+  onSelectNone: () => void
+  name: (id: string) => string
+}) {
+  const playingCount = attendeeIds.filter((id) => selected.has(id)).length
+  const waitingCount = attendeeIds.length - playingCount
+  const expectedGames = Math.floor(playingCount / 2)
+  return (
+    <div className="card col-card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontWeight: 700, fontSize: 15 }}>{label} 참가자 선택</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" onClick={onSelectAll} style={{ fontSize: 13, padding: '6px 10px' }}>전체 선택</button>
+          <button type="button" onClick={onSelectNone} style={{ fontSize: 13, padding: '6px 10px' }}>전체 해제</button>
+        </div>
+      </div>
+      <div className="chip-grid">
+        {attendeeIds.map((id) => (
+          <button key={id} type="button"
+            className={`chip${selected.has(id) ? ' on' : ''}`}
+            onClick={() => onToggle(id)}>
+            {selected.has(id) ? '✓ ' : ''}{name(id)}
+          </button>
+        ))}
+      </div>
+      <span className="muted" style={{ fontSize: 13 }}>
+        참가 {playingCount}명 · 대기 {waitingCount}명 · 예상 {expectedGames}경기
+        {playingCount % 2 !== 0 && playingCount > 0 && ' (홀수 — 1명은 미대진자로 남습니다)'}
+      </span>
+      {playingCount < 2 && (
+        <span style={{ color: '#c0392b', fontSize: 13, fontWeight: 600 }}>
+          자동매칭하려면 참가자를 2명 이상 선택하세요.
+        </span>
+      )}
     </div>
   )
 }

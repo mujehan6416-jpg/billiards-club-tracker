@@ -18,3 +18,18 @@ export function winnerId(game: Game): string | null {
   if (rB > rA) return game.playerBId
   return null
 }
+
+/**
+ * 실제로 점수가 입력·저장된 경기인지 판정한다.
+ *
+ * Game 객체는 MeetingTab의 save()가 addGame()을 호출할 때만 생성되고, 그 시점에
+ * scoreA/scoreB/endType이 항상 함께 계산되어 저장된다 — 매칭만 되고 아직 점수를 안 넣은
+ * 상태는 Game이 아니라 화면의 Ongoing(컴포넌트 로컬 상태)으로만 존재하고 session.games에는
+ * 들어가지 않는다. CSV 임포트(appStore.ts의 applyGameCsv)도 동일하게 세 필드를 항상 채운다.
+ * winnerId는 과거 CSV 임포트 데이터에만 명시적으로 채워지고 일반 저장 경로에서는 항상
+ * undefined로 남기 때문에("winnerId 존재 여부"만으로는 UI로 직접 입력한 결과를 판정할 수
+ * 없다), 이 함수는 winnerId가 아니라 scoreA/scoreB/endType을 기준으로 판정한다.
+ */
+export function hasRecordedResult(game: Game): boolean {
+  return Number.isFinite(game.scoreA) && Number.isFinite(game.scoreB) && !!game.endType
+}

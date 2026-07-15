@@ -13,6 +13,7 @@ interface Store extends AppState {
   deleteSession: (sessionId: string) => void
   publishLineup: (sessionId: string, lineup: import('../types').LineupMatch[], sitOutIds: string[]) => void
   setAttendees: (sessionId: string, attendeeIds: string[]) => void
+  setRoundParticipants: (sessionId: string, round: 1 | 2, participantIds: string[]) => void
   addGame: (sessionId: string, game: Omit<Game, 'id' | 'playedAt'>) => void
   deleteGame: (sessionId: string, gameId: string) => void
   confirmGame: (sessionId: string, gameId: string) => void
@@ -99,6 +100,18 @@ export const useApp = create<Store>()(
       publishLineup: (sessionId, lineup, sitOutIds) =>
         set((s) => ({
           sessions: s.sessions.map((ss) => ss.id === sessionId ? { ...ss, lineup, sitOutIds } : ss),
+        })),
+
+      // 라운드별 "이번 라운드 경기 참가" 명단을 관리자가 직접 저장한다(참가하지 않는 attendeeIds는
+      // 자동으로 그 라운드의 미대진자가 된다). round1ParticipantIds/round2ParticipantIds는 각각
+      // 독립적으로 저장되므로, 2라운드만 편집해도 1라운드 값은 그대로 남는다.
+      setRoundParticipants: (sessionId, round, participantIds) =>
+        set((s) => ({
+          sessions: s.sessions.map((ss) =>
+            ss.id === sessionId
+              ? { ...ss, [round === 1 ? 'round1ParticipantIds' : 'round2ParticipantIds']: [...participantIds] }
+              : ss,
+          ),
         })),
 
       setAttendees: (sessionId, attendeeIds) =>
