@@ -78,9 +78,17 @@ export const useApp = create<Store>()(
         return id
       },
 
+      // 세션 승인(번개모임 전체를 정규 통계에 반영)과 개별 경기 확인(confirmGame, 회원이 입력한
+      // 점수를 관리자가 하나씩 검토)은 원래 서로 다른 동작이다. 다만 승인 후에도 game.pending이
+      // 남아있으면 회원 화면 노출 필터(!g.pending)와 stats.ts의 통계 포함 조건에 걸려 "승인됨"
+      // 배너와 달리 회원에게는 계속 안 보이므로, 승인 시 해당 세션의 pending도 함께 해제한다.
       approveSession: (sessionId) =>
         set((s) => ({
-          sessions: s.sessions.map((ss) => ss.id === sessionId ? { ...ss, approved: true } : ss),
+          sessions: s.sessions.map((ss) =>
+            ss.id === sessionId
+              ? { ...ss, approved: true, games: ss.games.map((g) => (g.pending ? { ...g, pending: false } : g)) }
+              : ss,
+          ),
         })),
 
       deleteSession: (sessionId) =>

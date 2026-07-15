@@ -126,7 +126,12 @@ export function App() {
   const { login } = useAuth()
   const { login: adminLogin } = useAdmin()
 
+  // memberId가 바뀔 때마다(최초 진입 + 로그아웃 후 재로그인 각각) 다시 내려받는다.
+  // 기존에는 deps가 []라 앱을 완전히 새로 열 때만 클라우드를 다시 확인했고, 같은 브라우저
+  // 탭 안에서 로그아웃 후 재로그인하면(페이지 새로고침 없이) 재조회가 전혀 일어나지 않아
+  // 다른 기기가 그 사이 저장한 최신 결과가 보이지 않는 문제가 있었다(재접속 시 결과 미표시).
   useEffect(() => {
+    setSyncing(true)
     cleanupOldPending()
     downloadFromCloud()
       .then((cloud) => {
@@ -146,7 +151,7 @@ export function App() {
       })
       .catch(() => {})
       .finally(() => setSyncing(false))
-  }, [])
+  }, [memberId])
 
   // 안드로이드 뒤로 가기 버튼 — 2회 연속 눌러야 종료
   useEffect(() => {

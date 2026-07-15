@@ -115,6 +115,37 @@ describe('authorizedAdmin 상태에서의 동기화', () => {
     expect(sentToServer.confirmedByUid).toBe('dev-admin-uid')
   })
 
+  it('draft 저장 후 store를 초기화(재접속 재현)하고 loadSettlements로 다시 불러오면 동일한 draft가 복원된다', async () => {
+    // 1) 관리자가 draft를 만들고 저장(saveDraft) — 실제 saveDraft 경로를 그대로 태운다.
+    const id = useSettlementStore.getState().createSettlement({
+      meetingName: '가상 정기모임 7회차', meetingDate: '2026-03-01', meetingType: 'regular',
+      sessionId: 'session-restore-test', actorDisplayName: '테스트관리자',
+    })
+    saveSettlementMock.mockResolvedValue(1)
+    const saveRes = await useSettlementStore.getState().saveDraft(id)
+    expect(saveRes.ok).toBe(true)
+    const savedPayload = saveSettlementMock.mock.calls[0][0]
+    expect(savedPayload.id).toBe(id)
+    expect(savedPayload.status).toBe('draft')
+
+    // 2) 앱 재접속(로그아웃 후 재로그인, 새로고침 등)을 재현 — 로컬 settlementStore를 완전히 비운다.
+    useSettlementStore.setState({ settlements: [], currentId: null, syncStatus: 'idle', lastSyncError: null })
+    expect(useSettlementStore.getState().getById(id)).toBeUndefined()
+
+    // 3) Firestore에는 방금 저장된 payload가 그대로 있다고 가정하고 loadSettlements를 호출한다.
+    listSettlementsMock.mockResolvedValue([{ ...savedPayload, version: 1 }])
+    const loadRes = await useSettlementStore.getState().loadSettlements()
+    expect(loadRes.ok).toBe(true)
+
+    // 4) 같은 sessionId/식별키로 동일한 draft가 복원되어야 한다 — 새 문서가 중복 생성되지 않는다.
+    const restored = useSettlementStore.getState().getById(id)
+    expect(restored).toBeDefined()
+    expect(restored!.status).toBe('draft')
+    expect(restored!.sessionId).toBe('session-restore-test')
+    expect(restored!.meetingName).toBe('가상 정기모임 7회차')
+    expect(useSettlementStore.getState().settlements).toHaveLength(1) // 중복 생성 없음
+  })
+
   it('네트워크 실패 시 로컬 상태(및 version)는 유지되고 lastSyncError에 경고가 남는다', async () => {
     const id = createDraftSettlement()
     saveSettlementMock.mockRejectedValue(new Error('네트워크 오류(가상)'))
