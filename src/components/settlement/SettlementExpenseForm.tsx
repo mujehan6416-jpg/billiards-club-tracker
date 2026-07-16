@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSettlementStore, isLocked } from '../../store/settlementStore'
-import { EXPENSE_CATEGORIES, DINNER_CATEGORY } from '../../lib/settlementConstants'
+import { EXPENSE_CATEGORIES, DINNER_CATEGORY, displayExpenseCategory } from '../../lib/settlementConstants'
+import { calcDefaultExpenseClubShare, prefillExpenseClubShare, validateExpenseShares } from '../../logic/settlement'
 import type { ExpensePaymentMethod, SettlementExpense } from '../../types/settlement'
 import { todayStr } from '../../lib/date'
 import { SettlementSaveButtons } from './SettlementSaveButtons'
@@ -42,8 +43,9 @@ export function SettlementExpenseForm({ settlementId, onRequestDinnerForm, previ
   const startEdit = (e: SettlementExpense) => {
     setEditingId(e.id)
     setForm({
-      date: e.date, label: e.label, category: e.category, amount: String(e.amount),
-      method: e.method, paidBy: e.paidBy ?? '', clubShare: String(e.clubShare),
+      date: e.date, label: e.label, category: displayExpenseCategory(e.category), amount: String(e.amount),
+      method: e.method, paidBy: e.paidBy ?? '',
+      clubShare: prefillExpenseClubShare(e.amount, e.clubShare, e.personalDonation),
       personalDonation: String(e.personalDonation), note: e.note ?? '',
     })
   }
@@ -61,8 +63,10 @@ export function SettlementExpenseForm({ settlementId, onRequestDinnerForm, previ
     setError('')
     if (!form.label.trim()) { setError('항목명을 입력해주세요.'); return }
     const amount = parseAmt(form.amount)
-    const clubShare = form.clubShare === '' ? amount : parseAmt(form.clubShare)
     const personalDonation = form.personalDonation === '' ? 0 : parseAmt(form.personalDonation)
+    const clubShare = form.clubShare === '' ? calcDefaultExpenseClubShare(amount, personalDonation) : parseAmt(form.clubShare)
+    const check = validateExpenseShares(amount, clubShare, personalDonation)
+    if (!check.ok) { setError(check.error); return }
     const expense = {
       date: form.date, label: form.label.trim(), category: form.category, amount,
       method: form.method, paidBy: form.paidBy.trim() || undefined,
@@ -123,8 +127,11 @@ export function SettlementExpenseForm({ settlementId, onRequestDinnerForm, previ
       {settlement.expenses.map((e) => (
         <div key={e.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontWeight: 600 }}>{e.label} <span className="muted" style={{ fontSize: 12 }}>({e.category})</span></div>
-            <div className="muted" style={{ fontSize: 13 }}>{e.date} · {e.method} · 모임부담 {fmt(e.clubShare)}원</div>
+            <div style={{ fontWeight: 600 }}>{e.label} <span className="muted" style={{ fontSize: 12 }}>({displayExpenseCategory(e.category)})</span></div>
+            <div className="muted" style={{ fontSize: 13 }}>
+              {e.date} · {e.method} · 총액 {fmt(e.amount)}원 · 모임부담 {fmt(e.clubShare)}원
+              {e.personalDonation > 0 && ` · 개인찬조 ${fmt(e.personalDonation)}원`}
+            </div>
           </div>
           {!locked && (
             <div style={{ display: 'flex', gap: 6 }}>

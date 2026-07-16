@@ -21,6 +21,9 @@ import {
   planDeleteTableRow,
   searchAddableMembers,
   planClearAmount,
+  calcDefaultExpenseClubShare,
+  prefillExpenseClubShare,
+  validateExpenseShares,
 } from '../src/logic/settlement'
 import type { RegularSettlement, SettlementParticipant, SettlementExpense, DinnerContribution } from '../src/types/settlement'
 
@@ -105,6 +108,54 @@ describe('calcExpenseSummary', () => {
     expect(summary.cash).toBe(70000)
     expect(summary.dinnerClubShare).toBe(50000)
     expect(summary.total).toBe(170000)
+  })
+
+  it('새 분류("기타")와 예전 분류("상품비" 등)가 섞여 있어도 category와 무관하게 결제수단 기준으로 누락 없이 집계된다', () => {
+    const expenses: SettlementExpense[] = [
+      { id: 'e1', date: '2026-07-16', label: '주차비', category: '기타', amount: 5000, method: '현금', clubShare: 5000, personalDonation: 0 },
+      { id: 'e2', date: '2026-07-16', label: '트로피', category: '상품비', amount: 15000, method: '계좌이체', clubShare: 15000, personalDonation: 0 },
+      { id: 'e3', date: '2026-07-16', label: '다과', category: '다과비', amount: 8000, method: '현금', clubShare: 8000, personalDonation: 0 },
+    ]
+    const settlement = baseSettlement({ expenses })
+    const summary = calcExpenseSummary(settlement)
+    expect(summary.cash).toBe(13000)
+    expect(summary.transfer).toBe(15000)
+    expect(summary.total).toBe(28000)
+  })
+})
+
+describe('calcDefaultExpenseClubShare / prefillExpenseClubShare / validateExpenseShares — 지출 금액 계산', () => {
+  it('개인 찬조액이 없으면 모임 부담액은 전체 금액과 같다', () => {
+    expect(calcDefaultExpenseClubShare(5000, 0)).toBe(5000)
+  })
+
+  it('개인 찬조액이 있으면 전체 금액에서 뺀 나머지가 모임 부담액이다 (100,000 - 20,000 = 80,000)', () => {
+    expect(calcDefaultExpenseClubShare(100000, 20000)).toBe(80000)
+  })
+
+  it('개인 찬조액이 전체 금액보다 커도 모임 부담액은 음수가 아니라 0으로 고정된다', () => {
+    expect(calcDefaultExpenseClubShare(5000, 9000)).toBe(0)
+  })
+
+  it('저장된 clubShare가 "비우면 전액" 자동계산값과 같으면 수정 폼에서 빈칸으로 되돌린다', () => {
+    expect(prefillExpenseClubShare(5000, 5000, 0)).toBe('')
+    expect(prefillExpenseClubShare(100000, 80000, 20000)).toBe('')
+  })
+
+  it('저장된 clubShare가 자동계산값과 다르면(직접 지정한 값) 그 값을 그대로 보여준다', () => {
+    // 자동계산값은 100000-30000=70000이므로, 75000은 명백히 직접 지정한 값이다.
+    expect(prefillExpenseClubShare(100000, 75000, 30000)).toBe('75000')
+    expect(prefillExpenseClubShare(5000, 0, 0)).toBe('0')
+  })
+
+  it('모임부담액+개인찬조액이 전체 금액과 일치하면 통과한다', () => {
+    expect(validateExpenseShares(100000, 70000, 30000)).toEqual({ ok: true })
+  })
+
+  it('모임부담액+개인찬조액이 전체 금액보다 크거나 작으면 안내 문구와 함께 실패한다', () => {
+    const res = validateExpenseShares(5000, 0, 0)
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error).toContain('일치하지 않습니다')
   })
 })
 

@@ -254,6 +254,39 @@ export function transitionStatus(
 }
 
 // ────────────────────────────────────────────────────────────
+// 일반 지출(SettlementExpense) 금액 계산·검증
+// ────────────────────────────────────────────────────────────
+
+/**
+ * "모임 부담액" 입력칸을 비워두면 전액(=전체 금액 - 개인 찬조액)을 모임이 부담한 것으로 계산한다.
+ * 개인 찬조액이 없으면(0원) 결과는 전체 금액과 같다. 음수가 나오지 않도록 0 이상으로 고정한다.
+ */
+export function calcDefaultExpenseClubShare(amount: number, personalDonation: number): number {
+  return Math.max(0, amount - personalDonation)
+}
+
+/**
+ * 지출 수정 폼에 "모임 부담액"을 프리필할 때 쓴다. 기존 clubShare가 "비워두면 전액" 자동
+ * 계산값(전체 금액 - 개인 찬조액)과 같다면 다시 빈칸으로 되돌려, 수정 화면에서 전체 금액을
+ * 바꿔도 "비우면 전액" 규칙이 계속 자동으로 따라가게 한다. 사용자가 명시적으로 다른(부분
+ * 부담) 값을 지정했던 경우에는 그 값을 그대로 보여준다.
+ */
+export function prefillExpenseClubShare(amount: number, clubShare: number, personalDonation: number): string {
+  return clubShare === calcDefaultExpenseClubShare(amount, personalDonation) ? '' : String(clubShare)
+}
+
+/** 지출의 모임 부담액 + 개인 찬조액 합계가 전체 금액과 정확히 일치하는지 확인한다. */
+export function validateExpenseShares(amount: number, clubShare: number, personalDonation: number): ValidationResult {
+  if (clubShare + personalDonation !== amount) {
+    return {
+      ok: false,
+      error: `모임 부담액(${clubShare.toLocaleString('ko-KR')}원)과 개인 찬조액(${personalDonation.toLocaleString('ko-KR')}원)을 더한 값이 전체 금액(${amount.toLocaleString('ko-KR')}원)과 일치하지 않습니다.`,
+    }
+  }
+  return { ok: true }
+}
+
+// ────────────────────────────────────────────────────────────
 // 회식비(DinnerContribution) 검증
 // ────────────────────────────────────────────────────────────
 
