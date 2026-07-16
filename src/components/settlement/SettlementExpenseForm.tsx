@@ -4,7 +4,7 @@ import { EXPENSE_CATEGORIES, DINNER_CATEGORY } from '../../lib/settlementConstan
 import type { ExpensePaymentMethod, SettlementExpense } from '../../types/settlement'
 import { todayStr } from '../../lib/date'
 import { SettlementSaveButtons } from './SettlementSaveButtons'
-import { moneyInputStyle, compactMoneyInputStyle } from './moneyInputStyle'
+import { moneyInputStyle } from './moneyInputStyle'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') || '0', 10))
@@ -87,7 +87,7 @@ export function SettlementExpenseForm({ settlementId, onRequestDinnerForm, previ
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span className="muted">금액</span>
             <input type="number" inputMode="numeric" min={0} value={form.amount} placeholder="0"
-              onChange={(e) => set('amount')(e.target.value)} style={{ ...moneyInputStyle, fontSize: 18, padding: '12px 14px' }} />
+              onChange={(e) => set('amount')(e.target.value)} style={moneyInputStyle} />
           </div>
           <select value={form.method} onChange={(e) => set('method')(e.target.value)}>
             <option value="현금">현금</option>
@@ -96,17 +96,17 @@ export function SettlementExpenseForm({ settlementId, onRequestDinnerForm, previ
             <option value="기타">기타</option>
           </select>
           <input placeholder="실제 결제자 (선택)" value={form.paidBy} onChange={(e) => set('paidBy')(e.target.value)} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span className="muted" style={{ fontSize: 12 }}>모임 부담액 (비우면 전액)</span>
-              <input type="number" inputMode="numeric" min={0} value={form.clubShare} placeholder={form.amount || '0'}
-                onChange={(e) => set('clubShare')(e.target.value)} style={compactMoneyInputStyle} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span className="muted" style={{ fontSize: 12 }}>개인 찬조액</span>
-              <input type="number" inputMode="numeric" min={0} value={form.personalDonation} placeholder="0"
-                onChange={(e) => set('personalDonation')(e.target.value)} style={compactMoneyInputStyle} />
-            </div>
+          {/* 모임 부담액·개인 찬조액은 한 줄에 나란히 두면 각 칸이 반쪽 폭이 되어 큰 금액이 좁게
+              보인다 — 항상 한 줄에 하나씩, 카드 전체 폭으로 세로 배치한다. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="muted" style={{ fontSize: 12 }}>모임 부담액 (비우면 전액)</span>
+            <input type="number" inputMode="numeric" min={0} value={form.clubShare} placeholder={form.amount || '0'}
+              onChange={(e) => set('clubShare')(e.target.value)} style={moneyInputStyle} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="muted" style={{ fontSize: 12 }}>개인 찬조액</span>
+            <input type="number" inputMode="numeric" min={0} value={form.personalDonation} placeholder="0"
+              onChange={(e) => set('personalDonation')(e.target.value)} style={moneyInputStyle} />
           </div>
           <input placeholder="비고 (선택)" value={form.note} onChange={(e) => set('note')(e.target.value)} />
           {error && <p className="info-msg" style={{ background: '#fdeceb', color: '#c0392b' }}>{error}</p>}
