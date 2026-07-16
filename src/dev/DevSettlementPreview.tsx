@@ -47,7 +47,7 @@ export default function DevSettlementPreview() {
         아래 "Firestore 동기화 테스트"를 열면 실제 Firebase 프로젝트와 통신합니다 — 가상 정산에만 사용하세요.
       </div>
       <div className="app-main" style={{ paddingBottom: 24 }}>
-        <SettlementTab devMembers={devMembers} devSessions={devSessions} />
+        <SettlementTab devMembers={devMembers} devSessions={devSessions} previewMode />
 
         <div className="card">
           <button type="button" className="block" onClick={() => setShowSyncPanel((v) => !v)}>

@@ -3,7 +3,7 @@ import { useApp } from '../store/appStore'
 import { useAuth } from '../store/authStore'
 import { useSettlementStore } from '../store/settlementStore'
 import type { ImportAttendeesResult } from '../store/settlementStore'
-import { SettlementParticipantForm } from '../components/settlement/SettlementParticipantForm'
+import { DuesTable } from '../components/settlement/DuesTable'
 import { SettlementExpenseForm } from '../components/settlement/SettlementExpenseForm'
 import { DinnerContributionForm } from '../components/settlement/DinnerContributionForm'
 import { CashDepositForm } from '../components/settlement/CashDepositForm'
@@ -146,7 +146,11 @@ function AttendeeImport({ settlementId, membersOverride, sessionsOverride }: {
   )
 }
 
-export function SettlementTab({ devMembers, devSessions }: { devMembers?: Member[]; devSessions?: Session[] } = {}) {
+export function SettlementTab({ devMembers, devSessions, previewMode = false }: {
+  devMembers?: Member[]; devSessions?: Session[]
+  /** 개발 미리보기 전용. true면 DuesTable의 저장 버튼이 실제 Firestore 액션을 호출하지 않는다. */
+  previewMode?: boolean
+} = {}) {
   const settlements = useSettlementStore((s) => s.settlements)
   const currentId = useSettlementStore((s) => s.currentId)
   const setCurrentId = useSettlementStore((s) => s.setCurrentId)
@@ -194,7 +198,9 @@ export function SettlementTab({ devMembers, devSessions }: { devMembers?: Member
             ))}
           </div>
 
-          {section === 'participants' && <SettlementParticipantForm settlementId={settlement.id} membersOverride={devMembers} />}
+          {section === 'participants' && (
+            <DuesTable settlementId={settlement.id} previewMode={previewMode} membersOverride={devMembers} />
+          )}
           {section === 'expenses' && (
             <SettlementExpenseForm settlementId={settlement.id} onRequestDinnerForm={() => setSection('dinner')} />
           )}

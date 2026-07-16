@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useSettlementStore } from '../src/store/settlementStore'
+import { useApp } from '../src/store/appStore'
 import type { Member, Session } from '../src/types'
 
 // 아래 이름·ID·금액은 전부 테스트용 가상 데이터이며 실제 회원 정보가 아니다.
@@ -27,6 +28,21 @@ describe('addMemberParticipant', () => {
     expect(first.ok).toBe(true)
     expect(second.ok).toBe(false)
     expect(useSettlementStore.getState().getById(id)!.participants).toHaveLength(1)
+  })
+
+  it('실제 회원명부(appStore.members)는 전혀 수정하지 않는다', () => {
+    const id = createDraftSettlement()
+    const beforeMembers = useApp.getState().members
+    useSettlementStore.getState().addMemberParticipant(id, fakeMember('m1', '테스트회원A'))
+    expect(useApp.getState().members).toBe(beforeMembers) // 참조까지 동일 — 정산 액션이 appStore를 건드리지 않음
+  })
+
+  it('기존 참가자 뒤에 순서대로 추가된다(회원 검색으로 추가 시 참석자 순서 유지)', () => {
+    const id = createDraftSettlement()
+    useSettlementStore.getState().addGuestParticipant(id, '먼저추가된비회원')
+    useSettlementStore.getState().addMemberParticipant(id, fakeMember('m1', '나중추가된회원'))
+    const names = useSettlementStore.getState().getById(id)!.participants.map((p) => p.displayName)
+    expect(names).toEqual(['먼저추가된비회원', '나중추가된회원'])
   })
 })
 

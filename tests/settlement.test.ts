@@ -14,6 +14,13 @@ import {
   validateDinnerContribution,
   hasDuplicateDinnerRound,
   validateCashDeposit,
+  buildIncomeTableRows,
+  calcIncomeTableSummary,
+  parseTableAmount,
+  planAddTableRow,
+  planDeleteTableRow,
+  searchAddableMembers,
+  planClearAmount,
 } from '../src/logic/settlement'
 import type { RegularSettlement, SettlementParticipant, SettlementExpense, DinnerContribution } from '../src/types/settlement'
 
@@ -320,5 +327,230 @@ describe('validateCashDeposit', () => {
     })
     const result = validateCashDeposit(settlement, { amount: 999999, status: '입금예정' })
     expect(result.ok).toBe(true)
+  })
+})
+
+// ────────────────────────────────────────────────────────────
+// 회비·찬조 입력표 (참가자별 dues/donation을 "이름·구분·금액·결제수단" 행으로 펼치는 순수 함수)
+// ────────────────────────────────────────────────────────────
+
+describe('buildIncomeTableRows', () => {
+  it('참석자 순서 그대로 회비 행을 만든다(가나다순 재정렬 없음)', () => {
+    const settlement = baseSettlement({
+      participants: [
+        participant({ id: 'p1', displayName: '최시온' }),
+        participant({ id: 'p2', displayName: '가나다' }),
+        participant({ id: 'p3', displayName: '나다라' }),
+      ],
+    })
+    const rows = buildIncomeTableRows(settlement.participants)
+    expect(rows.map((r) => r.displayName)).toEqual(['최시온', '가나다', '나다라'])
+  })
+
+  it('회원과 비회원 모두 회비 행으로 표시된다', () => {
+    const settlement = baseSettlement({
+      participants: [
+        participant({ id: 'p1', displayName: '테스트회원A', participantType: 'member' }),
+        { id: 'p2', displayName: '테스트비회원B', participantType: 'guest', memberId: null, addedVia: 'manually_added_guest' },
+      ],
+    })
+    const rows = buildIncomeTableRows(settlement.participants)
+    expect(rows).toHaveLength(2)
+    expect(rows.every((r) => r.category === 'dues')).toBe(true)
+  })
+
+  it('참가자에게 이미 회비·찬조 값이 있으면 표 행으로 그대로 복원된다', () => {
+    const settlement = baseSettlement({
+      participants: [
+        participant({
+          id: 'p1', displayName: '테스트회원A',
+          dues: { amount: 30000, method: '계좌이체', status: '입금확인' },
+          donation: { amount: 100000, method: '현금', status: '입금확인' },
+        }),
+      ],
+    })
+    const rows = buildIncomeTableRows(settlement.participants)
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ category: 'dues', amount: 30000, method: '계좌이체' })
+    expect(rows[1]).toMatchObject({ category: 'donation', amount: 100000, method: '현금' })
+  })
+
+  it('찬조가 없으면 찬조 행 자체가 생성되지 않는다', () => {
+    const settlement = baseSettlement({
+      participants: [participant({ id: 'p1', displayName: '테스트회원A', dues: { amount: 30000, method: '현금', status: '입금확인' } })],
+    })
+    const rows = buildIncomeTableRows(settlement.participants)
+    expect(rows).toHaveLength(1)
+  })
+
+  it('결제수단이 없는(과거) 회비 데이터도 정상적으로 undefined method로 표시된다', () => {
+    const settlement = baseSettlement({
+      participants: [participant({ id: 'p1', displayName: '테스트회원A' })], // dues 자체가 없는 기존 참가자
+    })
+    const rows = buildIncomeTableRows(settlement.participants)
+    expect(rows[0].amount).toBeUndefined()
+    expect(rows[0].method).toBeUndefined()
+  })
+})
+
+describe('calcIncomeTableSummary', () => {
+  it('회비합계·찬조합계·현금합계·계좌이체합계·총수입을 상태(입금확인 등) 구분 없이 그대로 합산한다', () => {
+    const settlement = baseSettlement({
+      participants: [
+        participant({
+          id: 'p1', displayName: '테스트회원A',
+          dues: { amount: 30000, method: '현금', status: '미납' }, // 미납이어도(=calcIncomeSummary와 다르게) 표 합계엔 포함
+          donation: { amount: 100000, method: '계좌이체', status: '미확인' },
+        }),
+        participant({ id: 'p2', displayName: '테스트회원B', dues: { amount: 20000, method: '계좌이체', status: '입금확인' } }),
+      ],
+    })
+    const summary = calcIncomeTableSummary(settlement)
+    expect(summary.duesTotal).toBe(50000)
+    expect(summary.donationTotal).toBe(100000)
+    expect(summary.cashTotal).toBe(30000)
+    expect(summary.transferTotal).toBe(120000)
+    expect(summary.totalIncome).toBe(150000)
+  })
+
+  it('구분(donation 없음) 또는 결제수단이 비어있는 행은 해당 항목에서 0으로 처리되고 총수입에는 반영된다', () => {
+    const settlement = baseSettlement({
+      participants: [
+        participant({ id: 'p1', displayName: '테스트회원A', dues: { amount: 10000 } as never }), // method 없음
+      ],
+    })
+    const summary = calcIncomeTableSummary(settlement)
+    expect(summary.cashTotal).toBe(0)
+    expect(summary.transferTotal).toBe(0)
+    expect(summary.totalIncome).toBe(10000)
+  })
+
+  it('아직 입력 안 한(undefined) 금액은 0원으로 처리되고, 명시적 0원도 정확히 0으로 더해진다', () => {
+    const settlement = baseSettlement({
+      participants: [
+        participant({ id: 'p1', displayName: '테스트회원A' }), // dues 자체 없음(=미입력)
+        participant({ id: 'p2', displayName: '테스트회원B', dues: { amount: 0, method: '현금', status: '입금확인' } }), // 명시적 0원
+      ],
+    })
+    const summary = calcIncomeTableSummary(settlement)
+    expect(summary.totalIncome).toBe(0)
+    expect(summary.duesTotal).toBe(0)
+  })
+})
+
+describe('parseTableAmount', () => {
+  it('빈 문자열은 null(=아직 입력 안 함)을 반환한다', () => {
+    expect(parseTableAmount('')).toBeNull()
+  })
+  it('숫자만 남기고 나머지는 제거한다(음수 부호도 제거되어 음수가 될 수 없다)', () => {
+    expect(parseTableAmount('-30000')).toBe(30000)
+    expect(parseTableAmount('30,000원')).toBe(30000)
+  })
+  it('숫자가 전혀 없으면(예: 문자만 입력) 빈 값과 동일하게 null을 반환한다 — NaN을 반환하지 않는다', () => {
+    const result = parseTableAmount('abc')
+    expect(result).toBeNull()
+  })
+  it('문자와 숫자가 섞여 있으면 숫자만 추출해 NaN 없이 정수를 반환한다', () => {
+    const result = parseTableAmount('12abc34')
+    expect(result).toBe(1234)
+    expect(Number.isFinite(result)).toBe(true)
+  })
+  it('0을 명시적으로 입력하면 0을 그대로 반환한다', () => {
+    expect(parseTableAmount('0')).toBe(0)
+  })
+})
+
+describe('planAddTableRow', () => {
+  const participants = [
+    participant({ id: 'p1', displayName: '테스트회원A', dues: { amount: 30000, method: '현금', status: '입금확인' } }),
+  ]
+
+  it('빈 이름은 막는다', () => {
+    expect(planAddTableRow(participants, '   ', 'dues')).toMatchObject({ action: 'blocked' })
+  })
+
+  it('새 이름(외부 찬조자·비회원)은 새 참가자 생성으로 판정한다', () => {
+    expect(planAddTableRow(participants, '외부찬조자1', 'donation')).toEqual({ action: 'create-guest' })
+  })
+
+  it('기존 참가자와 이름이 같고 그 구분이 아직 비어있으면 기존 참가자에 채우도록 판정한다(같은 사람 회비+찬조)', () => {
+    // p1은 이미 회비가 있고 찬조는 없다 → 찬조로 행 추가하면 기존 참가자에 병합
+    expect(planAddTableRow(participants, '테스트회원A', 'donation')).toEqual({ action: 'update-existing', participantId: 'p1' })
+  })
+
+  it('기존 참가자와 이름이 같고 그 구분이 이미 있으면 중복 생성을 막는다', () => {
+    const result = planAddTableRow(participants, '테스트회원A', 'dues')
+    expect(result.action).toBe('blocked')
+  })
+})
+
+describe('planDeleteTableRow', () => {
+  it('실제 모임 참석자(meeting_attendee)는 항상 clear-category — 참가자 자체를 지우지 않는다', () => {
+    const p = participant({ id: 'p1', displayName: '테스트회원A', addedVia: 'meeting_attendee', donation: { amount: 10000, method: '현금', status: '입금확인' } })
+    expect(planDeleteTableRow(p, 'donation')).toEqual({ action: 'clear-category' })
+  })
+
+  it('정산에만 추가된 사람(guest)이 지우려는 구분 외에 남는 값이 없으면 참가자 자체를 지운다', () => {
+    const p = participant({ id: 'p1', displayName: '외부찬조자1', addedVia: 'manually_added_guest', donation: { amount: 10000, method: '현금', status: '입금확인' } })
+    expect(planDeleteTableRow(p, 'donation')).toEqual({ action: 'remove-participant' })
+  })
+
+  it('정산에만 추가된 사람이라도 다른 구분 값이 남아있으면 그 구분만 지운다', () => {
+    const p = participant({
+      id: 'p1', displayName: '외부찬조자1', addedVia: 'manually_added_guest',
+      dues: { amount: 30000, method: '현금', status: '입금확인' },
+      donation: { amount: 10000, method: '현금', status: '입금확인' },
+    })
+    expect(planDeleteTableRow(p, 'donation')).toEqual({ action: 'clear-category' })
+  })
+})
+
+describe('searchAddableMembers', () => {
+  const members = [
+    { id: 'm1', name: '테스트회원가', handicap: 20, handicapHistory: [], active: true },
+    { id: 'm2', name: '테스트회원나', handicap: 18, handicapHistory: [], active: true },
+    { id: 'm3', name: '테스트회원다(탈퇴)', handicap: 15, handicapHistory: [], active: false },
+  ]
+
+  it('검색어가 없으면 빈 배열을 반환한다', () => {
+    expect(searchAddableMembers(members, [], '')).toEqual([])
+  })
+
+  it('이름에 검색어가 포함된 활성 회원만 반환한다', () => {
+    const result = searchAddableMembers(members, [], '테스트회원가')
+    expect(result.map((m) => m.id)).toEqual(['m1'])
+  })
+
+  it('비활성(탈퇴) 회원은 검색 결과에서 제외한다', () => {
+    const result = searchAddableMembers(members, [], '테스트회원다')
+    expect(result).toHaveLength(0)
+  })
+
+  it('이미 정산 참가자로 들어와 있는 회원은 검색 결과에서 제외한다(중복 추가 방지)', () => {
+    const participants = [participant({ id: 'p1', displayName: '테스트회원가', memberId: 'm1' })]
+    const result = searchAddableMembers(members, participants, '테스트회원')
+    expect(result.map((m) => m.id)).toEqual(['m2'])
+  })
+})
+
+describe('planClearAmount — 금액을 빈칸으로 지웠을 때 기존 메타데이터 보존', () => {
+  it('메타데이터가 전혀 없는(방금 생성된) 행은 완전히 지워도 된다', () => {
+    expect(planClearAmount({ status: '미납' }, '미납')).toEqual({ action: 'clear-all' })
+  })
+
+  it('status가 기본값이 아니면(예: 입금확인) 금액만 0으로 바꾸고 통째로 지우지 않는다', () => {
+    expect(planClearAmount({ status: '입금확인' }, '미납')).toEqual({ action: 'set-zero' })
+  })
+
+  it('note가 있으면 status가 기본값이어도 금액만 0으로 바꾼다', () => {
+    expect(planClearAmount({ status: '미납', note: '분할 납부 예정' }, '미납')).toEqual({ action: 'set-zero' })
+  })
+
+  it('paidAt이 있으면 금액만 0으로 바꾼다', () => {
+    expect(planClearAmount({ status: '미납', paidAt: '2026-01-10T00:00:00.000Z' }, '미납')).toEqual({ action: 'set-zero' })
+  })
+
+  it('기존 값 자체가 없으면(undefined) 완전히 지워도 된다', () => {
+    expect(planClearAmount(undefined, '미납')).toEqual({ action: 'clear-all' })
   })
 })

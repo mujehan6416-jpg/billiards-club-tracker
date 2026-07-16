@@ -8,7 +8,10 @@ import type {
   DinnerContributionType,
   DinnerContributor,
   CashDepositStatus,
+  DuesPaymentMethod,
+  DonationPaymentMethod,
 } from '../types/settlement'
+import type { Member } from '../types'
 
 const sum = (nums: number[]) => nums.reduce((a, b) => a + b, 0)
 
@@ -324,4 +327,151 @@ export function validateCashDeposit(
     }
   }
   return { ok: true }
+}
+
+// ────────────────────────────────────────────────────────────
+// 회비·찬조 입력표 (참가자별 dues/donation을 "이름·구분·금액·결제수단" 행으로 펼쳐서 보여준다)
+//
+// 참가자(SettlementParticipant)는 여전히 dues 최대 1개·donation 최대 1개만 갖는 기존 구조
+// 그대로다 — 데이터 구조를 바꾸지 않고, 표시할 때만 참가자 1명을 최대 2행(회비/찬조)으로 펼친다.
+// 한 사람에게 같은 구분(예: 회비)을 두 번 따로 기록하는 것은 이 구조에서 지원하지 않으며,
+// planAddTableRow가 이를 감지해 막는다(중복 구분 행 생성 방지 — 완료 보고에 한계로 기록).
+// ────────────────────────────────────────────────────────────
+
+export type IncomeRowCategory = 'dues' | 'donation'
+export type IncomeRowMethod = DuesPaymentMethod | DonationPaymentMethod
+
+export interface IncomeTableRow {
+  participantId: string
+  category: IncomeRowCategory
+  displayName: string
+  /** 아직 입력 안 됨(=dues/donation 자체가 없음)이면 undefined, 명시적으로 입력됐으면 그 금액(0 포함). */
+  amount: number | undefined
+  method: IncomeRowMethod | undefined
+}
+
+/**
+ * 참가자 배열을 표의 행 순서(① 참석자 순서 그대로 → ② 같은 사람의 회비 행 다음 찬조 행)로 펼친다.
+ * participants 배열 자체의 순서는 절대 바꾸지 않는다(정렬 없음) — 순서 보존은 이 함수가 아니라
+ * settlementStore의 참가자 추가 액션들(항상 append)과 Firestore 배열 저장이 이미 보장한다.
+ * 회비 행은 모든 참가자에 대해 항상 만든다(기본 행). 찬조 행은 donation이 있을 때만 만든다.
+ */
+export function buildIncomeTableRows(participants: SettlementParticipant[]): IncomeTableRow[] {
+  const rows: IncomeTableRow[] = []
+  for (const p of participants) {
+    rows.push({ participantId: p.id, category: 'dues', displayName: p.displayName, amount: p.dues?.amount, method: p.dues?.method })
+    if (p.donation) {
+      rows.push({ participantId: p.id, category: 'donation', displayName: p.displayName, amount: p.donation.amount, method: p.donation.method })
+    }
+  }
+  return rows
+}
+
+export interface IncomeTableSummary {
+  duesTotal: number
+  donationTotal: number
+  cashTotal: number
+  transferTotal: number
+  totalIncome: number
+}
+
+/**
+ * 표 하단 합계 — calcIncomeSummary()와 달리 status(입금확인/미확인 등)로 거르지 않고
+ * 표에 입력된 금액을 그대로 더한다(요청된 표 자체의 합계이므로). 통장 잔액 등 확정 회계용
+ * 합계는 기존 calcIncomeSummary/calcBankSummary를 그대로 쓴다 — 이 함수로 대체하지 않는다.
+ */
+export function calcIncomeTableSummary(settlement: RegularSettlement): IncomeTableSummary {
+  const rows = buildIncomeTableRows(settlement.participants)
+  const amountOf = (r: IncomeTableRow) => r.amount ?? 0
+  const duesTotal = sum(rows.filter((r) => r.category === 'dues').map(amountOf))
+  const donationTotal = sum(rows.filter((r) => r.category === 'donation').map(amountOf))
+  const cashTotal = sum(rows.filter((r) => r.method === '현금').map(amountOf))
+  const transferTotal = sum(rows.filter((r) => r.method === '계좌이체').map(amountOf))
+  const totalIncome = sum(rows.map(amountOf))
+  return { duesTotal, donationTotal, cashTotal, transferTotal, totalIncome }
+}
+
+/**
+ * 표의 금액 입력 문자열을 저장 가능한 값으로 바꾼다.
+ * - 빈 문자열 → null ("아직 입력 안 함" — 호출부는 이 값이면 dues/donation을 null로 지워야 한다)
+ * - 숫자가 아닌 문자·부호(-)는 전부 제거하므로 음수는 만들어질 수 없다
+ * - 그 결과가 유효한 정수가 아니면(빈 입력 등) 0으로 처리한다 — undefined/NaN을 반환하지 않는다
+ */
+export function parseTableAmount(input: string): number | null {
+  const digits = input.replace(/[^0-9]/g, '')
+  if (digits === '') return null
+  const n = parseInt(digits, 10)
+  return Number.isFinite(n) && n >= 0 ? n : 0
+}
+
+export type AddTableRowResult =
+  | { action: 'update-existing'; participantId: string }
+  | { action: 'create-guest' }
+  | { action: 'blocked'; error: string }
+
+/**
+ * "행 추가"로 이름·구분을 입력했을 때 어떤 액션을 할지 판정한다(순수 함수, Firestore/store 미접근).
+ * - 이름이 기존 참가자와 정확히 같고 그 구분이 아직 비어있으면 → 그 참가자에 값을 채운다(update-existing)
+ * - 이름이 기존 참가자와 같은데 그 구분이 이미 있으면 → 중복 생성을 막는다(blocked)
+ * - 이름이 새로우면 → 새 비회원 참가자를 만든다(create-guest, addGuestParticipant 재사용)
+ */
+export function planAddTableRow(
+  participants: SettlementParticipant[],
+  name: string,
+  category: IncomeRowCategory,
+): AddTableRowResult {
+  const trimmed = name.trim()
+  if (!trimmed) return { action: 'blocked', error: '이름을 입력해주세요.' }
+  const existing = participants.find((p) => p.displayName === trimmed)
+  if (!existing) return { action: 'create-guest' }
+  const already = category === 'dues' ? !!existing.dues : !!existing.donation
+  if (already) {
+    return {
+      action: 'blocked',
+      error: `${trimmed}님은 이미 ${category === 'dues' ? '회비' : '찬조'}가 입력되어 있습니다. 표에서 해당 행을 직접 수정해주세요.`,
+    }
+  }
+  return { action: 'update-existing', participantId: existing.id }
+}
+
+export type DeleteTableRowResult = { action: 'clear-category' } | { action: 'remove-participant' }
+
+/**
+ * 표의 행 삭제(또는 초기화) 버튼을 눌렀을 때 어떤 액션을 할지 판정한다.
+ * - 실제 모임 참석자(addedVia === 'meeting_attendee')는 절대 참가자 자체를 지우지 않는다
+ *   (기본 참석자 행 삭제 금지 — 회비/찬조 값만 비운다).
+ * - 그 외(관리자가 정산에만 추가한 사람)는, 지우려는 구분 외에 남는 값이 없으면 참가자 자체를 지운다.
+ */
+export function planDeleteTableRow(participant: SettlementParticipant, category: IncomeRowCategory): DeleteTableRowResult {
+  if (participant.addedVia === 'meeting_attendee') return { action: 'clear-category' }
+  const willHaveOther = category === 'dues' ? !!participant.donation : !!participant.dues
+  return willHaveOther ? { action: 'clear-category' } : { action: 'remove-participant' }
+}
+
+/**
+ * "회원 검색으로 추가"의 검색 결과를 계산한다(순수 함수 — 회원명부·정산 데이터를 읽기만 하고
+ * 절대 수정하지 않는다). 이미 이 정산의 참가자로 들어와 있는 회원(memberId로 매칭)은 결과에서
+ * 제외해, 검색 결과 단계에서부터 중복 추가가 불가능하도록 한다.
+ */
+export function searchAddableMembers(members: Member[], participants: SettlementParticipant[], searchTerm: string): Member[] {
+  const trimmed = searchTerm.trim()
+  if (!trimmed) return []
+  const alreadyAdded = new Set(participants.map((p) => p.memberId).filter((id): id is string => !!id))
+  return members.filter((m) => m.active && m.name.includes(trimmed) && !alreadyAdded.has(m.id))
+}
+
+export type AmountClearResult = { action: 'set-zero' } | { action: 'clear-all' }
+
+/**
+ * 표에서 금액을 빈칸으로 지웠을 때 dues/donation 객체를 통째로 지워도 되는지(clear-all) 판정한다.
+ * status가 기본값이 아니거나 note·paidAt이 있으면(=관리자가 이전에 실제로 손댄 기록) 데이터
+ * 손실을 막기 위해 금액만 0으로 바꾸라고 판정한다(set-zero) — status/note/paidAt은 그대로 둔다.
+ * 완전히 비어있던(방금 생성됐거나 기본값 그대로인) 행만 진짜로 지운다(clear-all).
+ */
+export function planClearAmount(
+  existing: { status: string; note?: string; paidAt?: string } | undefined,
+  defaultStatus: string,
+): AmountClearResult {
+  const hasMeta = !!existing && (!!existing.note || !!existing.paidAt || existing.status !== defaultStatus)
+  return hasMeta ? { action: 'set-zero' } : { action: 'clear-all' }
 }
