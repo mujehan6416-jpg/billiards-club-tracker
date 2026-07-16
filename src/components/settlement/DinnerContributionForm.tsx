@@ -3,6 +3,7 @@ import { useSettlementStore, isLocked } from '../../store/settlementStore'
 import { DINNER_CONTRIBUTOR_TITLE_PRESETS } from '../../lib/settlementConstants'
 import type { DinnerContribution, DinnerContributionType, DinnerContributor, ExpensePaymentMethod } from '../../types/settlement'
 import { SettlementSaveButtons } from './SettlementSaveButtons'
+import { moneyInputStyle, compactMoneyInputStyle } from './moneyInputStyle'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') || '0', 10))
@@ -85,24 +86,25 @@ export function DinnerContributionForm({ settlementId, previewMode = false }: { 
           <span style={{ fontWeight: 700, fontSize: 14 }}>{editingId ? '회식비 수정' : '회식비 추가'} (차수별 전용 입력)</span>
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span className="muted" style={{ fontSize: 12 }}>회식 차수</span>
               <input type="number" inputMode="numeric" min={1} value={form.dinnerRound} placeholder="1" onChange={(e) => set('dinnerRound')(e.target.value)} />
             </div>
-            <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span className="muted" style={{ fontSize: 12 }}>전체 회식비</span>
-              <input type="number" inputMode="numeric" min={0} value={form.totalAmount} placeholder="0" onChange={(e) => set('totalAmount')(e.target.value)} style={{ fontSize: 18 }} />
+              <input type="number" inputMode="numeric" min={0} value={form.totalAmount} placeholder="0"
+                onChange={(e) => set('totalAmount')(e.target.value)} style={{ ...moneyInputStyle, fontSize: 18 }} />
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <select value={form.method} onChange={(e) => set('method')(e.target.value as ExpensePaymentMethod)} style={{ flex: 1 }}>
+            <select value={form.method} onChange={(e) => set('method')(e.target.value as ExpensePaymentMethod)} style={{ flex: 1, minWidth: 0 }}>
               <option value="현금">현금</option>
               <option value="체크카드">체크카드</option>
               <option value="계좌이체">계좌이체</option>
               <option value="기타">기타</option>
             </select>
-            <input placeholder="실제 결제자 (선택)" value={form.paidBy} onChange={(e) => set('paidBy')(e.target.value)} style={{ flex: 1 }} />
+            <input placeholder="실제 결제자 (선택)" value={form.paidBy} onChange={(e) => set('paidBy')(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
           </div>
 
           <select value={form.contributionType} onChange={(e) => set('contributionType')(e.target.value as DinnerContributionType)}>
@@ -117,7 +119,8 @@ export function DinnerContributionForm({ settlementId, previewMode = false }: { 
               {form.contributors.map((c, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <input placeholder="이름" value={c.name} onChange={(e) => updateContributorRow(idx, { name: e.target.value })} style={{ flex: 1, minWidth: 80 }} />
-                  <input type="number" inputMode="numeric" placeholder="금액" value={c.amount} onChange={(e) => updateContributorRow(idx, { amount: e.target.value })} style={{ width: 100 }} />
+                  <input type="number" inputMode="numeric" placeholder="금액" value={c.amount}
+                    onChange={(e) => updateContributorRow(idx, { amount: e.target.value })} style={{ ...compactMoneyInputStyle, width: 110 }} />
                   <select value={c.title} onChange={(e) => updateContributorRow(idx, { title: e.target.value })} style={{ minWidth: 90 }}>
                     {DINNER_CONTRIBUTOR_TITLE_PRESETS.map((t) => <option key={t} value={t}>{t}</option>)}
                     <option value="직접 입력">직접 입력</option>
