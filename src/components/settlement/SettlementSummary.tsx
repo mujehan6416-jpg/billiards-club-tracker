@@ -22,12 +22,15 @@ function ConfirmButton({ label, message, danger, disabled, onConfirm }: {
   )
 }
 
-export function SettlementSummary({ settlementId }: { settlementId: string }) {
+export function SettlementSummary({ settlementId, previewMode = false }: { settlementId: string; previewMode?: boolean }) {
   const settlement = useSettlementStore((s) => s.getById(settlementId))
   const getSummary = useSettlementStore((s) => s.getSummary)
   const updatePrevBankBalance = useSettlementStore((s) => s.updatePrevBankBalance)
   const updateOtherBankAdjustment = useSettlementStore((s) => s.updateOtherBankAdjustment)
-  const changeStatus = useSettlementStore((s) => s.changeStatus)
+  const confirmSettlement = useSettlementStore((s) => s.confirmSettlement)
+  const reviseSettlement = useSettlementStore((s) => s.reviseSettlement)
+  const cancelSettlement = useSettlementStore((s) => s.cancelSettlement)
+  const syncStatus = useSettlementStore((s) => s.syncStatus)
   const { memberName } = useAuth()
   const [error, setError] = useState('')
 
@@ -37,11 +40,19 @@ export function SettlementSummary({ settlementId }: { settlementId: string }) {
   const { income, expense, profit, cash, bank } = summary
   const actorDisplayName = memberName ?? '관리자'
   const locked = settlement.status === 'confirmed' || settlement.status === 'cancelled'
+  const saving = syncStatus === 'saving'
 
-  const doTransition = (to: 'confirmed' | 'revised' | 'cancelled') => {
+  // previewMode(개발 미리보기 전용): 이중 방어 — 버튼은 비활성화돼 있지만, 혹시라도 호출되면 여기서도 막는다.
+  // 실제 저장은 changeStatus(로컬 전용)가 아니라 confirmSettlement/reviseSettlement/cancelSettlement를 호출해야
+  // Firestore에 반영된다(로컬 상태 전이 후 pushToCloud까지 수행하는 기존 store 액션을 그대로 재사용).
+  const doTransition = async (to: 'confirmed' | 'revised' | 'cancelled') => {
+    if (previewMode || saving) return
     setError('')
     const reason = to === 'cancelled' ? window.prompt('취소 사유를 입력해주세요 (선택)') ?? undefined : undefined
-    const res = changeStatus(settlementId, to, actorDisplayName, reason)
+    const res =
+      to === 'confirmed' ? await confirmSettlement(settlementId, actorDisplayName) :
+      to === 'revised' ? await reviseSettlement(settlementId, actorDisplayName, reason) :
+      await cancelSettlement(settlementId, actorDisplayName, reason)
     if (!res.ok) setError(res.error)
   }
 
@@ -123,16 +134,16 @@ export function SettlementSummary({ settlementId }: { settlementId: string }) {
         </p>
         <div style={{ display: 'flex', gap: 8 }}>
           {settlement.status === 'draft' && (
-            <ConfirmButton label="정산 확정" message="정산을 확정할까요? 확정 후에는 입력 필드가 잠깁니다." onConfirm={() => doTransition('confirmed')} />
+            <ConfirmButton label="정산 확정" message="정산을 확정할까요? 확정 후에는 입력 필드가 잠깁니다." disabled={previewMode || saving} onConfirm={() => doTransition('confirmed')} />
           )}
           {settlement.status === 'revised' && (
-            <ConfirmButton label="다시 확정" message="수정한 내용으로 다시 확정할까요?" onConfirm={() => doTransition('confirmed')} />
+            <ConfirmButton label="다시 확정" message="수정한 내용으로 다시 확정할까요?" disabled={previewMode || saving} onConfirm={() => doTransition('confirmed')} />
           )}
           {settlement.status === 'confirmed' && (
-            <ConfirmButton label="정산 수정" message="확정을 풀고 수정 상태로 되돌릴까요?" onConfirm={() => doTransition('revised')} />
+            <ConfirmButton label="정산 수정" message="확정을 풀고 수정 상태로 되돌릴까요?" disabled={previewMode || saving} onConfirm={() => doTransition('revised')} />
           )}
           {(settlement.status === 'draft' || settlement.status === 'confirmed' || settlement.status === 'revised') && (
-            <ConfirmButton danger label="정산 취소" message="이 정산을 취소할까요? 데이터는 삭제되지 않고 취소 이력이 남습니다." onConfirm={() => doTransition('cancelled')} />
+            <ConfirmButton danger label="정산 취소" message="이 정산을 취소할까요? 데이터는 삭제되지 않고 취소 이력이 남습니다." disabled={previewMode || saving} onConfirm={() => doTransition('cancelled')} />
           )}
         </div>
       </div>

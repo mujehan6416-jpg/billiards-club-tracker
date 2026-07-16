@@ -206,7 +206,7 @@ export function SettlementTab({ devMembers, devSessions, previewMode = false }: 
           )}
           {section === 'dinner' && <DinnerContributionForm settlementId={settlement.id} previewMode={previewMode} />}
           {section === 'cash' && <CashDepositForm settlementId={settlement.id} />}
-          {section === 'summary' && <SettlementSummary settlementId={settlement.id} />}
+          {section === 'summary' && <SettlementSummary settlementId={settlement.id} previewMode={previewMode} />}
           {section === 'share' && <SettlementSharePreview settlementId={settlement.id} />}
         </>
       )}
