@@ -202,9 +202,9 @@ export function SettlementTab({ devMembers, devSessions, previewMode = false }: 
             <DuesTable settlementId={settlement.id} previewMode={previewMode} membersOverride={devMembers} />
           )}
           {section === 'expenses' && (
-            <SettlementExpenseForm settlementId={settlement.id} onRequestDinnerForm={() => setSection('dinner')} />
+            <SettlementExpenseForm settlementId={settlement.id} onRequestDinnerForm={() => setSection('dinner')} previewMode={previewMode} />
           )}
-          {section === 'dinner' && <DinnerContributionForm settlementId={settlement.id} />}
+          {section === 'dinner' && <DinnerContributionForm settlementId={settlement.id} previewMode={previewMode} />}
           {section === 'cash' && <CashDepositForm settlementId={settlement.id} />}
           {section === 'summary' && <SettlementSummary settlementId={settlement.id} />}
           {section === 'share' && <SettlementSharePreview settlementId={settlement.id} />}

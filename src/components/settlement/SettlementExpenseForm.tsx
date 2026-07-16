@@ -3,6 +3,7 @@ import { useSettlementStore, isLocked } from '../../store/settlementStore'
 import { EXPENSE_CATEGORIES, DINNER_CATEGORY } from '../../lib/settlementConstants'
 import type { ExpensePaymentMethod, SettlementExpense } from '../../types/settlement'
 import { todayStr } from '../../lib/date'
+import { SettlementSaveButtons } from './SettlementSaveButtons'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') || '0', 10))
@@ -18,7 +19,11 @@ const emptyForm = (): FormState => ({
 })
 
 /** 회식비 카테고리를 고르면 일반 지출 폼을 그대로 제출하지 않고, 회식비 전용 입력으로 넘긴다(이중 입력 방지). */
-export function SettlementExpenseForm({ settlementId, onRequestDinnerForm }: { settlementId: string; onRequestDinnerForm: () => void }) {
+export function SettlementExpenseForm({ settlementId, onRequestDinnerForm, previewMode = false }: {
+  settlementId: string
+  onRequestDinnerForm: () => void
+  previewMode?: boolean
+}) {
   const settlement = useSettlementStore((s) => s.getById(settlementId))
   const addExpense = useSettlementStore((s) => s.addExpense)
   const updateExpense = useSettlementStore((s) => s.updateExpense)
@@ -126,6 +131,8 @@ export function SettlementExpenseForm({ settlementId, onRequestDinnerForm }: { s
           )}
         </div>
       ))}
+
+      <SettlementSaveButtons settlementId={settlementId} previewMode={previewMode} locked={locked} />
     </div>
   )
 }

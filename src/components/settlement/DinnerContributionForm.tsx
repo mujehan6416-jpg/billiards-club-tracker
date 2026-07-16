@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useSettlementStore, isLocked } from '../../store/settlementStore'
 import { DINNER_CONTRIBUTOR_TITLE_PRESETS } from '../../lib/settlementConstants'
 import type { DinnerContribution, DinnerContributionType, DinnerContributor, ExpensePaymentMethod } from '../../types/settlement'
+import { SettlementSaveButtons } from './SettlementSaveButtons'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') || '0', 10))
@@ -22,7 +23,7 @@ function resolveTitle(c: ContributorDraft): string {
   return c.title === '직접 입력' ? (c.customTitle.trim() || '회원님') : c.title
 }
 
-export function DinnerContributionForm({ settlementId }: { settlementId: string }) {
+export function DinnerContributionForm({ settlementId, previewMode = false }: { settlementId: string; previewMode?: boolean }) {
   const settlement = useSettlementStore((s) => s.getById(settlementId))
   const addDinnerContribution = useSettlementStore((s) => s.addDinnerContribution)
   const updateDinnerContribution = useSettlementStore((s) => s.updateDinnerContribution)
@@ -159,6 +160,8 @@ export function DinnerContributionForm({ settlementId }: { settlementId: string 
           )}
         </div>
       ))}
+
+      <SettlementSaveButtons settlementId={settlementId} previewMode={previewMode} locked={locked} />
     </div>
   )
 }

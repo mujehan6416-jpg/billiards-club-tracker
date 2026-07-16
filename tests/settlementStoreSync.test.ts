@@ -146,6 +146,115 @@ describe('authorizedAdmin 상태에서의 동기화', () => {
     expect(useSettlementStore.getState().settlements).toHaveLength(1) // 중복 생성 없음
   })
 
+  it('[재현] 지출·회식비 입력 후 draft 저장 → 재접속 재현 → loadSettlements로 다시 불러오면 지출·회식비가 그대로 복원된다', async () => {
+    const id = useSettlementStore.getState().createSettlement({
+      meetingName: '가상 정기모임 8회차', meetingDate: '2026-03-08', meetingType: 'regular', actorDisplayName: '테스트관리자',
+    })
+    const expenseRes = useSettlementStore.getState().addExpense(id, {
+      date: '2026-03-08', label: '가상 대관료', category: '대관비', amount: 100000, method: '체크카드', clubShare: 100000, personalDonation: 0,
+    })
+    expect(expenseRes.ok).toBe(true)
+    const dinnerRes = useSettlementStore.getState().addDinnerContribution(id, {
+      dinnerRound: 1, totalAmount: 200000, method: '현금', clubShare: 0, contributionType: '전액찬조',
+      contributors: [{ name: '가상찬조자1', memberId: null, amount: 200000, title: '회장님' }],
+    })
+    expect(dinnerRes.ok).toBe(true)
+
+    saveSettlementMock.mockResolvedValue(1)
+    const saveRes = await useSettlementStore.getState().saveDraft(id)
+    expect(saveRes.ok).toBe(true)
+    const savedPayload = saveSettlementMock.mock.calls[0][0]
+    // 저장 직전 시점에 실제로 store에 있던 지출·회식비가 Firestore로 보낼 payload에 포함되는지 확인
+    expect(savedPayload.expenses).toHaveLength(1)
+    expect(savedPayload.expenses[0]).toMatchObject({ label: '가상 대관료', amount: 100000 })
+    expect(savedPayload.dinnerContributions).toHaveLength(1)
+    expect(savedPayload.dinnerContributions[0]).toMatchObject({ dinnerRound: 1, totalAmount: 200000 })
+
+    // 재접속 재현
+    useSettlementStore.setState({ settlements: [], currentId: null, syncStatus: 'idle', lastSyncError: null })
+    listSettlementsMock.mockResolvedValue([{ ...savedPayload, version: 1 }])
+    const loadRes = await useSettlementStore.getState().loadSettlements()
+    expect(loadRes.ok).toBe(true)
+
+    const restored = useSettlementStore.getState().getById(id)
+    expect(restored).toBeDefined()
+    expect(restored!.expenses).toHaveLength(1)
+    expect(restored!.expenses[0]).toMatchObject({ label: '가상 대관료', category: '대관비', amount: 100000, method: '체크카드' })
+    expect(restored!.dinnerContributions).toHaveLength(1)
+    expect(restored!.dinnerContributions[0]).toMatchObject({ dinnerRound: 1, totalAmount: 200000, contributionType: '전액찬조' })
+    expect(restored!.dinnerContributions[0].contributors).toHaveLength(1)
+  })
+
+  it('지출 여러 건을 입력 순서대로 저장·복원하고, 금액·구분·결제수단·메모를 모두 보존한다', async () => {
+    const id = createDraftSettlement()
+    useSettlementStore.getState().addExpense(id, {
+      date: '2026-01-10', label: '가상 지출 A', category: '음료수비', amount: 10000, method: '현금', clubShare: 10000, personalDonation: 0, note: '가상 메모 A',
+    })
+    useSettlementStore.getState().addExpense(id, {
+      date: '2026-01-10', label: '가상 지출 B', category: '상품비', amount: 20000, method: '계좌이체', clubShare: 20000, personalDonation: 0,
+    })
+    useSettlementStore.getState().addExpense(id, {
+      date: '2026-01-10', label: '가상 지출 C', category: '기타', amount: 5000, method: '기타', clubShare: 5000, personalDonation: 0, note: '가상 메모 C',
+    })
+
+    saveSettlementMock.mockResolvedValue(1)
+    await useSettlementStore.getState().saveDraft(id)
+    const savedPayload = saveSettlementMock.mock.calls[0][0]
+
+    useSettlementStore.setState({ settlements: [], currentId: null, syncStatus: 'idle', lastSyncError: null })
+    listSettlementsMock.mockResolvedValue([{ ...savedPayload, version: 1 }])
+    await useSettlementStore.getState().loadSettlements()
+
+    const restored = useSettlementStore.getState().getById(id)!
+    expect(restored.expenses.map((e) => e.label)).toEqual(['가상 지출 A', '가상 지출 B', '가상 지출 C']) // 입력 순서 유지
+    expect(restored.expenses[0]).toMatchObject({ amount: 10000, category: '음료수비', method: '현금', note: '가상 메모 A' })
+    expect(restored.expenses[1]).toMatchObject({ amount: 20000, category: '상품비', method: '계좌이체' })
+    expect(restored.expenses[1].note).toBeUndefined()
+    expect(restored.expenses[2]).toMatchObject({ amount: 5000, category: '기타', method: '기타', note: '가상 메모 C' })
+  })
+
+  it('confirmed 상태 정산의 지출·회식비도 draft와 동일하게 저장·복원된다', async () => {
+    const id = createDraftSettlement()
+    useSettlementStore.getState().addExpense(id, {
+      date: '2026-01-10', label: '가상 확정 지출', category: '기타', amount: 15000, method: '현금', clubShare: 15000, personalDonation: 0,
+    })
+    useSettlementStore.getState().changeStatus(id, 'confirmed', '테스트관리자')
+    expect(useSettlementStore.getState().getById(id)!.status).toBe('confirmed')
+
+    saveSettlementMock.mockResolvedValue(1)
+    await useSettlementStore.getState().saveDraft(id) // saveDraft는 현재 status를 그대로 저장한다(상태 자체를 바꾸지 않음)
+    const savedPayload = saveSettlementMock.mock.calls[0][0]
+    expect(savedPayload.status).toBe('confirmed')
+    expect(savedPayload.expenses).toHaveLength(1)
+
+    useSettlementStore.setState({ settlements: [], currentId: null, syncStatus: 'idle', lastSyncError: null })
+    listSettlementsMock.mockResolvedValue([{ ...savedPayload, version: 1 }])
+    await useSettlementStore.getState().loadSettlements()
+
+    const restored = useSettlementStore.getState().getById(id)!
+    expect(restored.status).toBe('confirmed')
+    expect(restored.expenses).toHaveLength(1)
+    expect(restored.expenses[0]).toMatchObject({ label: '가상 확정 지출', amount: 15000 })
+  })
+
+  it('지출·회식비를 추가해도 참가자·회비·찬조 데이터는 전혀 영향받지 않는다(데이터 격리 확인)', () => {
+    const id = createDraftSettlement()
+    useSettlementStore.getState().addGuestParticipant(id, '가상참가자1')
+    const participantId = useSettlementStore.getState().getById(id)!.participants[0].id
+    useSettlementStore.getState().updateDues(id, participantId, { amount: 30000, method: '현금' })
+
+    useSettlementStore.getState().addExpense(id, {
+      date: '2026-01-10', label: '가상 지출', category: '기타', amount: 10000, method: '현금', clubShare: 10000, personalDonation: 0,
+    })
+    useSettlementStore.getState().addDinnerContribution(id, {
+      dinnerRound: 1, totalAmount: 50000, method: '현금', clubShare: 50000, contributionType: '모임회계지출', contributors: [],
+    })
+
+    const after = useSettlementStore.getState().getById(id)!
+    expect(after.participants).toHaveLength(1)
+    expect(after.participants[0].dues).toMatchObject({ amount: 30000, method: '현금' })
+  })
+
   it('네트워크 실패 시 로컬 상태(및 version)는 유지되고 lastSyncError에 경고가 남는다', async () => {
     const id = createDraftSettlement()
     saveSettlementMock.mockRejectedValue(new Error('네트워크 오류(가상)'))
