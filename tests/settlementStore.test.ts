@@ -64,14 +64,29 @@ describe('addGuestParticipant', () => {
   })
 })
 
-describe('addExpense — 회식비 이중 입력 방지', () => {
-  it('분류가 회식비면 일반 지출로 저장하지 않는다', () => {
+describe('addExpense — 회식비 탭 제거 후: 분류 "회식비"도 일반 지출로 정상 저장된다', () => {
+  it('분류가 회식비여도 더 이상 거부하지 않고 일반 지출로 저장한다(회식비 전용 탭 제거)', () => {
     const id = createDraftSettlement()
     const res = useSettlementStore.getState().addExpense(id, {
       date: '2026-01-10', label: '회식', category: '회식비', amount: 100000, method: '현금', clubShare: 100000, personalDonation: 0,
     })
-    expect(res.ok).toBe(false)
-    expect(useSettlementStore.getState().getById(id)!.expenses).toHaveLength(0)
+    expect(res.ok).toBe(true)
+    const expenses = useSettlementStore.getState().getById(id)!.expenses
+    expect(expenses).toHaveLength(1)
+    expect(expenses[0]).toMatchObject({ category: '회식비', amount: 100000, clubShare: 100000 })
+  })
+
+  it('레거시 DinnerContribution(별도 배열)과 신규 회식비 지출(expenses 배열)이 공존해도 서로 덮어쓰지 않는다', () => {
+    const id = createDraftSettlement()
+    useSettlementStore.getState().addDinnerContribution(id, {
+      dinnerRound: 1, totalAmount: 50000, method: '현금', clubShare: 50000, contributionType: '모임회계지출', contributors: [],
+    })
+    useSettlementStore.getState().addExpense(id, {
+      date: '2026-01-10', label: '2차 회식', category: '회식비', amount: 30000, method: '현금', clubShare: 30000, personalDonation: 0,
+    })
+    const settlement = useSettlementStore.getState().getById(id)!
+    expect(settlement.dinnerContributions).toHaveLength(1)
+    expect(settlement.expenses).toHaveLength(1)
   })
 })
 

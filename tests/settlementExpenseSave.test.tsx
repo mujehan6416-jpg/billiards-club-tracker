@@ -46,12 +46,12 @@ beforeEach(() => {
 
 describe('SettlementExpenseForm — 지출 탭에 임시저장 버튼이 생겨 실제로 저장을 호출한다', () => {
   it('지출 탭에 "임시저장" 버튼이 보인다(버그 발생 당시에는 이 탭에 저장 버튼 자체가 없었다)', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     expect(screen.getByText('임시저장')).toBeInTheDocument()
   })
 
   it('지출을 추가한 뒤 임시저장을 누르면 그 지출이 포함된 settlement가 실제로 Firestore 저장 함수에 전달된다', async () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.change(screen.getByPlaceholderText('항목명 (예: 당구장 대관료)'), { target: { value: '가상 대관료' } })
     // 금액/모임부담액/개인찬조액 입력 모두 placeholder="0"을 공유하므로, 첫 번째(금액)만 채운다.
     fireEvent.change(screen.getAllByPlaceholderText('0')[0], { target: { value: '50000' } })
@@ -66,7 +66,7 @@ describe('SettlementExpenseForm — 지출 탭에 임시저장 버튼이 생겨 
   })
 
   it('previewMode에서는 임시저장 버튼이 비활성화되고 saveSettlement가 호출되지 않는다', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} previewMode />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" previewMode />)
     const btn = screen.getByText('임시저장')
     expect(btn).toBeDisabled()
     fireEvent.click(btn)
@@ -75,7 +75,7 @@ describe('SettlementExpenseForm — 지출 탭에 임시저장 버튼이 생겨 
 
   it('저장이 실패하면 "임시저장 완료" 메시지를 표시하지 않는다', async () => {
     saveSettlementMock.mockRejectedValue(new Error('가상 네트워크 오류'))
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.click(screen.getByText('임시저장'))
     await waitFor(() => expect(saveSettlementMock).toHaveBeenCalledTimes(1))
     expect(screen.queryByText('임시저장 완료')).not.toBeInTheDocument()
@@ -110,7 +110,7 @@ describe('금액 입력칸 너비/높이 — index.css의 input[type=number]{wid
   // jsdom은 실제 CSS 레이아웃을 계산하지 않으므로(실제 픽셀 렌더링 검증은 브라우저에서 별도 확인),
   // 여기서는 "너비를 강제로 넓히는 인라인 스타일이 실제로 적용돼 있는지"만 회귀 테스트로 고정한다.
   it('지출 "금액" 입력칸이 width:100%·최소 높이 52px 스타일을 갖는다', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     const [amountInput] = screen.getAllByPlaceholderText('0') as HTMLInputElement[]
     expect(amountInput.style.width).toBe('100%')
     expect(amountInput.style.minWidth).toBe('0')
@@ -119,7 +119,7 @@ describe('금액 입력칸 너비/높이 — index.css의 input[type=number]{wid
   })
 
   it('지출 "모임 부담액"·"개인 찬조액" 입력칸도 동일하게 width:100%·최소 높이 52px를 갖는다', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     const [, clubShareInput, personalDonationInput] = screen.getAllByPlaceholderText('0') as HTMLInputElement[]
     for (const input of [clubShareInput, personalDonationInput]) {
       expect(input.style.width).toBe('100%')
@@ -128,7 +128,7 @@ describe('금액 입력칸 너비/높이 — index.css의 input[type=number]{wid
   })
 
   it('모임 부담액·개인 찬조액이 더 이상 한 줄에 나란히(반쪽 폭) 배치되지 않는다 — 각자 독립된 세로 블록', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     const [, clubShareInput, personalDonationInput] = screen.getAllByPlaceholderText('0') as HTMLInputElement[]
     // 서로 다른 부모(각자 독립된 flexDirection:column 블록)에 속해야 한다 — 같은 flex row의 flex:1 자식이면 안 됨.
     expect(clubShareInput.parentElement).not.toBe(personalDonationInput.parentElement)
@@ -157,7 +157,7 @@ describe('금액 입력칸 너비/높이 — index.css의 input[type=number]{wid
 
 describe('지출 분류 — 10개 → 5개 단순화, 순서, 하위호환', () => {
   it('분류 선택칸이 정확히 5개, "당구비 다과비 회식비 상금 기타" 순서로 표시된다', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     const select = screen.getByDisplayValue('당구비') as HTMLSelectElement
     const optionLabels = Array.from(select.options).map((o) => o.value)
     expect(optionLabels).toEqual(['당구비', '다과비', '회식비', '상금', '기타'])
@@ -168,7 +168,7 @@ describe('지출 분류 — 10개 → 5개 단순화, 순서, 하위호환', () 
       date: '2026-07-16', label: '당구장 대관료', category: '대관비', amount: 100000,
       method: '체크카드', clubShare: 100000, personalDonation: 0,
     })
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     expect(screen.getByText('(당구비)')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('수정'))
@@ -183,7 +183,7 @@ describe('지출 분류 — 10개 → 5개 단순화, 순서, 하위호환', () 
 
 describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모임 부담액 비워둠·저장', () => {
   it('분류 기타, 항목명 주차비, 전체 금액 5000, 모임부담액/개인찬조 비움 → 저장 후 clubShare가 5000이어야 한다', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     const categorySelect = screen.getByDisplayValue('당구비') as HTMLSelectElement
     fireEvent.change(categorySelect, { target: { value: '기타' } })
     fireEvent.change(screen.getByPlaceholderText('항목명 (예: 당구장 대관료)'), { target: { value: '주차비' } })
@@ -200,7 +200,7 @@ describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모
   })
 
   it('일부 개인 찬조가 있으면 모임부담액을 비워도 "전체 금액 - 개인 찬조액"으로 계산된다 (100,000/찬조 20,000 → 부담 80,000)', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.change(screen.getByPlaceholderText('항목명 (예: 당구장 대관료)'), { target: { value: '다과 구입' } })
     const [amountInput, , personalDonationInput] = screen.getAllByPlaceholderText('0') as HTMLInputElement[]
     fireEvent.change(amountInput, { target: { value: '100000' } })
@@ -214,7 +214,7 @@ describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모
   })
 
   it('모임부담액을 직접 지정하면(70,000) 입력값 그대로 저장된다 (100,000 = 70,000 + 30,000)', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.change(screen.getByPlaceholderText('항목명 (예: 당구장 대관료)'), { target: { value: '트로피' } })
     const [amountInput, clubShareInput, personalDonationInput] = screen.getAllByPlaceholderText('0') as HTMLInputElement[]
     fireEvent.change(amountInput, { target: { value: '100000' } })
@@ -228,7 +228,7 @@ describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모
   })
 
   it('[확인된 버그 재현] 모임부담액에 실수로 0을 입력하면(개인찬조 없이) 합계가 전체 금액과 안 맞아 저장이 막히고 안내 문구가 뜬다', () => {
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.change(screen.getByPlaceholderText('항목명 (예: 당구장 대관료)'), { target: { value: '주차비' } })
     const [amountInput, clubShareInput] = screen.getAllByPlaceholderText('0') as HTMLInputElement[]
     fireEvent.change(amountInput, { target: { value: '5000' } })
@@ -244,7 +244,7 @@ describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모
       date: '2026-07-16', label: '주차비', category: '기타', amount: 5000,
       method: '현금', clubShare: 5000, personalDonation: 0,
     })
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.click(screen.getByText('수정'))
     fireEvent.change(screen.getByPlaceholderText('항목명 (예: 당구장 대관료)'), { target: { value: '주차비(강호철 회장님차)' } })
     fireEvent.click(screen.getByText('수정 저장'))
@@ -264,7 +264,7 @@ describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모
       date: '2026-07-16', label: '주차비', category: '기타', amount: 5000,
       method: '현금', clubShare: 5000, personalDonation: 0,
     })
-    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.click(screen.getByText('수정'))
     const [amountInput, clubShareInput] = container.querySelectorAll('input[type="number"]') as unknown as HTMLInputElement[]
     expect(clubShareInput.value).toBe('')
@@ -282,7 +282,7 @@ describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모
       date: '2026-07-16', label: '트로피', category: '상금', amount: 100000,
       method: '체크카드', clubShare: 75000, personalDonation: 30000,
     })
-    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.click(screen.getByText('수정'))
     const [, clubShareInput] = container.querySelectorAll('input[type="number"]') as unknown as HTMLInputElement[]
     expect(clubShareInput.value).toBe('75000')
@@ -293,7 +293,7 @@ describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모
       date: '2026-07-16', label: '트로피', category: '상금', amount: 100000,
       method: '체크카드', clubShare: 70000, personalDonation: 30000,
     })
-    render(<SettlementExpenseForm settlementId="settle-expense-1" onRequestDinnerForm={() => {}} />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     expect(screen.getByText(/총액 100,000원 · 모임부담 70,000원 · 개인찬조 30,000원/)).toBeInTheDocument()
   })
 

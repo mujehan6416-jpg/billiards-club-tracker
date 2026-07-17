@@ -10,8 +10,11 @@ import type {
   CashDepositStatus,
   DuesPaymentMethod,
   DonationPaymentMethod,
+  DuesStatus,
+  DonationStatus,
 } from '../types/settlement'
 import type { Member } from '../types'
+import { EXPENSE_CATEGORIES, displayExpenseCategory, DINNER_CATEGORY } from '../lib/settlementConstants'
 
 const sum = (nums: number[]) => nums.reduce((a, b) => a + b, 0)
 
@@ -32,17 +35,22 @@ export interface SettlementIncomeSummary {
  * 수입 집계. '입금확인' 상태만 실수입으로 잡는다.
  * '미확인'(주로 계좌이체)은 총수입에서 제외하고 별도 항목으로만 보여준다.
  * method='기타'는 otherIncome(=기타 수입/기타 계좌 입금)으로 묶는다.
+ *
+ * 확정 정책: 현금은 입력 즉시 확인 완료된 수입으로 처리한다 — status 값과 무관하게 항상 포함한다.
+ * (참가자 탭 UI가 현금일 때는 확인 상태 select 자체를 숨기고 store가 저장 시 status를 '입금확인'으로
+ * 정규화하지만, 과거 데이터에 다른 문자열이 남아있을 가능성에 대비해 집계에서도 status를 보지 않고
+ * method만으로 판정한다 — 방어적 처리.)
  */
 export function calcIncomeSummary(settlement: RegularSettlement): SettlementIncomeSummary {
   const dues = settlement.participants.map((p) => p.dues).filter((d): d is NonNullable<typeof d> => !!d)
   const donations = settlement.participants.map((p) => p.donation).filter((d): d is NonNullable<typeof d> => !!d)
 
-  const duesCash = sum(dues.filter((d) => d.method === '현금' && d.status === '입금확인').map((d) => d.amount))
+  const duesCash = sum(dues.filter((d) => d.method === '현금').map((d) => d.amount))
   const duesTransferConfirmed = sum(dues.filter((d) => d.method === '계좌이체' && d.status === '입금확인').map((d) => d.amount))
   const duesTransferUnconfirmed = sum(dues.filter((d) => d.method === '계좌이체' && d.status === '미확인').map((d) => d.amount))
   const duesOther = sum(dues.filter((d) => d.method === '기타' && d.status === '입금확인').map((d) => d.amount))
 
-  const donationCash = sum(donations.filter((d) => d.method === '현금' && d.status === '입금확인').map((d) => d.amount))
+  const donationCash = sum(donations.filter((d) => d.method === '현금').map((d) => d.amount))
   const donationTransferConfirmed = sum(donations.filter((d) => d.method === '계좌이체' && d.status === '입금확인').map((d) => d.amount))
   const donationTransferUnconfirmed = sum(donations.filter((d) => d.method === '계좌이체' && d.status === '미확인').map((d) => d.amount))
   const donationOther = sum(donations.filter((d) => d.method === '기타' && d.status === '입금확인').map((d) => d.amount))
@@ -62,7 +70,11 @@ export interface SettlementExpenseSummary {
   card: number
   transfer: number
   other: number
-  /** 회식비(DinnerContribution) 모임 회계 부담분 합계 — 참고용(위 cash/card/transfer/other 안에 이미 포함됨). */
+  /**
+   * 회식비 모임 회계 부담분 합계 — 참고용(위 cash/card/transfer/other 안에 이미 포함됨).
+   * 신규 회식비(지출 탭, category===DINNER_CATEGORY)와 레거시 회식비(DinnerContribution, 별도
+   * 배열)를 합산한다 — 두 출처가 서로 다른 배열이라 중복 집계될 일은 없다.
+   */
   dinnerClubShare: number
   total: number
 }
@@ -70,8 +82,9 @@ export interface SettlementExpenseSummary {
 /**
  * 지출 집계는 clubShare(모임 회계가 실제 부담한 금액)만 결제수단별로 더한다.
  * SettlementExpense와 DinnerContribution 양쪽 모두 결제수단(method)을 갖고 있어 같은 방식으로 합산한다.
- * 회식비는 SettlementExpense에 이중으로 입력하지 않는다는 전제이므로(store에서 강제),
- * 여기서도 두 목록을 합쳐서 한 번만 계산한다.
+ * 회식비 전용 탭(DinnerContributionForm)은 제거되었고, 새 회식비는 지출 탭에서 category==='회식비'로
+ * 등록된다(SettlementExpense). 과거 DinnerContribution으로 저장된 레거시 데이터는 여전히 별도
+ * 배열(dinnerContributions)에 남아있으므로, 두 배열을 합쳐서 한 번만 계산해야 누락·중복이 없다.
  */
 export function calcExpenseSummary(settlement: RegularSettlement): SettlementExpenseSummary {
   const byMethod = (method: SettlementExpense['method']) =>
@@ -82,7 +95,9 @@ export function calcExpenseSummary(settlement: RegularSettlement): SettlementExp
   const card = byMethod('체크카드')
   const transfer = byMethod('계좌이체')
   const other = byMethod('기타')
-  const dinnerClubShare = sum(settlement.dinnerContributions.map((d) => d.clubShare))
+  const dinnerClubShare =
+    sum(settlement.dinnerContributions.map((d) => d.clubShare)) +
+    sum(settlement.expenses.filter((e) => displayExpenseCategory(e.category) === DINNER_CATEGORY).map((e) => e.clubShare))
   const total = cash + card + transfer + other
 
   return { cash, card, transfer, other, dinnerClubShare, total }
@@ -184,6 +199,26 @@ export function majorExpenses(settlement: RegularSettlement, limit = 3): { label
     .sort((a, b) => b.amount - a.amount)
     .slice(0, limit)
     .map((e) => ({ label: e.label, amount: e.amount }))
+}
+
+/**
+ * 지출 분류(당구비/다과비/회식비/상금/기타)별 모임 부담액 합계. 회원 공개용 요약(일반회원 정산 공개)에서
+ * 통장 잔액·현금 보유액 등 민감 정보 없이 "어디에 얼마를 썼는지"만 보여줄 때 쓴다.
+ * 예전 분류값(10개)은 displayExpenseCategory로 새 분류(5개)에 매핑해서 합산한다(저장된 원본 category는 그대로 둠).
+ * 회식비(DinnerContribution)는 SettlementExpense와 별도 목록이므로, clubShare를 '회식비' 분류에 더해 합친다.
+ * 금액이 0인 분류는 표시할 필요가 없으므로 결과에서 제외한다.
+ */
+export function calcExpenseByCategory(settlement: RegularSettlement): { category: string; amount: number }[] {
+  const totals = new Map<string, number>()
+  for (const e of settlement.expenses) {
+    const cat = displayExpenseCategory(e.category)
+    totals.set(cat, (totals.get(cat) ?? 0) + e.clubShare)
+  }
+  const dinnerTotal = sum(settlement.dinnerContributions.map((d) => d.clubShare))
+  if (dinnerTotal > 0) totals.set(DINNER_CATEGORY, (totals.get(DINNER_CATEGORY) ?? 0) + dinnerTotal)
+  return EXPENSE_CATEGORIES
+    .map((category) => ({ category, amount: totals.get(category) ?? 0 }))
+    .filter((c) => c.amount > 0)
 }
 
 // ────────────────────────────────────────────────────────────
@@ -381,6 +416,12 @@ export interface IncomeTableRow {
   /** 아직 입력 안 됨(=dues/donation 자체가 없음)이면 undefined, 명시적으로 입력됐으면 그 금액(0 포함). */
   amount: number | undefined
   method: IncomeRowMethod | undefined
+  /**
+   * 입금 확인 상태(미납/미확인/입금확인/취소 — dues/donation 타입에 따라 옵션이 다르다).
+   * calcIncomeSummary의 "계좌이체 미확인 합계"·"현금 확정 수입" 등은 이 값을 기준으로 계산되므로,
+   * 화면에서 이 값을 바꿀 수 있어야 계좌이체 확인 처리가 실제로 반영된다.
+   */
+  status: DuesStatus | DonationStatus | undefined
 }
 
 /**
@@ -392,9 +433,9 @@ export interface IncomeTableRow {
 export function buildIncomeTableRows(participants: SettlementParticipant[]): IncomeTableRow[] {
   const rows: IncomeTableRow[] = []
   for (const p of participants) {
-    rows.push({ participantId: p.id, category: 'dues', displayName: p.displayName, amount: p.dues?.amount, method: p.dues?.method })
+    rows.push({ participantId: p.id, category: 'dues', displayName: p.displayName, amount: p.dues?.amount, method: p.dues?.method, status: p.dues?.status })
     if (p.donation) {
-      rows.push({ participantId: p.id, category: 'donation', displayName: p.displayName, amount: p.donation.amount, method: p.donation.method })
+      rows.push({ participantId: p.id, category: 'donation', displayName: p.displayName, amount: p.donation.amount, method: p.donation.method, status: p.donation.status })
     }
   }
   return rows

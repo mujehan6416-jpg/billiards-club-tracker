@@ -64,8 +64,8 @@ function ChangePinCard() {
   )
 }
 
-// 경기결과 승인 대기 — 일반회원이 제출한 게임 (날짜 검색 + 수정 + 저장)
-function PendingGameRow({ game, sessionId, sessionDate, name }: {
+// 경기결과 승인 대기 — 일반회원이 제출한 게임 (날짜 검색 + 수정 + 저장 + 수정요청)
+export function PendingGameRow({ game, sessionId, sessionDate, name }: {
   game: Game
   sessionId: string
   sessionDate: string
@@ -73,12 +73,21 @@ function PendingGameRow({ game, sessionId, sessionDate, name }: {
 }) {
   const confirmGame = useApp((s) => s.confirmGame)
   const updateGameResult = useApp((s) => s.updateGameResult)
+  const requestGameRevision = useApp((s) => s.requestGameRevision)
   const deleteGame = useApp((s) => s.deleteGame)
   const [scoreA, setScoreA] = useState(String(game.scoreA))
   const [scoreB, setScoreB] = useState(String(game.scoreB))
   const [hA, setHA] = useState(game.handicapA)
   const [hB, setHB] = useState(game.handicapB)
   const [saving, setSaving] = useState(false)
+  const [requesting, setRequesting] = useState(false)
+
+  const syncAfter = async () => {
+    try {
+      const s = useApp.getState()
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+    } catch { /* ignore */ }
+  }
 
   const doSave = async () => {
     const sA = Math.max(0, parseInt(scoreA || '0', 10) || 0)
@@ -86,17 +95,27 @@ function PendingGameRow({ game, sessionId, sessionDate, name }: {
     setSaving(true)
     updateGameResult(sessionId, game.id, { scoreA: sA, scoreB: sB, handicapA: hA, handicapB: hB })
     confirmGame(sessionId, game.id)
-    try {
-      const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
-    } catch { /* ignore */ }
+    await syncAfter()
     setSaving(false)
+  }
+
+  // 확인완료(저장)와 달리 점수는 그대로 두고 상태만 "수정 요청"으로 바꾼다 — 참가자가 다시 입력해야 한다.
+  const doRequestRevision = async () => {
+    setRequesting(true)
+    requestGameRevision(sessionId, game.id)
+    await syncAfter()
+    setRequesting(false)
   }
 
   return (
     <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 6 }}>
       <div style={{ fontSize: 12, color: '#666', marginBottom: 6 }}>
         📅 {sessionDate} — {name(game.playerAId)} vs {name(game.playerBId)}
+        {game.revisionRequested && (
+          <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 3, background: '#fdeceb', color: '#c0392b', fontWeight: 600 }}>
+            수정 요청됨 — 참가자 재제출 대기
+          </span>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 110 }}>
@@ -119,9 +138,12 @@ function PendingGameRow({ game, sessionId, sessionDate, name }: {
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
         <button className="primary" style={{ fontSize: 12 }} disabled={saving} onClick={doSave}>
-          {saving ? '저장 중...' : '저장'}
+          {saving ? '저장 중...' : '확인 완료'}
+        </button>
+        <button style={{ fontSize: 12 }} disabled={requesting || game.revisionRequested} onClick={doRequestRevision}>
+          {requesting ? '요청 중...' : game.revisionRequested ? '수정 요청됨' : '수정 요청'}
         </button>
         <button style={{ fontSize: 12, color: '#c0392b', borderColor: '#e0a0a0' }}
           onClick={() => { if (window.confirm('이 경기 결과를 삭제할까요?')) deleteGame(sessionId, game.id) }}>

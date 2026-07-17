@@ -5,7 +5,6 @@ import { useSettlementStore } from '../store/settlementStore'
 import type { ImportAttendeesResult } from '../store/settlementStore'
 import { DuesTable } from '../components/settlement/DuesTable'
 import { SettlementExpenseForm } from '../components/settlement/SettlementExpenseForm'
-import { DinnerContributionForm } from '../components/settlement/DinnerContributionForm'
 import { CashDepositForm } from '../components/settlement/CashDepositForm'
 import { SettlementSummary } from '../components/settlement/SettlementSummary'
 import { SettlementSharePreview } from '../components/settlement/SettlementSharePreview'
@@ -17,13 +16,19 @@ import type { MeetingType } from '../types/settlement'
 //   1) src/tabs/SettlementAdminTab.tsx — 운영 진입점(관리자 PIN → Firebase 관리자 인증 통과 후 진입)
 //   2) src/dev/DevSettlementPreview.tsx — 개발 전용 미리보기(가상 데이터, devMembers/devSessions로 override)
 // 이 컴포넌트 자체는 dev 전용 문구를 포함하지 않는다 — dev 전용 안내는 DevSettlementPreview의 배너가 담당한다.
+//
+// 회식비 탭(DinnerContributionForm)은 제거했다 — 지출 분류에 이미 '회식비'가 있어 별도 탭이 불필요했다.
+// 새 회식비는 '지출' 탭에서 분류 '회식비'로 등록한다. 과거 DinnerContributionForm으로 저장된
+// dinnerContributions 데이터는 지우거나 옮기지 않았고(마이그레이션 없음), 총지출·회식비 요약 등
+// 집계 함수가 그 데이터를 계속 읽어 합산한다(logic/settlement.ts, settlementShareText.ts 참고).
+// DinnerContributionForm.tsx 파일 자체와 store의 addDinnerContribution 등 액션은 기존 데이터 호환을
+// 위해 그대로 남겨뒀다(SettlementParticipantForm.tsx와 같은 방식 — 더는 어디서도 호출하지 않음).
 
-type Section = 'participants' | 'expenses' | 'dinner' | 'cash' | 'summary' | 'share'
+type Section = 'participants' | 'expenses' | 'cash' | 'summary' | 'share'
 
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'participants', label: '참가자' },
   { key: 'expenses', label: '지출' },
-  { key: 'dinner', label: '회식비' },
   { key: 'cash', label: '현금\n입금' },
   { key: 'summary', label: '집계\n/확정' },
   { key: 'share', label: '공유' },
@@ -202,10 +207,9 @@ export function SettlementTab({ devMembers, devSessions, previewMode = false }: 
             <DuesTable settlementId={settlement.id} previewMode={previewMode} membersOverride={devMembers} />
           )}
           {section === 'expenses' && (
-            <SettlementExpenseForm settlementId={settlement.id} onRequestDinnerForm={() => setSection('dinner')} previewMode={previewMode} />
+            <SettlementExpenseForm settlementId={settlement.id} previewMode={previewMode} />
           )}
-          {section === 'dinner' && <DinnerContributionForm settlementId={settlement.id} previewMode={previewMode} />}
-          {section === 'cash' && <CashDepositForm settlementId={settlement.id} />}
+          {section === 'cash' && <CashDepositForm settlementId={settlement.id} previewMode={previewMode} />}
           {section === 'summary' && <SettlementSummary settlementId={settlement.id} previewMode={previewMode} />}
           {section === 'share' && <SettlementSharePreview settlementId={settlement.id} />}
         </>

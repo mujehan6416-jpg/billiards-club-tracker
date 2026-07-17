@@ -8,6 +8,7 @@ import {
 import type { IncomeRowCategory, IncomeRowMethod } from '../../logic/settlement'
 import type { Member } from '../../types'
 import type { DuesStatus, DonationStatus } from '../../types/settlement'
+import { compactMoneyInputStyle } from './moneyInputStyle'
 
 // 정산 "참가자" 탭의 회비·찬조 입력표. 기존 카드형 SettlementParticipantForm을 대체한다.
 // 데이터는 여전히 SettlementParticipant.dues/donation(참가자 1명당 회비 1개·찬조 1개)에 그대로
@@ -45,7 +46,10 @@ function AmountInput({ value, disabled, onCommit, ariaLabel }: {
       value={text}
       onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
       onBlur={() => onCommit(parseTableAmount(text))}
-      style={{ width: '100%', minWidth: 84, fontSize: 15, padding: '8px 6px', textAlign: 'right' }}
+      // 지출 탭 금액칸과 같은 공용 스타일(compactMoneyInputStyle) 재사용 — 표 셀 안이라 지출 탭의
+      // moneyInputStyle(최소 높이 52px, 세로 배치 전제)만큼 키우면 표 자체가 너무 세로로 길어지므로,
+      // "두 칸이 나란히" 놓이는 좁은 자리용 스타일(minWidth:100)에 폰트만 조금 키워 적용한다.
+      style={{ ...compactMoneyInputStyle, fontSize: 16, padding: '9px 8px' }}
     />
   )
 }
@@ -67,6 +71,31 @@ function MethodSelect({ value, disabled, onChange, ariaLabel }: {
       <option value="현금">현금</option>
       <option value="계좌이체">계좌이체</option>
       {value === '기타' && <option value="기타">기타(과거 값)</option>}
+    </select>
+  )
+}
+
+const DUES_STATUS_OPTIONS: DuesStatus[] = ['미납', '미확인', '입금확인', '취소']
+const DONATION_STATUS_OPTIONS: DonationStatus[] = ['미확인', '입금확인', '취소']
+
+/**
+ * 입금 확인 상태 선택칸. calcIncomeSummary는 이 값(특히 '계좌이체'+'미확인'/'입금확인')으로
+ * 수입·미확인 합계를 가른다 — 예전 SettlementParticipantForm.tsx에는 있었지만 이 표로 옮기며
+ * 빠졌던 컨트롤이다(그 결과 회비가 기본값 '미납'에 고정돼 계좌이체 미확인 합계에서 누락되는
+ * 문제가 있었다 — tests/duesTable.test.tsx의 재현 테스트 참고).
+ */
+function StatusSelect<T extends string>({ value, options, disabled, onChange, ariaLabel }: {
+  value: T; options: readonly T[]; disabled: boolean; onChange: (v: T) => void; ariaLabel: string
+}) {
+  return (
+    <select
+      aria-label={ariaLabel}
+      disabled={disabled}
+      value={value}
+      onChange={(e) => onChange(e.target.value as T)}
+      style={{ minWidth: 92, fontSize: 12, padding: '4px 4px' }}
+    >
+      {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
   )
 }
@@ -190,7 +219,7 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
             <tr>
               <th style={{ ...thStyle, minWidth: 84, position: 'sticky', left: 0, background: '#f4f5f3', zIndex: 1 }}>이름</th>
               <th style={{ ...thStyle, minWidth: 64 }}>구분</th>
-              <th style={{ ...thStyle, minWidth: 100, textAlign: 'right' }}>금액</th>
+              <th style={{ ...thStyle, minWidth: 120, textAlign: 'right' }}>금액</th>
               <th style={{ ...thStyle, minWidth: 100 }}>결제수단</th>
               <th style={{ ...thStyle, minWidth: 56 }}></th>
             </tr>
@@ -218,11 +247,20 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
                       />
                     </td>
                     <td style={cellStyle}>
-                      <MethodSelect
-                        value={duesRow.method as IncomeRowMethod | undefined} disabled={locked}
-                        onChange={(v) => updateDues(settlementId, p.id, { method: v })}
-                        ariaLabel={`${p.displayName} 회비 결제수단`}
-                      />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <MethodSelect
+                          value={duesRow.method as IncomeRowMethod | undefined} disabled={locked}
+                          onChange={(v) => updateDues(settlementId, p.id, { method: v })}
+                          ariaLabel={`${p.displayName} 회비 결제수단`}
+                        />
+                        {duesRow.method === '계좌이체' && (
+                          <StatusSelect
+                            value={(duesRow.status as DuesStatus | undefined) ?? '미확인'} options={DUES_STATUS_OPTIONS} disabled={locked}
+                            onChange={(v) => updateDues(settlementId, p.id, { status: v })}
+                            ariaLabel={`${p.displayName} 회비 확인상태`}
+                          />
+                        )}
+                      </div>
                     </td>
                     <td style={cellStyle}>
                       {!showDonation && !locked && (
@@ -245,11 +283,20 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
                         />
                       </td>
                       <td style={cellStyle}>
-                        <MethodSelect
-                          value={donationRow?.method as IncomeRowMethod | undefined} disabled={locked}
-                          onChange={(v) => updateDonation(settlementId, p.id, { method: v })}
-                          ariaLabel={`${p.displayName} 찬조 결제수단`}
-                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <MethodSelect
+                            value={donationRow?.method as IncomeRowMethod | undefined} disabled={locked}
+                            onChange={(v) => updateDonation(settlementId, p.id, { method: v })}
+                            ariaLabel={`${p.displayName} 찬조 결제수단`}
+                          />
+                          {donationRow?.method === '계좌이체' && (
+                            <StatusSelect
+                              value={(donationRow?.status as DonationStatus | undefined) ?? '미확인'} options={DONATION_STATUS_OPTIONS} disabled={locked}
+                              onChange={(v) => updateDonation(settlementId, p.id, { status: v })}
+                              ariaLabel={`${p.displayName} 찬조 확인상태`}
+                            />
+                          )}
+                        </div>
                       </td>
                       <td style={cellStyle}>
                         {!locked && (

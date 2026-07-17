@@ -2,12 +2,14 @@ import type { DinnerContribution, RegularSettlement, SettlementPublicSummary } f
 import {
   calcBankSummary,
   calcCashSummary,
+  calcExpenseByCategory,
   calcIncomeSummary,
   calcProfitSummary,
   confirmedDonorAmounts,
   confirmedDonorNames,
   majorExpenses,
 } from '../logic/settlement'
+import { DINNER_CATEGORY, displayExpenseCategory } from './settlementConstants'
 
 const won = (n: number) => `${n.toLocaleString('ko-KR')}원`
 
@@ -122,6 +124,14 @@ export function buildPresidentShareText(settlement: RegularSettlement): string {
  */
 export function buildPublicSummary(settlement: RegularSettlement): SettlementPublicSummary {
   const profit = calcProfitSummary(settlement)
+  const income = calcIncomeSummary(settlement)
+  // 회식비는 이제 두 출처를 가질 수 있다: 레거시 DinnerContribution(별도 배열)과 신규 지출
+  // 분류 '회식비'(SettlementExpense). expenseByCategory가 이미 두 출처를 중복 없이 합산해두므로
+  // 그 값을 그대로 쓰고, 건수(roundCount)만 두 배열에서 각각 세어 더한다.
+  const dinnerClubShareTotal = calcExpenseByCategory(settlement).find((c) => c.category === DINNER_CATEGORY)?.amount ?? 0
+  const dinnerRoundCount =
+    settlement.dinnerContributions.length +
+    settlement.expenses.filter((e) => displayExpenseCategory(e.category) === DINNER_CATEGORY).length
   return {
     id: settlement.id,
     meetingName: settlement.meetingName,
@@ -136,5 +146,11 @@ export function buildPublicSummary(settlement: RegularSettlement): SettlementPub
     thankYouMessages: donorThankYouMessages(settlement),
     confirmedAt: settlement.confirmedAt ?? new Date().toISOString(),
     version: settlement.version,
+    duesTotal: income.duesCash + income.duesTransferConfirmed + income.duesOther,
+    donationTotal: income.donationCash + income.donationTransferConfirmed + income.donationOther,
+    cashIncomeTotal: income.duesCash + income.donationCash,
+    transferIncomeTotal: income.duesTransferConfirmed + income.donationTransferConfirmed,
+    expenseByCategory: calcExpenseByCategory(settlement),
+    dinnerSummary: { roundCount: dinnerRoundCount, clubShareTotal: dinnerClubShareTotal },
   }
 }

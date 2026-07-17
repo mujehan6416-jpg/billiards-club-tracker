@@ -13,6 +13,8 @@ import { buildResultText, shareImage, shareText } from '../lib/share'
 import { uploadToCloud, UploadCancelledError } from '../lib/cloudSync'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
+import { MemberSettlementSummary } from '../components/settlement/MemberSettlementSummary'
+import { MemberGameResultEntry } from '../components/meeting/MemberGameResultEntry'
 
 // 카톡 대진표용: 기본 장소 + 날짜별 예외 장소
 const LOCATION_DEFAULT = '수영 센텀당구클럽'
@@ -239,6 +241,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   guestMode?: boolean
 }) {
   const { isAdmin } = useAdmin()
+  const { memberId } = useAuth()
   const addGame = useApp((s) => s.addGame)
   const deleteGame = useApp((s) => s.deleteGame)
   const setAttendees = useApp((s) => s.setAttendees)
@@ -324,8 +327,11 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     const m = matchedInRound(round)
     return playing.filter((id) => !m.has(id))
   }
-  // 2라운드에 실제로 저장된 경기 결과(hasRecordedResult 기준)가 하나라도 있으면 재매칭을 막는다
+  // 1·2라운드 재매칭 정책 통일: 해당 라운드에 실제로 저장된 경기 결과(hasRecordedResult 기준, pending·
+  // confirmed·수정요청 상태 구분 없이 점수가 기록된 게임이면 전부 포함)가 하나라도 있으면 재매칭을 막는다
   // (결과 손실 방지 우선). 대진만 생성되고 점수가 없는 상태는 session.games에 없으므로 막지 않는다.
+  // 두 라운드 모두 동일한 canRematchRound(공용 정책 함수, logic/matching.ts)를 사용한다.
+  const round1Locked = !canRematchRound(session, 1)
   const round2Locked = !canRematchRound(session, 2)
 
   const makeOngoing = (aId: string, bId: string, round: number): Ongoing => ({
@@ -344,6 +350,10 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
   // 정기모임 1라운드 자동매칭 — round1Sel(관리자가 직접 선택한 참가자)만 매칭한다.
   const autoMatchRegular = () => {
+    if (round1Locked) {
+      alert('이미 1라운드 결과가 입력되어 있어 재매칭할 수 없습니다.\n다시 매칭하려면 먼저 1라운드 경기 결과를 하나씩 삭제한 뒤 다시 시도해주세요.')
+      return
+    }
     if (round1PlayingIds.length < 2) { alert('1라운드에 참가할 인원을 2명 이상 선택해주세요.'); return }
     if (!confirmRematch()) return
     setRoundParticipants(session.id, 1, round1PlayingIds)
@@ -692,6 +702,14 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         <p className="muted" style={{ textAlign: 'center', padding: '20px 0' }}>아직 등록된 경기 결과가 없습니다.</p>
       )}
 
+      {/* 일반회원(관리자 아님) 본인 경기 결과 입력 — 정기모임, 게시된 대진표에 본인이 있을 때만 표시. */}
+      {!isAdmin && !isFlash && !guestMode && memberId && (
+        <MemberGameResultEntry session={session} members={members} memberId={memberId} />
+      )}
+
+      {/* 일반회원(관리자 아님) 확정 정산 공개 — 정기모임 대진 결과 바로 아래. 확정된 정산이 없으면 아무것도 표시하지 않는다. */}
+      {!isAdmin && !isFlash && <MemberSettlementSummary session={session} />}
+
       {/* === 관리자 또는 번개모임: 대진 편집/점수 입력 === */}
       {canEdit && (
         <>
@@ -718,7 +736,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
           {/* 매칭 방식 선택: 자동(1라운드 생성) / 수동(두 명씩 직접 선택) — 선택된 쪽만 녹색 */}
           <div className="board-actions">
             <button className={matchMode === 'auto' ? 'primary grow' : 'grow'}
-              disabled={(isFlash ? session.attendeeIds.length : round1PlayingIds.length) < 2}
+              disabled={(isFlash ? session.attendeeIds.length : round1PlayingIds.length) < 2 || (!isFlash && round1Locked)}
               onClick={isFlash ? autoMatchFlash : autoMatchRegular}>
               🔀 {isFlash ? '자동매칭' : '1라운드 자동매칭'}
             </button>
@@ -728,6 +746,11 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
               ✋ 수동매칭
             </button>
           </div>
+          {!isFlash && round1Locked && (
+            <p className="muted" style={{ fontSize: 13, marginTop: -6, marginBottom: 10, color: '#c0392b' }}>
+              이미 1라운드 결과가 있어 재매칭할 수 없습니다. 다시 매칭하려면 먼저 1라운드 경기를 하나씩 삭제하세요.
+            </p>
+          )}
 
           {!isFlash && (
             <>

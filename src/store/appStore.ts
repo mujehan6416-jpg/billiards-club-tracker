@@ -18,6 +18,13 @@ interface Store extends AppState {
   deleteGame: (sessionId: string, gameId: string) => void
   confirmGame: (sessionId: string, gameId: string) => void
   updateGameResult: (sessionId: string, gameId: string, patch: Partial<Pick<Game, 'scoreA' | 'scoreB' | 'handicapA' | 'handicapB'>>) => void
+  /** 관리자가 일반회원 제출 결과에 "수정 요청"을 누를 때 사용. pending은 유지하고 revisionRequested만 true로 저장한다. */
+  requestGameRevision: (sessionId: string, gameId: string) => void
+  /**
+   * 참가자가 "수정 요청"된 본인 경기 결과를 다시 제출할 때 사용. 점수를 갱신하고 revisionRequested를
+   * 해제한다(pending은 그대로 true — 여전히 관리자 확인이 필요한 상태로 되돌아간다).
+   */
+  resubmitGameResult: (sessionId: string, gameId: string, patch: { scoreA: number; scoreB: number; endType: Game['endType'] }) => void
   cleanupOldPending: () => void
   upsertLedger: (record: Omit<LedgerRecord, 'id'> & { id?: string }) => void
   deleteLedger: (id: string) => void
@@ -137,7 +144,25 @@ export const useApp = create<Store>()(
         set((s) => ({
           sessions: s.sessions.map((ss) =>
             ss.id === sessionId
-              ? { ...ss, games: ss.games.map((g) => g.id === gameId ? { ...g, pending: false } : g) }
+              ? { ...ss, games: ss.games.map((g) => g.id === gameId ? { ...g, pending: false, revisionRequested: false } : g) }
+              : ss,
+          ),
+        })),
+
+      requestGameRevision: (sessionId, gameId) =>
+        set((s) => ({
+          sessions: s.sessions.map((ss) =>
+            ss.id === sessionId
+              ? { ...ss, games: ss.games.map((g) => g.id === gameId ? { ...g, pending: true, revisionRequested: true } : g) }
+              : ss,
+          ),
+        })),
+
+      resubmitGameResult: (sessionId, gameId, patch) =>
+        set((s) => ({
+          sessions: s.sessions.map((ss) =>
+            ss.id === sessionId
+              ? { ...ss, games: ss.games.map((g) => g.id === gameId ? { ...g, ...patch, pending: true, revisionRequested: false } : g) }
               : ss,
           ),
         })),

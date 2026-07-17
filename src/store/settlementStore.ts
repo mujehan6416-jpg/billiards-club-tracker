@@ -24,7 +24,6 @@ import {
   validateCashDeposit,
 } from '../logic/settlement'
 import { buildMemberShareText, buildPresidentShareText, buildPublicSummary } from '../lib/settlementShareText'
-import { DINNER_CATEGORY } from '../lib/settlementConstants'
 import { useAdminAuthStore } from './adminAuthStore'
 import * as settlementSync from '../lib/settlementSync'
 
@@ -307,17 +306,24 @@ export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
       return { ok: true }
     },
 
+    // 결제수단이 바뀌면 확인 상태를 그 수단에 맞게 정규화한다(확정 정책):
+    // 현금으로 바뀌면 즉시 확인 완료('입금확인')로, 계좌이체로 바뀌면 항상 기본 '미확인'으로 되돌린다
+    // — 계좌이체였을 때의 이전 상태(예: 입금확인)를 그대로 들고 가서 임의로 확인 완료 처리되지 않도록.
+    // patch에 method가 없으면(금액만 수정 등) 상태는 건드리지 않는다.
     updateDues: (settlementId, participantId, patch) => {
       const blocked = guard(settlementId)
       if (blocked) return blocked
       set((s) => ({
         settlements: patchSettlement(s.settlements, settlementId, (st) => ({
           ...st,
-          participants: st.participants.map((p) =>
-            p.id !== participantId
-              ? p
-              : { ...p, dues: patch === null ? undefined : { ...(p.dues ?? { amount: 0, method: '현금', status: '미납' }), ...patch } },
-          ),
+          participants: st.participants.map((p) => {
+            if (p.id !== participantId) return p
+            if (patch === null) return { ...p, dues: undefined }
+            const merged = { ...(p.dues ?? { amount: 0, method: '현금', status: '미납' }), ...patch }
+            if (patch.method === '현금') merged.status = '입금확인'
+            else if (patch.method === '계좌이체') merged.status = '미확인'
+            return { ...p, dues: merged }
+          }),
         })),
       }))
       return { ok: true }
@@ -329,22 +335,26 @@ export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
       set((s) => ({
         settlements: patchSettlement(s.settlements, settlementId, (st) => ({
           ...st,
-          participants: st.participants.map((p) =>
-            p.id !== participantId
-              ? p
-              : { ...p, donation: patch === null ? undefined : { ...(p.donation ?? { amount: 0, method: '현금', status: '미확인' }), ...patch } },
-          ),
+          participants: st.participants.map((p) => {
+            if (p.id !== participantId) return p
+            if (patch === null) return { ...p, donation: undefined }
+            const merged = { ...(p.donation ?? { amount: 0, method: '현금', status: '미확인' }), ...patch }
+            if (patch.method === '현금') merged.status = '입금확인'
+            else if (patch.method === '계좌이체') merged.status = '미확인'
+            return { ...p, donation: merged }
+          }),
         })),
       }))
       return { ok: true }
     },
 
+    // 회식비 전용 탭(DinnerContributionForm)은 제거되었다 — 회식비도 이제 일반 지출 분류(category
+    // === DINNER_CATEGORY) 중 하나로 지출 탭에서 그대로 등록한다. 기존 dinnerContributions
+    // 데이터(레거시)는 지우거나 옮기지 않고 그대로 두며, 집계 함수(calcExpenseSummary 등)가
+    // expenses(신규 회식비 포함)와 dinnerContributions(레거시)를 각각 더해 중복 없이 합산한다.
     addExpense: (settlementId, expense) => {
       const blocked = guard(settlementId)
       if (blocked) return blocked
-      if (expense.category === DINNER_CATEGORY) {
-        return { ok: false, error: '회식비는 일반 지출이 아니라 회식비 전용 입력에서 등록해주세요.' }
-      }
       set((s) => ({
         settlements: patchSettlement(s.settlements, settlementId, (st) => ({
           ...st,
@@ -357,9 +367,6 @@ export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
     updateExpense: (settlementId, expenseId, patch) => {
       const blocked = guard(settlementId)
       if (blocked) return blocked
-      if (patch.category === DINNER_CATEGORY) {
-        return { ok: false, error: '회식비는 일반 지출이 아니라 회식비 전용 입력에서 등록해주세요.' }
-      }
       set((s) => ({
         settlements: patchSettlement(s.settlements, settlementId, (st) => ({
           ...st,

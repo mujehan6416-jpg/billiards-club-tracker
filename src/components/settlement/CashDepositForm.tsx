@@ -3,6 +3,8 @@ import { useSettlementStore, isLocked } from '../../store/settlementStore'
 import { calcCashSummary } from '../../logic/settlement'
 import { todayStr } from '../../lib/date'
 import type { CashDeposit, CashDepositStatus } from '../../types/settlement'
+import { SettlementSaveButtons } from './SettlementSaveButtons'
+import { moneyInputStyle } from './moneyInputStyle'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') || '0', 10))
@@ -10,7 +12,7 @@ const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') ||
 type FormState = { depositDate: string; amount: string; status: CashDepositStatus; note: string }
 const emptyForm = (): FormState => ({ depositDate: todayStr(), amount: '', status: '입금확인', note: '' })
 
-export function CashDepositForm({ settlementId }: { settlementId: string }) {
+export function CashDepositForm({ settlementId, previewMode = false }: { settlementId: string; previewMode?: boolean }) {
   const settlement = useSettlementStore((s) => s.getById(settlementId))
   const addCashDeposit = useSettlementStore((s) => s.addCashDeposit)
   const updateCashDeposit = useSettlementStore((s) => s.updateCashDeposit)
@@ -51,7 +53,7 @@ export function CashDepositForm({ settlementId }: { settlementId: string }) {
         <div className="card col-card">
           <span style={{ fontWeight: 700, fontSize: 14 }}>{editingId ? '현금 통장 입금 수정' : '현금 통장 입금 추가'}</span>
           <input type="date" value={form.depositDate} onChange={(e) => set('depositDate')(e.target.value)} />
-          <input type="number" inputMode="numeric" min={0} value={form.amount} placeholder="입금액" onChange={(e) => set('amount')(e.target.value)} style={{ fontSize: 18 }} />
+          <input type="number" inputMode="numeric" min={0} value={form.amount} placeholder="입금액" onChange={(e) => set('amount')(e.target.value)} style={moneyInputStyle} />
           <select value={form.status} onChange={(e) => set('status')(e.target.value)}>
             <option value="입금전">입금전</option>
             <option value="입금예정">입금예정</option>
@@ -82,6 +84,8 @@ export function CashDepositForm({ settlementId }: { settlementId: string }) {
           )}
         </div>
       ))}
+
+      <SettlementSaveButtons settlementId={settlementId} previewMode={previewMode} locked={locked} />
     </div>
   )
 }

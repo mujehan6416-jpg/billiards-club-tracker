@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSettlementStore, isLocked } from '../../store/settlementStore'
-import { EXPENSE_CATEGORIES, DINNER_CATEGORY, displayExpenseCategory } from '../../lib/settlementConstants'
+import { EXPENSE_CATEGORIES, displayExpenseCategory } from '../../lib/settlementConstants'
 import { calcDefaultExpenseClubShare, prefillExpenseClubShare, validateExpenseShares } from '../../logic/settlement'
 import type { ExpensePaymentMethod, SettlementExpense } from '../../types/settlement'
 import { todayStr } from '../../lib/date'
@@ -20,10 +20,12 @@ const emptyForm = (): FormState => ({
   method: '현금', paidBy: '', clubShare: '', personalDonation: '', note: '',
 })
 
-/** 회식비 카테고리를 고르면 일반 지출 폼을 그대로 제출하지 않고, 회식비 전용 입력으로 넘긴다(이중 입력 방지). */
-export function SettlementExpenseForm({ settlementId, onRequestDinnerForm, previewMode = false }: {
+// 회식비 전용 탭(DinnerContributionForm)은 제거되었다 — 회식비도 지출 분류(EXPENSE_CATEGORIES)
+// 중 하나이므로 이 폼에서 다른 분류와 똑같이 등록한다. 이전에는 '회식비' 선택 시 별도 폼으로
+// 넘겼지만(onRequestDinnerForm), 이제는 그럴 필요가 없다 — 다만 과거에 그 별도 폼(dinnerContributions)
+// 으로 저장된 데이터는 지우거나 옮기지 않는다(집계 함수가 두 출처를 합산 — logic/settlement.ts 참고).
+export function SettlementExpenseForm({ settlementId, previewMode = false }: {
   settlementId: string
-  onRequestDinnerForm: () => void
   previewMode?: boolean
 }) {
   const settlement = useSettlementStore((s) => s.getById(settlementId))
@@ -48,15 +50,6 @@ export function SettlementExpenseForm({ settlementId, onRequestDinnerForm, previ
       clubShare: prefillExpenseClubShare(e.amount, e.clubShare, e.personalDonation),
       personalDonation: String(e.personalDonation), note: e.note ?? '',
     })
-  }
-
-  const onCategoryChange = (category: string) => {
-    if (category === DINNER_CATEGORY) {
-      setForm((f) => ({ ...f, category: EXPENSE_CATEGORIES[0] }))
-      onRequestDinnerForm()
-      return
-    }
-    set('category')(category)
   }
 
   const submit = () => {
@@ -85,7 +78,7 @@ export function SettlementExpenseForm({ settlementId, onRequestDinnerForm, previ
           <span style={{ fontWeight: 700, fontSize: 14 }}>{editingId ? '지출 수정' : '지출 추가'}</span>
           <input type="date" value={form.date} onChange={(e) => set('date')(e.target.value)} />
           <input placeholder="항목명 (예: 당구장 대관료)" value={form.label} onChange={(e) => set('label')(e.target.value)} style={{ fontSize: 16 }} />
-          <select value={form.category} onChange={(e) => onCategoryChange(e.target.value)}>
+          <select value={form.category} onChange={(e) => set('category')(e.target.value)}>
             {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

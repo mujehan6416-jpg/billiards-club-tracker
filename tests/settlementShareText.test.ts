@@ -160,4 +160,59 @@ describe('buildPublicSummary', () => {
     expect(keys).not.toContain('cashDeposits')
     expect(keys).not.toContain('revisionLog')
   })
+
+  it('회비·찬조·현금·계좌이체 합계, 지출 분류별 합계, 회식비 요약을 포함한다(일반회원 정산 공개용)', () => {
+    const settlement = baseSettlement({
+      participants: [
+        { id: 'p1', participantType: 'member', memberId: 'p1', displayName: '테스트회원가', addedVia: 'meeting_attendee', dues: { amount: 30000, method: '현금', status: '입금확인' }, donation: { amount: 20000, method: '계좌이체', status: '입금확인' } },
+      ],
+      expenses: [
+        { id: 'e1', date: '2026-01-10', label: '당구장 대관', category: '당구비', amount: 40000, method: '현금', clubShare: 40000, personalDonation: 0 },
+      ],
+      dinnerContributions: [
+        { id: 'd1', dinnerRound: 1, totalAmount: 50000, method: '현금', clubShare: 50000, contributionType: '모임회계지출', contributors: [] },
+      ],
+    })
+    const summary = buildPublicSummary(settlement)
+
+    expect(summary.duesTotal).toBe(30000)
+    expect(summary.donationTotal).toBe(20000)
+    expect(summary.cashIncomeTotal).toBe(30000)
+    expect(summary.transferIncomeTotal).toBe(20000)
+    expect(summary.expenseByCategory).toEqual([
+      { category: '당구비', amount: 40000 },
+      { category: '회식비', amount: 50000 },
+    ])
+    expect(summary.dinnerSummary).toEqual({ roundCount: 1, clubShareTotal: 50000 })
+
+    // 통장·현금 잔액 등 민감 정보는 여전히 포함하지 않는다
+    const keys = Object.keys(summary)
+    expect(keys).not.toContain('prevBankBalance')
+    expect(keys).not.toContain('cashDeposits')
+  })
+
+  it('[재현 및 수정 확인] 회식비 탭 제거 후: 신규 지출분류 회식비 + 레거시 DinnerContribution이 dinnerSummary에서 중복 없이 합산된다', () => {
+    const settlement = baseSettlement({
+      expenses: [
+        { id: 'e1', date: '2026-01-10', label: '2차 회식', category: '회식비', amount: 30000, method: '현금', clubShare: 30000, personalDonation: 0 },
+      ],
+      dinnerContributions: [
+        { id: 'd1', dinnerRound: 1, totalAmount: 50000, method: '현금', clubShare: 50000, contributionType: '모임회계지출', contributors: [] },
+      ],
+    })
+    const summary = buildPublicSummary(settlement)
+    // roundCount: 레거시 1건 + 신규 1건 = 2, clubShareTotal: 30000 + 50000 = 80000 (중복 없음)
+    expect(summary.dinnerSummary).toEqual({ roundCount: 2, clubShareTotal: 80000 })
+  })
+
+  it('레거시 회식비 데이터만 있어도 dinnerSummary·expenseByCategory 조회에 오류가 없다', () => {
+    const settlement = baseSettlement({
+      dinnerContributions: [
+        { id: 'd1', dinnerRound: 1, totalAmount: 20000, method: '현금', clubShare: 20000, contributionType: '모임회계지출', contributors: [] },
+      ],
+    })
+    expect(() => buildPublicSummary(settlement)).not.toThrow()
+    const summary = buildPublicSummary(settlement)
+    expect(summary.dinnerSummary).toEqual({ roundCount: 1, clubShareTotal: 20000 })
+  })
 })

@@ -24,6 +24,7 @@ import {
   calcDefaultExpenseClubShare,
   prefillExpenseClubShare,
   validateExpenseShares,
+  calcExpenseByCategory,
 } from '../src/logic/settlement'
 import type { RegularSettlement, SettlementParticipant, SettlementExpense, DinnerContribution } from '../src/types/settlement'
 
@@ -88,6 +89,118 @@ describe('calcIncomeSummary', () => {
     // 취소·미확인 건은 총수입에서 제외 → 30000(현금회비) + 10000(계좌이체찬조) + 5000(기타찬조)
     expect(income.totalIncome).toBe(45000)
   })
+
+  describe('[재현] 계좌이체 미확인 합계 — 동일 회원이 회비·찬조를 각각 계좌이체·미확인으로 낸 경우', () => {
+    it('동일 회원의 회비 30,000원(계좌이체·미확인)과 찬조 20,000원(계좌이체·미확인)이 모두 합산되어 50,000원이어야 한다', () => {
+      const settlement = baseSettlement({
+        participants: [
+          participant({
+            id: 'p1', displayName: '가상회원D',
+            dues: { amount: 30000, method: '계좌이체', status: '미확인' },
+            donation: { amount: 20000, method: '계좌이체', status: '미확인' },
+          }),
+        ],
+      })
+      const income = calcIncomeSummary(settlement)
+      expect(income.duesTransferUnconfirmed).toBe(30000)
+      expect(income.donationTransferUnconfirmed).toBe(20000)
+      expect(income.duesTransferUnconfirmed + income.donationTransferUnconfirmed).toBe(50000)
+    })
+
+    it('회비가 확인 완료면 찬조 미확인분만 남는다(20,000원)', () => {
+      const settlement = baseSettlement({
+        participants: [
+          participant({
+            id: 'p1', displayName: '가상회원D',
+            dues: { amount: 30000, method: '계좌이체', status: '입금확인' },
+            donation: { amount: 20000, method: '계좌이체', status: '미확인' },
+          }),
+        ],
+      })
+      const income = calcIncomeSummary(settlement)
+      expect(income.duesTransferUnconfirmed + income.donationTransferUnconfirmed).toBe(20000)
+    })
+
+    it('회비 계좌이체 미확인 + 찬조 현금이면 회비분만 미확인 합계에 잡힌다(30,000원)', () => {
+      const settlement = baseSettlement({
+        participants: [
+          participant({
+            id: 'p1', displayName: '가상회원D',
+            dues: { amount: 30000, method: '계좌이체', status: '미확인' },
+            donation: { amount: 20000, method: '현금', status: '입금확인' },
+          }),
+        ],
+      })
+      const income = calcIncomeSummary(settlement)
+      expect(income.duesTransferUnconfirmed + income.donationTransferUnconfirmed).toBe(30000)
+    })
+
+    it('서로 다른 회원의 계좌이체 미확인 금액도 모두 합산된다', () => {
+      const settlement = baseSettlement({
+        participants: [
+          participant({ id: 'p1', displayName: '테스트회원A', dues: { amount: 30000, method: '계좌이체', status: '미확인' } }),
+          participant({ id: 'p2', displayName: '테스트회원B', donation: { amount: 20000, method: '계좌이체', status: '미확인' } }),
+        ],
+      })
+      const income = calcIncomeSummary(settlement)
+      expect(income.duesTransferUnconfirmed + income.donationTransferUnconfirmed).toBe(50000)
+    })
+
+    it('비회원·외부 찬조자의 계좌이체 미확인도 동일하게 포함된다', () => {
+      const settlement = baseSettlement({
+        participants: [
+          participant({
+            id: 'guest1', displayName: '외부찬조자', memberId: null, participantType: 'guest',
+            donation: { amount: 20000, method: '계좌이체', status: '미확인' },
+          }),
+        ],
+      })
+      const income = calcIncomeSummary(settlement)
+      expect(income.donationTransferUnconfirmed).toBe(20000)
+    })
+
+    it('금액 0원이거나 미확인이 아니면 미확인 합계에서 제외된다', () => {
+      const settlement = baseSettlement({
+        participants: [
+          participant({
+            id: 'p1', displayName: '가상회원D',
+            dues: { amount: 0, method: '계좌이체', status: '미확인' },
+            donation: { amount: 20000, method: '계좌이체', status: '취소' },
+          }),
+        ],
+      })
+      const income = calcIncomeSummary(settlement)
+      expect(income.duesTransferUnconfirmed + income.donationTransferUnconfirmed).toBe(0)
+    })
+
+    it('확인 처리 전후: 미확인 합계는 줄어들고 총수입은 그대로 유지된다', () => {
+      const before = baseSettlement({
+        participants: [
+          participant({
+            id: 'p1', displayName: '가상회원D',
+            dues: { amount: 30000, method: '계좌이체', status: '미확인' },
+            donation: { amount: 20000, method: '계좌이체', status: '미확인' },
+          }),
+        ],
+      })
+      const incomeBefore = calcIncomeSummary(before)
+      expect(incomeBefore.duesTransferUnconfirmed + incomeBefore.donationTransferUnconfirmed).toBe(50000)
+      expect(incomeBefore.totalIncome).toBe(0)
+
+      const after = baseSettlement({
+        participants: [
+          participant({
+            id: 'p1', displayName: '가상회원D',
+            dues: { amount: 30000, method: '계좌이체', status: '입금확인' },
+            donation: { amount: 20000, method: '계좌이체', status: '미확인' },
+          }),
+        ],
+      })
+      const incomeAfter = calcIncomeSummary(after)
+      expect(incomeAfter.duesTransferUnconfirmed + incomeAfter.donationTransferUnconfirmed).toBe(20000)
+      expect(incomeAfter.totalIncome).toBe(30000)
+    })
+  })
 })
 
 describe('calcExpenseSummary', () => {
@@ -121,6 +234,44 @@ describe('calcExpenseSummary', () => {
     expect(summary.cash).toBe(13000)
     expect(summary.transfer).toBe(15000)
     expect(summary.total).toBe(28000)
+  })
+
+  describe('[재현 및 수정 확인] 회식비 탭 제거 후 — 신규(지출 분류 "회식비")와 레거시(DinnerContribution)가 중복 없이 합산되는지', () => {
+    it('신규 회식비 지출(expenses)과 레거시 회식비(dinnerContributions)가 둘 다 있으면 dinnerClubShare에 둘 다 더해진다', () => {
+      const settlement = baseSettlement({
+        expenses: [
+          { id: 'e1', date: '2026-01-10', label: '2차 회식', category: '회식비', amount: 30000, method: '현금', clubShare: 30000, personalDonation: 0 },
+        ],
+        dinnerContributions: [
+          { id: 'd1', dinnerRound: 1, totalAmount: 50000, method: '현금', clubShare: 50000, contributionType: '모임회계지출', contributors: [] },
+        ],
+      })
+      const summary = calcExpenseSummary(settlement)
+      // 30000(신규) + 50000(레거시) = 80000 — 중복 없이 합산
+      expect(summary.dinnerClubShare).toBe(80000)
+      expect(summary.cash).toBe(80000)
+      expect(summary.total).toBe(80000)
+    })
+
+    it('신규 회식비 지출만 있어도(레거시 없음) 정상 집계된다', () => {
+      const settlement = baseSettlement({
+        expenses: [
+          { id: 'e1', date: '2026-01-10', label: '회식', category: '회식비', amount: 40000, method: '현금', clubShare: 40000, personalDonation: 0 },
+        ],
+      })
+      expect(calcExpenseSummary(settlement).dinnerClubShare).toBe(40000)
+    })
+
+    it('레거시 회식비 데이터만 있어도(오류 없이) 그대로 총지출에 반영된다', () => {
+      const settlement = baseSettlement({
+        dinnerContributions: [
+          { id: 'd1', dinnerRound: 1, totalAmount: 20000, method: '현금', clubShare: 20000, contributionType: '모임회계지출', contributors: [] },
+        ],
+      })
+      const summary = calcExpenseSummary(settlement)
+      expect(summary.dinnerClubShare).toBe(20000)
+      expect(summary.total).toBe(20000)
+    })
   })
 })
 
@@ -248,6 +399,66 @@ describe('majorExpenses', () => {
     })
     const top = majorExpenses(settlement, 2)
     expect(top.map((e) => e.label)).toEqual(['B', 'C'])
+  })
+})
+
+describe('calcExpenseByCategory — 일반회원 공개용 지출 분류별 합계', () => {
+  it('분류별 모임 부담액(clubShare)만 합산하고, 0원 분류는 제외한다', () => {
+    const settlement = baseSettlement({
+      expenses: [
+        { id: 'e1', date: '2026-01-10', label: '당구장 대관', category: '당구비', amount: 100000, method: '현금', clubShare: 100000, personalDonation: 0 },
+        { id: 'e2', date: '2026-01-10', label: '음료수', category: '다과비', amount: 20000, method: '현금', clubShare: 15000, personalDonation: 5000 },
+        { id: 'e3', date: '2026-01-10', label: '트로피', category: '상금', amount: 50000, method: '현금', clubShare: 50000, personalDonation: 0 },
+      ],
+    })
+    const result = calcExpenseByCategory(settlement)
+    expect(result).toEqual([
+      { category: '당구비', amount: 100000 },
+      { category: '다과비', amount: 15000 },
+      { category: '상금', amount: 50000 },
+    ])
+    expect(result.some((r) => r.category === '기타')).toBe(false)
+  })
+
+  it('예전 분류값(10개)도 새 분류(5개)로 합쳐서 집계한다', () => {
+    const settlement = baseSettlement({
+      expenses: [
+        { id: 'e1', date: '2026-01-10', label: '대관료', category: '대관비', amount: 50000, method: '현금', clubShare: 50000, personalDonation: 0 },
+        { id: 'e2', date: '2026-01-10', label: '식사', category: '식사비', amount: 30000, method: '현금', clubShare: 30000, personalDonation: 0 },
+      ],
+    })
+    const result = calcExpenseByCategory(settlement)
+    expect(result).toEqual([
+      { category: '당구비', amount: 50000 }, // 대관비 → 당구비
+      { category: '다과비', amount: 30000 }, // 식사비 → 다과비
+    ])
+  })
+
+  it('회식비(DinnerContribution)의 모임 부담액을 회식비 분류에 더한다', () => {
+    const settlement = baseSettlement({
+      dinnerContributions: [
+        { id: 'd1', dinnerRound: 1, totalAmount: 100000, method: '현금', clubShare: 60000, contributionType: '일부찬조', contributors: [] },
+      ],
+    })
+    const result = calcExpenseByCategory(settlement)
+    expect(result).toEqual([{ category: '회식비', amount: 60000 }])
+  })
+
+  it('[재현 및 수정 확인] 신규 지출분류 "회식비"와 레거시 DinnerContribution이 같이 있으면 회식비 분류 하나로 중복 없이 합산된다', () => {
+    const settlement = baseSettlement({
+      expenses: [
+        { id: 'e1', date: '2026-01-10', label: '2차 회식', category: '회식비', amount: 30000, method: '현금', clubShare: 30000, personalDonation: 0 },
+      ],
+      dinnerContributions: [
+        { id: 'd1', dinnerRound: 1, totalAmount: 50000, method: '현금', clubShare: 50000, contributionType: '모임회계지출', contributors: [] },
+      ],
+    })
+    const result = calcExpenseByCategory(settlement)
+    expect(result).toEqual([{ category: '회식비', amount: 80000 }])
+  })
+
+  it('지출이 전혀 없으면 빈 배열을 반환한다', () => {
+    expect(calcExpenseByCategory(baseSettlement())).toEqual([])
   })
 })
 

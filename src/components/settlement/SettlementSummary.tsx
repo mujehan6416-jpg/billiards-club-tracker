@@ -71,7 +71,8 @@ export function SettlementSummary({ settlementId, previewMode = false }: { settl
         <div className="muted" style={{ fontSize: 13 }}>찬조 현금 {fmt(income.donationCash)} · 찬조 계좌이체(확인) {fmt(income.donationTransferConfirmed)}</div>
         {(income.duesTransferUnconfirmed + income.donationTransferUnconfirmed) > 0 && (
           <div style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>
-            ⚠ 계좌이체 미확인 합계 {fmt(income.duesTransferUnconfirmed + income.donationTransferUnconfirmed)} (총수입에서 제외됨)
+            <div>⚠ 계좌이체 미확인 합계 {fmt(income.duesTransferUnconfirmed + income.donationTransferUnconfirmed)}</div>
+            <div>입금 확인 전 금액은 총수입에서 제외됩니다.</div>
           </div>
         )}
         <div style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 6 }}>총수입 {fmt(profit.totalIncome)}</div>
@@ -117,7 +118,10 @@ export function SettlementSummary({ settlementId, previewMode = false }: { settl
         <div className="muted" style={{ fontSize: 13 }}>확인된 계좌이체 수입 {fmt(bank.confirmedTransferIncome)} · 통장 입금액 {fmt(bank.confirmedCashDeposit)}</div>
         <div className="muted" style={{ fontSize: 13 }}>체크카드 지출 {fmt(bank.cardExpense)} · 계좌이체 지출 {fmt(bank.transferExpense)}</div>
         {bank.unconfirmedTransferAmount > 0 && (
-          <div style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>⚠ 계좌이체 미확인 금액 {fmt(bank.unconfirmedTransferAmount)}</div>
+          <div style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>
+            <div>⚠ 계좌이체 미확인 합계 {fmt(bank.unconfirmedTransferAmount)}</div>
+            <div>입금 확인 전 금액은 총수입에서 제외됩니다.</div>
+          </div>
         )}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 6, display: 'flex', justifyContent: 'space-between' }}>
           <span style={{ fontWeight: 700 }}>현재 통장 잔액</span>

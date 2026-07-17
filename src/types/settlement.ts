@@ -168,4 +168,16 @@ export interface SettlementPublicSummary {
   thankYouMessages: string[]
   confirmedAt: string
   version: number
+  /** 회비 합계(입금확인된 현금+계좌이체+기타). 개인별 납부액은 포함하지 않는다. */
+  duesTotal: number
+  /** 찬조 합계(입금확인된 현금+계좌이체+기타). */
+  donationTotal: number
+  /** 회비+찬조 중 현금으로 받은 합계. */
+  cashIncomeTotal: number
+  /** 회비+찬조 중 계좌이체(입금확인)로 받은 합계. */
+  transferIncomeTotal: number
+  /** 지출 분류(당구비/다과비/회식비/상금/기타)별 모임 부담액 합계. 0원인 분류는 제외한다. */
+  expenseByCategory: { category: string; amount: number }[]
+  /** 회식비 차수 수와 모임 부담 합계(개인 찬조분 제외) — 통장·현금 잔액 등 민감 정보는 포함하지 않는다. */
+  dinnerSummary: { roundCount: number; clubShareTotal: number }
 }

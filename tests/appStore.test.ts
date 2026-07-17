@@ -61,6 +61,61 @@ describe('approveSession — 번개모임 승인 시 회원 입력 경기의 pen
   })
 })
 
+describe('requestGameRevision / resubmitGameResult / confirmGame — 일반회원 경기결과 관리자 확인·수정요청 흐름', () => {
+  function seedPendingGame(overrides: { round?: number } = {}) {
+    const sessionId = useApp.getState().createSession('2026-07-10', ['m1', 'm2'], 'regular')
+    useApp.getState().addGame(sessionId, {
+      playerAId: 'm1', playerBId: 'm2',
+      handicapA: 20, handicapB: 20,
+      scoreA: 15, scoreB: 10,
+      endType: 'time',
+      round: overrides.round ?? 1,
+      pending: true,
+    })
+    const gameId = useApp.getState().sessions.find((s) => s.id === sessionId)!.games[0].id
+    return { sessionId, gameId }
+  }
+
+  it('requestGameRevision: pending은 유지하고 revisionRequested만 true로 저장한다', () => {
+    const { sessionId, gameId } = seedPendingGame()
+    useApp.getState().requestGameRevision(sessionId, gameId)
+    const game = useApp.getState().sessions.find((s) => s.id === sessionId)!.games[0]
+    expect(game.pending).toBe(true)
+    expect(game.revisionRequested).toBe(true)
+  })
+
+  it('resubmitGameResult: 점수를 갱신하고 revisionRequested를 해제하며, pending은 계속 true로 남는다(다시 관리자 확인 대기)', () => {
+    const { sessionId, gameId } = seedPendingGame()
+    useApp.getState().requestGameRevision(sessionId, gameId)
+    useApp.getState().resubmitGameResult(sessionId, gameId, { scoreA: 18, scoreB: 12, endType: 'time' })
+    const game = useApp.getState().sessions.find((s) => s.id === sessionId)!.games[0]
+    expect(game.scoreA).toBe(18)
+    expect(game.scoreB).toBe(12)
+    expect(game.pending).toBe(true)
+    expect(game.revisionRequested).toBe(false)
+  })
+
+  it('confirmGame: pending과 revisionRequested를 모두 false로 저장한다(확인 완료)', () => {
+    const { sessionId, gameId } = seedPendingGame()
+    useApp.getState().requestGameRevision(sessionId, gameId)
+    useApp.getState().confirmGame(sessionId, gameId)
+    const game = useApp.getState().sessions.find((s) => s.id === sessionId)!.games[0]
+    expect(game.pending).toBe(false)
+    expect(game.revisionRequested).toBe(false)
+  })
+
+  it('resultStatus 필드가 없는 기존 경기 결과(pending 없음)는 관리자 입력 결과(확인 완료 상태)로 그대로 취급된다', () => {
+    const sessionId = useApp.getState().createSession('2026-07-11', ['m1', 'm2'], 'regular')
+    useApp.getState().addGame(sessionId, {
+      playerAId: 'm1', playerBId: 'm2', handicapA: 20, handicapB: 20, scoreA: 20, scoreB: 18, endType: 'cleared',
+      // pending, revisionRequested 모두 없음 — 관리자가 직접 입력한 기존 데이터를 그대로 재현
+    })
+    const game = useApp.getState().sessions.find((s) => s.id === sessionId)!.games[0]
+    expect(game.pending).toBeUndefined()
+    expect(game.revisionRequested).toBeUndefined()
+  })
+})
+
 describe('setRoundParticipants — 라운드별 참가자 명단 저장', () => {
   it('round1과 round2를 각각 독립적으로 저장한다(한쪽을 바꿔도 다른 쪽은 그대로)', () => {
     const sessionId = useApp.getState().createSession('2026-07-04', ['m1', 'm2', 'm3'], 'regular')
