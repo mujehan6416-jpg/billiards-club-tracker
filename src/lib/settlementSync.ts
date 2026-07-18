@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore'
 import { db } from './firebase'
 import type { RegularSettlement } from '../types/settlement'
 
@@ -132,6 +132,15 @@ export async function saveSettlement(settlement: RegularSettlement): Promise<num
     const payload = stripUndefinedDeep({ ...settlement, version: newVersion })
     await setDoc(ref, payload)
     return newVersion
+  } catch (e) {
+    throw toSyncError(e)
+  }
+}
+
+/** 정산 문서 1건을 Firestore에서 완전히 삭제한다(하위 컬렉션 없음 — 문서 삭제만으로 완결). */
+export async function deleteSettlement(id: string): Promise<void> {
+  try {
+    await deleteDoc(settlementDoc(id))
   } catch (e) {
     throw toSyncError(e)
   }

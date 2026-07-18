@@ -8,6 +8,7 @@ import { SettlementExpenseForm } from '../components/settlement/SettlementExpens
 import { CashDepositForm } from '../components/settlement/CashDepositForm'
 import { SettlementSummary } from '../components/settlement/SettlementSummary'
 import { SettlementSharePreview } from '../components/settlement/SettlementSharePreview'
+import { SettlementDeleteControl } from '../components/settlement/SettlementDeleteControl'
 import { todayStr } from '../lib/date'
 import type { Member, Session } from '../types'
 import type { MeetingType } from '../types/settlement'
@@ -179,6 +180,8 @@ export function SettlementTab({ devMembers, devSessions, previewMode = false }: 
           </select>
         </div>
       )}
+
+      {settlement && <SettlementDeleteControl settlement={settlement} previewMode={previewMode} />}
 
       <CreateSettlementForm onCreated={setCurrentId} membersOverride={devMembers} sessionsOverride={devSessions} />
 

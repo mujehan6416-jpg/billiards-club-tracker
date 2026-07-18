@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const getDocMock = vi.fn()
 const getDocsMock = vi.fn()
 const setDocMock = vi.fn()
+const deleteDocMock = vi.fn()
 
 vi.mock('firebase/firestore', () => ({
   collection: vi.fn(() => 'COL_REF'),
@@ -13,11 +14,12 @@ vi.mock('firebase/firestore', () => ({
   getDoc: (...args: unknown[]) => getDocMock(...args),
   getDocs: (...args: unknown[]) => getDocsMock(...args),
   setDoc: (...args: unknown[]) => setDocMock(...args),
+  deleteDoc: (...args: unknown[]) => deleteDocMock(...args),
 }))
 
 vi.mock('../src/lib/firebase', () => ({ db: {} }))
 
-import { listSettlements, findSettlementBySessionId, saveSettlement, stripUndefinedDeep, SettlementSyncError } from '../src/lib/settlementSync'
+import { listSettlements, findSettlementBySessionId, saveSettlement, deleteSettlement, stripUndefinedDeep, SettlementSyncError } from '../src/lib/settlementSync'
 import type { RegularSettlement } from '../src/types/settlement'
 
 // 아래 이름·ID·금액은 전부 테스트용 가상 데이터이며 실제 회원 정보가 아니다.
@@ -46,6 +48,7 @@ beforeEach(() => {
   getDocMock.mockReset()
   getDocsMock.mockReset()
   setDocMock.mockReset()
+  deleteDocMock.mockReset()
 })
 
 describe('listSettlements', () => {
@@ -138,6 +141,26 @@ describe('saveSettlement — 버전 소유권 모델(로컬 편집은 버전을 
     await saveSettlement(settlement)
     const payload = setDocMock.mock.calls[0][1]
     expect(payload.confirmedByUid).toBe('fake-admin-uid')
+  })
+})
+
+describe('deleteSettlement', () => {
+  it('해당 id의 문서에 deleteDoc을 호출한다', async () => {
+    deleteDocMock.mockResolvedValue(undefined)
+    await deleteSettlement('settle-sync-1')
+    expect(deleteDocMock).toHaveBeenCalledTimes(1)
+    expect(deleteDocMock).toHaveBeenCalledWith('DOC_REF')
+  })
+
+  it('permission-denied 오류는 안내 메시지가 있는 SettlementSyncError로 변환된다', async () => {
+    deleteDocMock.mockRejectedValue({ code: 'permission-denied' })
+    await expect(deleteSettlement('settle-sync-1')).rejects.toBeInstanceOf(SettlementSyncError)
+    await expect(deleteSettlement('settle-sync-1')).rejects.toMatchObject({ code: 'permission-denied' })
+  })
+
+  it('알 수 없는 오류도 SettlementSyncError(unknown)로 변환된다', async () => {
+    deleteDocMock.mockRejectedValue(new Error('가상 네트워크 오류'))
+    await expect(deleteSettlement('settle-sync-1')).rejects.toMatchObject({ code: 'unknown', message: '가상 네트워크 오류' })
   })
 })
 

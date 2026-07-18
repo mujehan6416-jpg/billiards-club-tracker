@@ -129,6 +129,8 @@ interface SettlementStoreState {
   confirmSettlement: (settlementId: string, actorDisplayName: string) => Promise<StoreResult>
   reviseSettlement: (settlementId: string, actorDisplayName: string, reason?: string) => Promise<StoreResult>
   cancelSettlement: (settlementId: string, actorDisplayName: string, reason?: string) => Promise<StoreResult>
+  /** 정산 문서 자체를 Firestore에서 영구 삭제한다(상태와 무관하게 가능). 삭제한 정산이 currentId였다면 null로 초기화한다. */
+  deleteSettlement: (settlementId: string) => Promise<StoreResult>
 }
 
 function patchSettlement(
@@ -611,6 +613,27 @@ export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
       const local = get().changeStatus(settlementId, 'cancelled', actorDisplayName, reason)
       if (!local.ok) return local
       return pushToCloud(settlementId)
+    },
+
+    deleteSettlement: async (settlementId) => {
+      const authBlocked = guardAdmin()
+      if (authBlocked) return authBlocked
+      if (!get().getById(settlementId)) return NOT_FOUND
+      set({ syncStatus: 'saving' })
+      try {
+        await settlementSync.deleteSettlement(settlementId)
+        set((s) => ({
+          settlements: s.settlements.filter((st) => st.id !== settlementId),
+          currentId: s.currentId === settlementId ? null : s.currentId,
+          syncStatus: 'idle',
+          lastSyncError: null,
+        }))
+        return { ok: true }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : '삭제 중 알 수 없는 오류가 발생했습니다.'
+        set({ syncStatus: 'error', lastSyncError: `삭제 실패: ${message}` })
+        return { ok: false, error: message }
+      }
     },
   }
 })

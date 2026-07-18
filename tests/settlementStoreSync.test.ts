@@ -4,11 +4,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const listSettlementsMock = vi.fn()
 const getSettlementMock = vi.fn()
 const saveSettlementMock = vi.fn()
+const deleteSettlementMock = vi.fn()
 
 vi.mock('../src/lib/settlementSync', () => ({
   listSettlements: (...args: unknown[]) => listSettlementsMock(...args),
   getSettlement: (...args: unknown[]) => getSettlementMock(...args),
   saveSettlement: (...args: unknown[]) => saveSettlementMock(...args),
+  deleteSettlement: (...args: unknown[]) => deleteSettlementMock(...args),
 }))
 
 import { useSettlementStore } from '../src/store/settlementStore'
@@ -28,6 +30,7 @@ beforeEach(() => {
   listSettlementsMock.mockReset()
   getSettlementMock.mockReset()
   saveSettlementMock.mockReset()
+  deleteSettlementMock.mockReset()
 })
 
 describe('관리자 인증 게이트', () => {
@@ -42,6 +45,14 @@ describe('관리자 인증 게이트', () => {
     const res = await useSettlementStore.getState().saveDraft(id)
     expect(res.ok).toBe(false)
     expect(saveSettlementMock).not.toHaveBeenCalled()
+  })
+
+  it('authorizedAdmin이 아니면 deleteSettlement도 거부되고 목록이 그대로 유지된다', async () => {
+    const id = createDraftSettlement()
+    const res = await useSettlementStore.getState().deleteSettlement(id)
+    expect(res.ok).toBe(false)
+    expect(deleteSettlementMock).not.toHaveBeenCalled()
+    expect(useSettlementStore.getState().getById(id)).toBeDefined()
   })
 })
 
@@ -266,5 +277,77 @@ describe('authorizedAdmin 상태에서의 동기화', () => {
     expect(useSettlementStore.getState().getById(id)!.version).toBe(0)
     expect(useSettlementStore.getState().lastSyncError).toContain('네트워크 오류(가상)')
     expect(useSettlementStore.getState().syncStatus).toBe('error')
+  })
+})
+
+describe('deleteSettlement', () => {
+  beforeEach(() => {
+    useAdminAuthStore.setState({ status: 'authorizedAdmin', uid: 'dev-admin-uid', email: 'dev-admin@example.test', adminDisplayName: '가상관리자', errorMessage: null })
+  })
+
+  it('삭제 성공 시 settlementSync.deleteSettlement이 호출되고 목록에서 해당 항목만 제거된다', async () => {
+    const id = createDraftSettlement()
+    const otherId = useSettlementStore.getState().createSettlement({
+      meetingName: '가상 정기모임 2회차', meetingDate: '2026-01-11', meetingType: 'regular', actorDisplayName: '테스트관리자',
+    })
+    deleteSettlementMock.mockResolvedValue(undefined)
+
+    const res = await useSettlementStore.getState().deleteSettlement(id)
+    expect(res.ok).toBe(true)
+    expect(deleteSettlementMock).toHaveBeenCalledWith(id)
+    expect(useSettlementStore.getState().getById(id)).toBeUndefined()
+    expect(useSettlementStore.getState().getById(otherId)).toBeDefined()
+    expect(useSettlementStore.getState().settlements).toHaveLength(1)
+  })
+
+  it('삭제한 정산이 currentId였다면 currentId를 null로 초기화한다', async () => {
+    const id = createDraftSettlement()
+    expect(useSettlementStore.getState().currentId).toBe(id)
+    deleteSettlementMock.mockResolvedValue(undefined)
+
+    await useSettlementStore.getState().deleteSettlement(id)
+    expect(useSettlementStore.getState().currentId).toBeNull()
+  })
+
+  it('삭제한 정산이 currentId가 아니었다면 currentId를 그대로 유지한다', async () => {
+    const keepId = createDraftSettlement()
+    const toDeleteId = useSettlementStore.getState().createSettlement({
+      meetingName: '가상 정기모임 3회차', meetingDate: '2026-01-12', meetingType: 'regular', actorDisplayName: '테스트관리자',
+    })
+    useSettlementStore.setState({ currentId: keepId })
+    deleteSettlementMock.mockResolvedValue(undefined)
+
+    await useSettlementStore.getState().deleteSettlement(toDeleteId)
+    expect(useSettlementStore.getState().currentId).toBe(keepId)
+  })
+
+  it('draft·confirmed·cancelled 등 어떤 상태의 정산도 삭제할 수 있다(guard로 막히지 않는다)', async () => {
+    const id = createDraftSettlement()
+    useSettlementStore.getState().changeStatus(id, 'confirmed', '테스트관리자')
+    useSettlementStore.getState().changeStatus(id, 'cancelled', '테스트관리자')
+    expect(useSettlementStore.getState().getById(id)!.status).toBe('cancelled')
+    deleteSettlementMock.mockResolvedValue(undefined)
+
+    const res = await useSettlementStore.getState().deleteSettlement(id)
+    expect(res.ok).toBe(true)
+    expect(useSettlementStore.getState().getById(id)).toBeUndefined()
+  })
+
+  it('Firestore 삭제 실패 시 목록과 currentId가 그대로 유지되고 오류가 남는다', async () => {
+    const id = createDraftSettlement()
+    deleteSettlementMock.mockRejectedValue(new Error('가상 삭제 실패'))
+
+    const res = await useSettlementStore.getState().deleteSettlement(id)
+    expect(res.ok).toBe(false)
+    expect(useSettlementStore.getState().getById(id)).toBeDefined()
+    expect(useSettlementStore.getState().currentId).toBe(id)
+    expect(useSettlementStore.getState().lastSyncError).toContain('가상 삭제 실패')
+    expect(useSettlementStore.getState().syncStatus).toBe('error')
+  })
+
+  it('존재하지 않는 id는 Firestore 호출 없이 실패를 반환한다', async () => {
+    const res = await useSettlementStore.getState().deleteSettlement('no-such-id')
+    expect(res.ok).toBe(false)
+    expect(deleteSettlementMock).not.toHaveBeenCalled()
   })
 })
