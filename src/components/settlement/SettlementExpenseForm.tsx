@@ -24,6 +24,17 @@ const emptyForm = (): FormState => ({
 // 중 하나이므로 이 폼에서 다른 분류와 똑같이 등록한다. 이전에는 '회식비' 선택 시 별도 폼으로
 // 넘겼지만(onRequestDinnerForm), 이제는 그럴 필요가 없다 — 다만 과거에 그 별도 폼(dinnerContributions)
 // 으로 저장된 데이터는 지우거나 옮기지 않는다(집계 함수가 두 출처를 합산 — logic/settlement.ts 참고).
+//
+// [버그 수정] 회식비 탭 제거 직후에는 dinnerContributions(레거시 회식비)를 볼 수 있는 화면이
+// 전혀 없었다 — 그 결과 관리자가 "회식비가 없어졌다"고 착각해 지출 탭에 같은 회식비를 새로
+// 또 등록하면서(expenses에 신규 항목 생성), 레거시 원본은 그대로 남아 총지출·회식비 합계가
+// 두 배로 집계되는 사고가 실제로 발생했다. addExpense는 오직 이 폼의 submit()에서만 호출되므로
+// (grep으로 확인) 코드가 자동으로 복사하는 경로는 없다 — 전부 사람이 직접 중복 입력한 것이다.
+// 근본 해결은 "복사됐을 만한 항목을 추측해서 지우는 것"이 아니라(금액이 같아도 실제로는 서로
+// 다른 회식비일 수 있음), 레거시 회식비를 여기서 다시 볼 수 있게 하는 것이다 — 그래야 관리자가
+// 새로 등록하기 전에 이미 있다는 걸 알 수 있고, 이미 중복 입력된 경우에도 둘 중 무엇을 지울지
+// 직접 판단해서 삭제할 수 있다. 수정(금액 등 변경)까지는 다시 만들지 않고 조회+삭제만 제공한다
+// (여러 찬조자 입력 등 원래 폼의 복잡한 편집 UI를 되살리는 것은 이번 수정 범위 밖).
 export function SettlementExpenseForm({ settlementId, previewMode = false }: {
   settlementId: string
   previewMode?: boolean
@@ -32,6 +43,7 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
   const addExpense = useSettlementStore((s) => s.addExpense)
   const updateExpense = useSettlementStore((s) => s.updateExpense)
   const deleteExpense = useSettlementStore((s) => s.deleteExpense)
+  const deleteDinnerContribution = useSettlementStore((s) => s.deleteDinnerContribution)
 
   const [form, setForm] = useState<FormState>(emptyForm())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -134,6 +146,31 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
           )}
         </div>
       ))}
+
+      {settlement.dinnerContributions.length > 0 && (
+        <div className="card col-card">
+          <span style={{ fontWeight: 700, fontSize: 14 }}>기존 회식비 (이전 회식비 탭에서 등록된 데이터)</span>
+          <p className="muted" style={{ fontSize: 12 }}>
+            총지출·회식비 합계에 이미 포함돼 있습니다. 위 지출 목록에 같은 회식비를 다시 등록하면 두 번 집계되니 주의해주세요.
+          </p>
+          {settlement.dinnerContributions.map((d) => (
+            <div key={d.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{d.dinnerRound}차 회식비 — {fmt(d.totalAmount)}원 <span className="muted" style={{ fontSize: 12 }}>({d.contributionType})</span></div>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  모임부담 {fmt(d.clubShare)}원 · {d.method}{d.contributors.length > 0 ? ` · 찬조자 ${d.contributors.length}명` : ''}
+                </div>
+              </div>
+              {!locked && (
+                <button type="button" className="danger" aria-label={`${d.dinnerRound}차 회식비(기존) 삭제`}
+                  onClick={() => { if (window.confirm(`${d.dinnerRound}차 회식비를 삭제할까요?`)) deleteDinnerContribution(settlementId, d.id) }}>
+                  삭제
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       <SettlementSaveButtons settlementId={settlementId} previewMode={previewMode} locked={locked} />
     </div>

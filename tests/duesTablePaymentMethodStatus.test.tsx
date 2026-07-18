@@ -248,3 +248,104 @@ describe('10. 회비 30,000원 현금 + 찬조 20,000원 계좌이체 미확인'
     expect(unconfirmed()).toBe(20000)
   })
 })
+
+// [운영 재현 시도] 회비만 계좌이체로 바꿨을 때 확인상태 select가 안 보인다는 운영 버그 제보에 따라,
+// "둘 중 하나만 계좌이체"인 조합과 "상태 변경 상호 독립성"을 명시적으로 검증한다.
+describe('11. 회비만 계좌이체 → 회비 상태 select만 표시(찬조는 계속 미노출)', () => {
+  it('회비 select가 나타나고, 찬조는(현금 유지) 계속 안 보인다', () => {
+    render(<DuesTable settlementId="settle-pm-1" />)
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 금액'), { target: { value: '30000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
+
+    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '현금' } })
+
+    expect(screen.getByLabelText('가상회원A 회비 확인상태')).toBeInTheDocument()
+    expect(screen.queryByLabelText('가상회원A 찬조 확인상태')).not.toBeInTheDocument()
+  })
+})
+
+describe('12. 찬조만 계좌이체 → 찬조 상태 select만 표시(회비는 계속 미노출)', () => {
+  it('찬조 select가 나타나고, 회비는(현금 유지) 계속 안 보인다', () => {
+    render(<DuesTable settlementId="settle-pm-1" />)
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 금액'), { target: { value: '30000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '현금' } })
+
+    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
+
+    expect(screen.queryByLabelText('가상회원A 회비 확인상태')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('가상회원A 찬조 확인상태')).toBeInTheDocument()
+  })
+})
+
+describe('13. 회비·찬조 둘 다 계좌이체 → 상태 select 두 개 모두 표시', () => {
+  it('회비 확인상태와 찬조 확인상태가 각각 독립적으로 존재한다', () => {
+    render(<DuesTable settlementId="settle-pm-1" />)
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 금액'), { target: { value: '30000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
+
+    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
+
+    const duesStatus = screen.getByLabelText('가상회원A 회비 확인상태') as HTMLSelectElement
+    const donationStatus = screen.getByLabelText('가상회원A 찬조 확인상태') as HTMLSelectElement
+    expect(duesStatus).toBeInTheDocument()
+    expect(donationStatus).toBeInTheDocument()
+    expect(duesStatus.value).toBe('미확인')
+    expect(donationStatus.value).toBe('미확인')
+  })
+})
+
+describe('14. 회비·찬조 상태 변경은 서로 영향을 주지 않는다', () => {
+  it('회비를 입금확인으로 바꿔도 찬조 상태는 미확인 그대로 유지된다', () => {
+    render(<DuesTable settlementId="settle-pm-1" />)
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 금액'), { target: { value: '30000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
+
+    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
+
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 확인상태'), { target: { value: '입금확인' } })
+
+    const duesStatus = screen.getByLabelText('가상회원A 회비 확인상태') as HTMLSelectElement
+    const donationStatus = screen.getByLabelText('가상회원A 찬조 확인상태') as HTMLSelectElement
+    expect(duesStatus.value).toBe('입금확인')
+    expect(donationStatus.value).toBe('미확인') // 찬조는 영향받지 않음
+
+    const saved = useSettlementStore.getState().getById('settle-pm-1')!.participants[0]
+    expect(saved.dues?.status).toBe('입금확인')
+    expect(saved.donation?.status).toBe('미확인')
+  })
+
+  it('찬조를 입금확인으로 바꿔도 회비 상태는 미확인 그대로 유지된다(역방향도 확인)', () => {
+    render(<DuesTable settlementId="settle-pm-1" />)
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 금액'), { target: { value: '30000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
+
+    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
+    fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
+
+    fireEvent.change(screen.getByLabelText('가상회원A 찬조 확인상태'), { target: { value: '입금확인' } })
+
+    const duesStatus = screen.getByLabelText('가상회원A 회비 확인상태') as HTMLSelectElement
+    const donationStatus = screen.getByLabelText('가상회원A 찬조 확인상태') as HTMLSelectElement
+    expect(donationStatus.value).toBe('입금확인')
+    expect(duesStatus.value).toBe('미확인') // 회비는 영향받지 않음
+  })
+})
