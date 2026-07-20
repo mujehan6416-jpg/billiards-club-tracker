@@ -82,6 +82,61 @@ describe('SettlementExpenseForm — 지출 탭에 임시저장 버튼이 생겨 
   })
 })
 
+describe('지출 날짜 기본값 — 브라우저 오늘이 아니라 선택된 정산(모임) 날짜를 사용한다', () => {
+  const dateInput = (container: HTMLElement) => container.querySelector('input[type="date"]') as HTMLInputElement
+
+  it('새 지출 입력 폼의 날짜 기본값이 정산의 모임 날짜(2026-01-10)다', () => {
+    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" />)
+    expect(dateInput(container).value).toBe('2026-01-10')
+  })
+
+  it('지출을 저장한 뒤 폼이 초기화되면 날짜는 다시 정산의 모임 날짜로 돌아간다(빈 값이나 오늘이 아님)', () => {
+    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" />)
+    fireEvent.change(screen.getByPlaceholderText('항목명 (예: 당구장 대관료)'), { target: { value: '가상 지출' } })
+    fireEvent.change(screen.getAllByPlaceholderText('0')[0], { target: { value: '10000' } })
+    fireEvent.click(screen.getByRole('button', { name: '지출 추가' }))
+    expect(dateInput(container).value).toBe('2026-01-10')
+  })
+
+  it('사용자가 직접 날짜를 바꾸면 그 날짜 그대로 저장된다', () => {
+    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" />)
+    fireEvent.change(dateInput(container), { target: { value: '2026-01-15' } })
+    fireEvent.change(screen.getByPlaceholderText('항목명 (예: 당구장 대관료)'), { target: { value: '가상 지출' } })
+    fireEvent.change(screen.getAllByPlaceholderText('0')[0], { target: { value: '10000' } })
+    fireEvent.click(screen.getByRole('button', { name: '지출 추가' }))
+
+    const saved = useSettlementStore.getState().getById('settle-expense-1')!.expenses.find((e) => e.label === '가상 지출')!
+    expect(saved.date).toBe('2026-01-15')
+  })
+
+  it('기존 지출을 수정할 때는 그 지출의 기존 날짜가 그대로 보인다', () => {
+    useSettlementStore.getState().addExpense('settle-expense-1', {
+      date: '2026-01-05', label: '가상 기존지출', category: '기타', amount: 3000,
+      method: '현금', clubShare: 3000, personalDonation: 0,
+    })
+    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" />)
+    fireEvent.click(screen.getByText('수정'))
+    expect(dateInput(container).value).toBe('2026-01-05')
+  })
+
+  it('다른 정산을 선택하면(같은 화면에서 settlementId만 바뀜) 폼 날짜가 새 정산의 모임 날짜로 바뀐다', () => {
+    useSettlementStore.setState({
+      settlements: [
+        ...useSettlementStore.getState().settlements,
+        {
+          id: 'settle-expense-2', meetingName: '가상 정기모임2', meetingDate: '2026-02-20', meetingType: 'regular', status: 'draft',
+          participants: [], expenses: [], dinnerContributions: [], cashDeposits: [],
+          prevBankBalance: 0, otherBankAdjustment: 0, createdAt: '2026-02-20T00:00:00.000Z', version: 0, revisionLog: [],
+        },
+      ],
+    })
+    const { container, rerender } = render(<SettlementExpenseForm settlementId="settle-expense-1" />)
+    expect(dateInput(container).value).toBe('2026-01-10')
+    rerender(<SettlementExpenseForm settlementId="settle-expense-2" />)
+    expect(dateInput(container).value).toBe('2026-02-20')
+  })
+})
+
 describe('DinnerContributionForm — 회식비 탭에도 동일하게 임시저장 버튼이 동작한다', () => {
   it('회식비 탭에 "임시저장" 버튼이 보인다', () => {
     render(<DinnerContributionForm settlementId="settle-expense-1" />)

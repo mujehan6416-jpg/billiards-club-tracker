@@ -1,9 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSettlementStore, isLocked } from '../../store/settlementStore'
 import { EXPENSE_CATEGORIES, displayExpenseCategory } from '../../lib/settlementConstants'
 import { calcDefaultExpenseClubShare, prefillExpenseClubShare, validateExpenseShares } from '../../logic/settlement'
 import type { ExpensePaymentMethod, SettlementExpense } from '../../types/settlement'
-import { todayStr } from '../../lib/date'
 import { SettlementSaveButtons } from './SettlementSaveButtons'
 import { moneyInputStyle } from './moneyInputStyle'
 
@@ -15,8 +14,11 @@ type FormState = {
   method: ExpensePaymentMethod; paidBy: string; clubShare: string; personalDonation: string; note: string
 }
 
-const emptyForm = (): FormState => ({
-  date: todayStr(), label: '', category: EXPENSE_CATEGORIES[0], amount: '',
+// 새 지출 입력 폼의 기본 날짜는 브라우저의 "오늘"이 아니라 선택된 정산(모임)의 날짜다 — 모임이
+// 끝난 다음 날 정산을 입력하는 경우가 많아, 오늘 날짜가 기본값이면 실제 지출일과 다른 날짜가
+// 매번 잘못 채워졌었다.
+const emptyForm = (date: string): FormState => ({
+  date, label: '', category: EXPENSE_CATEGORIES[0], amount: '',
   method: '현금', paidBy: '', clubShare: '', personalDonation: '', note: '',
 })
 
@@ -45,9 +47,16 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
   const deleteExpense = useSettlementStore((s) => s.deleteExpense)
   const deleteDinnerContribution = useSettlementStore((s) => s.deleteDinnerContribution)
 
-  const [form, setForm] = useState<FormState>(emptyForm())
+  const [form, setForm] = useState<FormState>(() => emptyForm(settlement?.meetingDate ?? ''))
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
+
+  // 다른 정산을 선택해도 이 컴포넌트는 다시 마운트되지 않으므로(같은 "지출" 탭 안에서 settlementId
+  // prop만 바뀜), 새 지출을 입력 중이 아닐 때(=수정 중이 아닐 때)만 날짜를 새 정산의 날짜로 맞춘다.
+  useEffect(() => {
+    if (!editingId && settlement) setForm((f) => ({ ...f, date: settlement.meetingDate }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settlementId])
 
   if (!settlement) return null
   const locked = isLocked(settlement.status)
@@ -79,7 +88,7 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
     }
     const res = editingId ? updateExpense(settlementId, editingId, expense) : addExpense(settlementId, expense)
     if (!res.ok) { setError(res.error); return }
-    setForm(emptyForm())
+    setForm(emptyForm(settlement.meetingDate))
     setEditingId(null)
   }
 
@@ -122,7 +131,7 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button" className="primary grow" onClick={submit}>{editingId ? '수정 저장' : '지출 추가'}</button>
             {editingId && (
-              <button type="button" onClick={() => { setEditingId(null); setForm(emptyForm()) }}>취소</button>
+              <button type="button" onClick={() => { setEditingId(null); setForm(emptyForm(settlement.meetingDate)) }}>취소</button>
             )}
           </div>
         </div>
