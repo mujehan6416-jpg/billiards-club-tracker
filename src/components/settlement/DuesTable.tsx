@@ -33,17 +33,20 @@ const thStyle: CSSProperties = { ...cellStyle, fontWeight: 700, fontSize: 12, te
 function AmountInput({ value, disabled, onCommit, ariaLabel }: {
   value: number | undefined; disabled: boolean; onCommit: (v: number | null) => void; ariaLabel: string
 }) {
-  // 로컬 문자열 버퍼로 편집 중인 값을 들고 있다가, blur 시점에만 실제 반영한다.
-  // value가 undefined(=아직 입력 안 함)면 완전히 빈칸으로 보여주고, 0이면 "0"으로 보여줘서
-  // "아직 입력 안 함"과 "명시적으로 0원"을 화면에서 구분한다.
+  // 로컬 문자열 버퍼(text, 콤마 없는 순수 숫자)로 편집 중인 값을 들고 있다가, blur 시점에만
+  // 실제 반영한다. value가 undefined(=아직 입력 안 함)면 완전히 빈칸으로 보여주고, 0이면 "0"으로
+  // 보여줘서 "아직 입력 안 함"과 "명시적으로 0원"을 화면에서 구분한다.
   const [text, setText] = useState(value === undefined ? '' : String(value))
+  // 입력칸에는 "입력 금액 합계" 카드(fmt 함수)와 같은 천단위 콤마를 붙여 보여준다 — 저장/커밋되는
+  // 값은 여전히 콤마 없는 순수 숫자(text)다.
+  const displayText = text === '' ? '' : Number(text).toLocaleString('ko-KR')
   return (
     <input
       aria-label={ariaLabel}
       inputMode="numeric"
       disabled={disabled}
       placeholder="0"
-      value={text}
+      value={displayText}
       onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
       onBlur={() => onCommit(parseTableAmount(text))}
       // 지출 탭 금액칸과 같은 공용 스타일(compactMoneyInputStyle) 기반이되, 이 표는 "금액" 열

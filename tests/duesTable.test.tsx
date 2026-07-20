@@ -285,13 +285,24 @@ describe('회비·찬조 금액 입력칸 너비 — 모바일 표 배치를 위
     expect(input.style.minWidth).toBe('70px')
   })
 
-  it('730,700처럼 7자리 숫자를 입력해도(문자 그대로) 값이 잘리지 않는다 — 축소된 폭에서도 유지되는지 확인', () => {
+  it('730700을 입력하면 "입력 금액 합계"와 같은 천단위 콤마(730,700)로 화면에 보이지만, 저장되는 값은 콤마 없는 순수 숫자다', () => {
     render(<DuesTable settlementId="settle-preview-1" />)
     const input = screen.getByLabelText('가상회원A 회비 금액') as HTMLInputElement
     fireEvent.change(input, { target: { value: '730700' } })
-    expect(input.value).toBe('730700')
+    expect(input.value).toBe('730,700')
     fireEvent.blur(input)
     expect(useSettlementStore.getState().getById('settle-preview-1')!.participants[0].dues?.amount).toBe(730700)
+  })
+
+  it('콤마가 포함된 표시값 위에 이어서 입력해도(실제 타이핑 시나리오 — 컨트롤드 입력값 뒤에 새 글자가 이어 붙음) 값이 정상적으로 누적된다', () => {
+    render(<DuesTable settlementId="settle-preview-1" />)
+    const input = screen.getByLabelText('가상회원A 회비 금액') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '5000' } })
+    expect(input.value).toBe('5,000')
+    fireEvent.change(input, { target: { value: input.value + '6' } })
+    expect(input.value).toBe('50,006')
+    fireEvent.blur(input)
+    expect(useSettlementStore.getState().getById('settle-preview-1')!.participants[0].dues?.amount).toBe(50006)
   })
 
   it('찬조 금액 입력칸도 동일한 축소 너비 스타일을 갖는다', () => {
