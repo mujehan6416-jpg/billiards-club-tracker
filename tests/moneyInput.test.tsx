@@ -82,3 +82,31 @@ describe('MoneyInput — 천단위 콤마 표시', () => {
     expect((screen.getByLabelText('금액') as HTMLInputElement).value).toBe('')
   })
 })
+
+// SettlementSummary의 "기타 통장 조정액(±)"처럼, 부모가 raw 문자열이 아니라 숫자(number)
+// 상태로 값을 들고 있는 실사용 패턴을 그대로 재현한다 — parseAmt('-')는 NaN이라 로컬 버퍼가
+// 없으면 '-'만 입력한 순간 부모 상태가 NaN이 되고, 그 값이 되돌아오며 화면에서 '-'가 사라진다.
+function NumberBackedControlled() {
+  const parseAmt = (v: string) => parseInt(v.replace(/[^0-9-]/g, '') || '0', 10)
+  const [n, setN] = useState<number>(0)
+  return (
+    <MoneyInput
+      ariaLabel="조정액" allowNegative
+      value={String(n || '')}
+      onChange={(raw) => setN(parseAmt(raw))}
+    />
+  )
+}
+
+describe('MoneyInput — 숫자(number) 상태를 들고 있는 부모와의 왕복(기타 통장 조정액 재현)', () => {
+  it('"-"만 입력해도 사라지지 않고, 이어서 숫자를 입력하면 음수로 정상 누적된다', () => {
+    render(<NumberBackedControlled />)
+    const input = screen.getByLabelText('조정액') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '-' } })
+    expect(input.value).toBe('-')
+    fireEvent.change(input, { target: { value: input.value + '5' } })
+    expect(input.value).toBe('-5')
+    fireEvent.change(input, { target: { value: input.value + '0000' } })
+    expect(input.value).toBe('-50,000')
+  })
+})
