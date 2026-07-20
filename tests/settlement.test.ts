@@ -377,7 +377,7 @@ describe('calcBankSummary', () => {
 })
 
 describe('confirmedDonorNames / confirmedDonorAmounts', () => {
-  it('입금확인 상태의 찬조만 포함한다', () => {
+  it('입금확인 상태의 계좌이체 찬조, 취소된 현금 찬조는 정책대로 포함/제외한다', () => {
     const participants: SettlementParticipant[] = [
       participant({ id: 'p1', displayName: '테스트회원A', donation: { amount: 10000, method: '현금', status: '입금확인' } }),
       participant({ id: 'p2', displayName: '테스트회원B', donation: { amount: 5000, method: '계좌이체', status: '미확인' } }),
@@ -385,6 +385,107 @@ describe('confirmedDonorNames / confirmedDonorAmounts', () => {
     ]
     expect(confirmedDonorNames(participants)).toEqual(['테스트회원A'])
     expect(confirmedDonorAmounts(participants)).toEqual([{ name: '테스트회원A', amount: 10000 }])
+  })
+
+  // [재현] 결제수단 select를 한 번도 안 건드리고 금액만 입력하면 store 기본값상 method는
+  // '현금'이지만 status는 '미확인'으로 남는다(현금은 status select 자체가 화면에 없어 사용자가
+  // 고칠 수 없음). calcIncomeSummary의 donationCash는 method만 보고 확정 수입으로 잡는데,
+  // 이전 confirmedDonorNames/Amounts는 status==='입금확인'만 봐서 이런 찬조자를 통째로
+  // 빠뜨렸다 — "찬조자가 여러 명인데 1명만 표시" 버그의 실제 원인.
+  it('[재현→수정 확인] 1. 찬조자 1명(현금, status 미확인 — 결제수단을 건드리지 않은 기본 상태)도 정상 표시된다', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 20000, method: '현금', status: '미확인' } }),
+    ]
+    expect(confirmedDonorNames(participants)).toEqual(['가상회원A'])
+    expect(confirmedDonorAmounts(participants)).toEqual([{ name: '가상회원A', amount: 20000 }])
+  })
+
+  it('2. 찬조자 3명(현금 기본상태 2명 + 계좌이체 입금확인 1명) 모두 이름·금액이 표시된다', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 20000, method: '현금', status: '미확인' } }),
+      participant({ id: 'p2', displayName: '가상회원B', donation: { amount: 30000, method: '현금', status: '미확인' } }),
+      participant({ id: 'p3', displayName: '외부찬조자C', participantType: 'guest', memberId: null, donation: { amount: 50000, method: '계좌이체', status: '입금확인' } }),
+    ]
+    expect(confirmedDonorNames(participants)).toEqual(['가상회원A', '가상회원B', '외부찬조자C'])
+    expect(confirmedDonorAmounts(participants)).toEqual([
+      { name: '가상회원A', amount: 20000 },
+      { name: '가상회원B', amount: 30000 },
+      { name: '외부찬조자C', amount: 50000 },
+    ])
+  })
+
+  it('3. 회원 찬조자 + 비회원(guest) 찬조자 모두 포함된다', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 10000, method: '현금', status: '미확인' } }),
+      participant({ id: 'p2', displayName: '가상비회원B', participantType: 'guest', memberId: null, donation: { amount: 15000, method: '현금', status: '미확인' } }),
+    ]
+    expect(confirmedDonorNames(participants)).toEqual(['가상회원A', '가상비회원B'])
+  })
+
+  it('4. 현금 찬조 + 계좌이체 입금확인 찬조 모두 포함된다', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 10000, method: '현금', status: '입금확인' } }),
+      participant({ id: 'p2', displayName: '가상회원B', donation: { amount: 20000, method: '계좌이체', status: '입금확인' } }),
+    ]
+    expect(confirmedDonorNames(participants)).toEqual(['가상회원A', '가상회원B'])
+  })
+
+  it('5. 계좌이체 미확인 찬조는 기존 정책대로 제외한다(정책 임의 변경 없음)', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 10000, method: '계좌이체', status: '미확인' } }),
+    ]
+    expect(confirmedDonorNames(participants)).toEqual([])
+    expect(confirmedDonorAmounts(participants)).toEqual([])
+  })
+
+  it('6. 취소된 찬조는 결제수단과 무관하게 제외한다', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 10000, method: '현금', status: '취소' } }),
+      participant({ id: 'p2', displayName: '가상회원B', donation: { amount: 20000, method: '계좌이체', status: '취소' } }),
+    ]
+    expect(confirmedDonorNames(participants)).toEqual([])
+  })
+
+  it('7. 금액이 0원이거나 비어있는 항목은 제외한다', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 0, method: '현금', status: '입금확인' } }),
+      participant({ id: 'p2', displayName: '가상회원B' }), // donation 없음
+    ]
+    expect(confirmedDonorNames(participants)).toEqual([])
+  })
+
+  it('8. 같은 이름의 서로 다른 유효한 찬조 항목이 있어도 하나가 사라지지 않는다', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 10000, method: '현금', status: '입금확인' } }),
+      participant({ id: 'p2', displayName: '가상회원A', donation: { amount: 20000, method: '현금', status: '입금확인' } }),
+    ]
+    expect(confirmedDonorNames(participants)).toEqual(['가상회원A', '가상회원A'])
+    expect(confirmedDonorAmounts(participants)).toEqual([
+      { name: '가상회원A', amount: 10000 },
+      { name: '가상회원A', amount: 20000 },
+    ])
+  })
+
+  it('9. 표시 순서는 참가자 입력(배열) 순서를 그대로 따른다', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p3', displayName: '가상회원C', donation: { amount: 10000, method: '현금', status: '미확인' } }),
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 20000, method: '현금', status: '미확인' } }),
+      participant({ id: 'p2', displayName: '가상회원B', donation: { amount: 30000, method: '현금', status: '미확인' } }),
+    ]
+    expect(confirmedDonorNames(participants)).toEqual(['가상회원C', '가상회원A', '가상회원B'])
+  })
+
+  it('10. 표시된 찬조 금액 합계가 calcIncomeSummary의 확정 찬조 합계(현금+계좌이체확인+기타확인)와 일치한다', () => {
+    const participants: SettlementParticipant[] = [
+      participant({ id: 'p1', displayName: '가상회원A', donation: { amount: 20000, method: '현금', status: '미확인' } }),
+      participant({ id: 'p2', displayName: '가상회원B', donation: { amount: 30000, method: '계좌이체', status: '입금확인' } }),
+      participant({ id: 'p3', displayName: '가상회원C', donation: { amount: 15000, method: '계좌이체', status: '미확인' } }), // 미확인은 제외돼야 함
+    ]
+    const settlement = baseSettlement({ participants })
+    const shownTotal = confirmedDonorAmounts(participants).reduce((sum, d) => sum + d.amount, 0)
+    const income = calcIncomeSummary(settlement)
+    expect(shownTotal).toBe(income.donationCash + income.donationTransferConfirmed + income.donationOther)
+    expect(shownTotal).toBe(50000)
   })
 })
 

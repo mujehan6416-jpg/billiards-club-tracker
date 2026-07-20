@@ -12,6 +12,7 @@ import type {
   DonationPaymentMethod,
   DuesStatus,
   DonationStatus,
+  DonationPayment,
 } from '../types/settlement'
 import type { Member } from '../types'
 import { EXPENSE_CATEGORIES, displayExpenseCategory, DINNER_CATEGORY } from '../lib/settlementConstants'
@@ -179,17 +180,30 @@ export function calcBankSummary(settlement: RegularSettlement): SettlementBankSu
   }
 }
 
-/** 입금확인된 찬조자만 이름 목록으로 (일반 정기모임 감사문구용). 순서는 참가자 등록 순서를 따른다. */
+/**
+ * 확정된(공유문에 표시할) 찬조인지 판정 — calcIncomeSummary가 확정 수입으로 잡는 기준과 맞춘다.
+ * 현금은 status가 '입금확인'으로 정규화되기 전(예: 결제수단 select를 한 번도 안 건드린 기본값
+ * 상태)에도 이미 확정 수입으로 집계되므로(donationCash는 method만 본다), 여기서도 status를
+ * 요구하지 않는다 — status만 보고 걸렀던 예전 로직은 이 경우를 놓쳐 찬조자 목록에서 빠졌었다.
+ * 계좌이체·기타는 기존대로 status가 '입금확인'이어야 하고, 취소된 건은 방식과 무관하게 제외한다.
+ */
+function isConfirmedDonation(donation: DonationPayment | undefined): donation is DonationPayment {
+  if (!donation || donation.amount <= 0) return false
+  if (donation.status === '취소') return false
+  return donation.method === '현금' || donation.status === '입금확인'
+}
+
+/** 확정된 찬조자만 이름 목록으로 (일반 정기모임 감사문구용). 순서는 참가자 등록 순서를 따른다. */
 export function confirmedDonorNames(participants: SettlementParticipant[]): string[] {
   return participants
-    .filter((p) => p.donation && p.donation.status === '입금확인')
+    .filter((p) => isConfirmedDonation(p.donation))
     .map((p) => p.displayName)
 }
 
-/** 입금확인된 찬조자 이름+금액 (정기대회 감사문구용). */
+/** 확정된 찬조자 이름+금액 (정기대회 감사문구용). */
 export function confirmedDonorAmounts(participants: SettlementParticipant[]): { name: string; amount: number }[] {
   return participants
-    .filter((p) => p.donation && p.donation.status === '입금확인')
+    .filter((p) => isConfirmedDonation(p.donation))
     .map((p) => ({ name: p.displayName, amount: p.donation!.amount }))
 }
 

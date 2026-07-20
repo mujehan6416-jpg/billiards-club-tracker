@@ -122,6 +122,32 @@ describe('buildMemberShareText', () => {
     expect(text).not.toContain('통장')
     expect(text).not.toContain('현금 보유')
   })
+
+  // [재현→수정 확인] 결제수단 select를 안 건드리고 금액만 입력한 찬조(현금, status 미확인 —
+  // 실제 관리자 입력 화면에서 흔히 발생)가 여러 명이어도 카카오톡 공유 문구에 전원 표시되는지 확인.
+  it('[일반 정기모임] 찬조자가 여러 명(현금 기본상태 포함)이면 전원 이름이 공유 문구에 표시된다', () => {
+    const participants: SettlementParticipant[] = [
+      { id: 'p1', participantType: 'member', memberId: 'p1', displayName: '가상회원A', addedVia: 'meeting_attendee', donation: { amount: 20000, method: '현금', status: '미확인' } },
+      { id: 'p2', participantType: 'member', memberId: 'p2', displayName: '가상회원B', addedVia: 'meeting_attendee', donation: { amount: 30000, method: '현금', status: '미확인' } },
+      { id: 'p3', participantType: 'guest', memberId: null, displayName: '외부찬조자C', addedVia: 'meeting_attendee', donation: { amount: 50000, method: '계좌이체', status: '입금확인' } },
+    ]
+    const settlement = baseSettlement({ meetingType: 'regular', participants })
+    const text = buildMemberShareText(settlement)
+
+    expect(text).toContain('찬조해 주신 가상회원A, 가상회원B, 외부찬조자C 회원님께 감사드립니다.')
+  })
+
+  it('[정기대회] 찬조자가 여러 명(현금 기본상태 포함)이면 전원 이름과 금액이 공유 문구에 표시된다', () => {
+    const participants: SettlementParticipant[] = [
+      { id: 'p1', participantType: 'member', memberId: 'p1', displayName: '가상회원A', addedVia: 'meeting_attendee', donation: { amount: 20000, method: '현금', status: '미확인' } },
+      { id: 'p2', participantType: 'member', memberId: 'p2', displayName: '가상회원B', addedVia: 'meeting_attendee', donation: { amount: 30000, method: '현금', status: '미확인' } },
+      { id: 'p3', participantType: 'guest', memberId: null, displayName: '외부찬조자C', addedVia: 'meeting_attendee', donation: { amount: 50000, method: '계좌이체', status: '입금확인' } },
+    ]
+    const settlement = baseSettlement({ meetingType: 'tournament', participants })
+    const text = buildMemberShareText(settlement)
+
+    expect(text).toContain('가상회원A 20,000원, 가상회원B 30,000원, 외부찬조자C 50,000원')
+  })
 })
 
 describe('buildPresidentShareText', () => {
