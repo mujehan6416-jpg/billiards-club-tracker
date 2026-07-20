@@ -27,8 +27,8 @@ const DEFAULT_DONATION_STATUS: DonationStatus = '미확인'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 
-const cellStyle: CSSProperties = { padding: '8px 10px', borderBottom: '1px solid var(--border)', verticalAlign: 'middle' }
-const thStyle: CSSProperties = { ...cellStyle, fontWeight: 700, fontSize: 13, textAlign: 'left', whiteSpace: 'nowrap', background: '#f4f5f3' }
+const cellStyle: CSSProperties = { padding: '7px 6px', borderBottom: '1px solid var(--border)', verticalAlign: 'middle' }
+const thStyle: CSSProperties = { ...cellStyle, fontWeight: 700, fontSize: 12, textAlign: 'left', whiteSpace: 'nowrap', background: '#f4f5f3' }
 
 function AmountInput({ value, disabled, onCommit, ariaLabel }: {
   value: number | undefined; disabled: boolean; onCommit: (v: number | null) => void; ariaLabel: string
@@ -46,10 +46,11 @@ function AmountInput({ value, disabled, onCommit, ariaLabel }: {
       value={text}
       onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ''))}
       onBlur={() => onCommit(parseTableAmount(text))}
-      // 지출 탭 금액칸과 같은 공용 스타일(compactMoneyInputStyle) 재사용 — 표 셀 안이라 지출 탭의
-      // moneyInputStyle(최소 높이 52px, 세로 배치 전제)만큼 키우면 표 자체가 너무 세로로 길어지므로,
-      // "두 칸이 나란히" 놓이는 좁은 자리용 스타일(minWidth:100)에 폰트만 조금 키워 적용한다.
-      style={{ ...compactMoneyInputStyle, fontSize: 16, padding: '9px 8px' }}
+      // 지출 탭 금액칸과 같은 공용 스타일(compactMoneyInputStyle) 기반이되, 이 표는 "금액" 열
+      // 자체를 좁게(약 90px) 유지해야 결제수단·찬조까지 한 화면에 들어오므로, 공용 스타일의
+      // width:100%/minWidth:100 대신 이 표 전용의 더 좁은 고정폭(78px)으로 덮어써 셀 중앙에
+      // 여백을 두고 배치한다(730,700처럼 7자리 숫자도 잘리지 않는 최소폭으로 확인함).
+      style={{ ...compactMoneyInputStyle, width: 78, minWidth: 70, fontSize: 16, padding: '9px 6px' }}
     />
   )
 }
@@ -65,7 +66,7 @@ function MethodSelect({ value, disabled, onChange, ariaLabel }: {
       disabled={disabled}
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value as IncomeRowMethod)}
-      style={{ minWidth: 92, fontSize: 14, padding: '7px 4px' }}
+      style={{ minWidth: 80, fontSize: 14, padding: '6px 2px' }}
     >
       <option value="" disabled>선택</option>
       <option value="현금">현금</option>
@@ -93,7 +94,7 @@ function StatusSelect<T extends string>({ value, options, disabled, onChange, ar
       disabled={disabled}
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
-      style={{ minWidth: 92, fontSize: 12, padding: '4px 4px' }}
+      style={{ minWidth: 80, fontSize: 12, padding: '4px 2px' }}
     >
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
@@ -214,13 +215,13 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
       )}
 
       <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-        <table style={{ width: '100%', minWidth: 480, borderCollapse: 'collapse' }}>
+        <table style={{ width: '100%', minWidth: 394, borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <th style={{ ...thStyle, minWidth: 84, position: 'sticky', left: 0, background: '#f4f5f3', zIndex: 1 }}>이름</th>
-              <th style={{ ...thStyle, minWidth: 64 }}>구분</th>
-              <th style={{ ...thStyle, minWidth: 120, textAlign: 'right' }}>금액</th>
-              <th style={{ ...thStyle, minWidth: 100 }}>결제수단</th>
+              <th style={{ ...thStyle, minWidth: 92, textAlign: 'center', position: 'sticky', left: 0, background: '#f4f5f3', zIndex: 1 }}>이름</th>
+              <th style={{ ...thStyle, minWidth: 58, textAlign: 'center' }}>구분</th>
+              <th style={{ ...thStyle, minWidth: 90, textAlign: 'center' }}>금액</th>
+              <th style={{ ...thStyle, minWidth: 98, textAlign: 'center' }}>결제수단</th>
               <th style={{ ...thStyle, minWidth: 56 }}></th>
             </tr>
           </thead>
@@ -235,19 +236,22 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
               return (
                 <Fragment key={p.id}>
                   <tr>
-                    <td style={{ ...cellStyle, fontWeight: 600, whiteSpace: 'nowrap', position: 'sticky', left: 0, background: '#fff' }}>
+                    <td style={{
+                      ...cellStyle, fontWeight: 600, whiteSpace: 'nowrap', textAlign: 'center', position: 'sticky', left: 0, background: '#fff',
+                      maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
                       {p.displayName}{p.participantType === 'guest' && <span className="muted" style={{ fontSize: 11 }}> (비회원)</span>}
                     </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>회비</td>
-                    <td style={cellStyle}>
+                    <td style={{ ...cellStyle, whiteSpace: 'nowrap', textAlign: 'center' }}>회비</td>
+                    <td style={{ ...cellStyle, textAlign: 'center' }}>
                       <AmountInput
                         value={duesRow.amount} disabled={locked}
                         onCommit={(v) => commitDues(p.id, v)}
                         ariaLabel={`${p.displayName} 회비 금액`}
                       />
                     </td>
-                    <td style={cellStyle}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <td style={{ ...cellStyle, textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                         <MethodSelect
                           value={duesRow.method as IncomeRowMethod | undefined} disabled={locked}
                           onChange={(v) => updateDues(settlementId, p.id, { method: v })}
@@ -274,16 +278,16 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
                   {showDonation && (
                     <tr>
                       <td style={{ ...cellStyle, position: 'sticky', left: 0, background: '#fff' }}></td>
-                      <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>찬조</td>
-                      <td style={cellStyle}>
+                      <td style={{ ...cellStyle, whiteSpace: 'nowrap', textAlign: 'center' }}>찬조</td>
+                      <td style={{ ...cellStyle, textAlign: 'center' }}>
                         <AmountInput
                           value={donationRow?.amount} disabled={locked}
                           onCommit={(v) => commitDonation(p.id, v)}
                           ariaLabel={`${p.displayName} 찬조 금액`}
                         />
                       </td>
-                      <td style={cellStyle}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <td style={{ ...cellStyle, textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                           <MethodSelect
                             value={donationRow?.method as IncomeRowMethod | undefined} disabled={locked}
                             onChange={(v) => updateDonation(settlementId, p.id, { method: v })}
