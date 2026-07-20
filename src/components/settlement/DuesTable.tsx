@@ -395,10 +395,11 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', rowGap: 4, fontSize: 14 }}>
           <span>회비 합계</span><span style={{ textAlign: 'right' }}>{fmt(summary.duesTotal)}원</span>
           <span>찬조 합계</span><span style={{ textAlign: 'right' }}>{fmt(summary.donationTotal)}원</span>
-          <span>현금 합계</span><span style={{ textAlign: 'right' }}>{fmt(summary.cashTotal)}원</span>
-          <span>계좌이체 합계</span><span style={{ textAlign: 'right' }}>{fmt(summary.transferTotal)}원</span>
           <span style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 4 }}>총수입(입력 기준)</span>
           <span style={{ fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 4, textAlign: 'right' }}>{fmt(summary.totalIncome)}원</span>
+          <span style={{ borderTop: '1px solid var(--border)', paddingTop: 4 }}>현금 합계</span>
+          <span style={{ borderTop: '1px solid var(--border)', paddingTop: 4, textAlign: 'right' }}>{fmt(summary.cashTotal)}원</span>
+          <span>계좌이체 합계</span><span style={{ textAlign: 'right' }}>{fmt(summary.transferTotal)}원</span>
         </div>
         <span className="muted" style={{ fontSize: 11 }}>
           * 아래 합계는 입금 확인 상태와 관계없이 표에 입력된 금액을 그대로 합산한 값입니다.

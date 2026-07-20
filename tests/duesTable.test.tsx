@@ -401,3 +401,24 @@ describe('모바일 표 레이아웃 — 열 중앙 정렬 및 스크롤 보호'
     expect(table.style.minWidth).toBe('394px')
   })
 })
+
+describe('입력 금액 합계 카드 — 표시 순서와 구분선', () => {
+  it('회비 합계 → 찬조 합계 → 총수입(입력 기준) → 현금 합계 → 계좌이체 합계 순서로 표시된다', () => {
+    render(<DuesTable settlementId="settle-preview-1" />)
+    const grid = screen.getByText('입력 금액 합계').nextElementSibling as HTMLElement
+    const labels = [...grid.children].filter((_, i) => i % 2 === 0).map((el) => el.textContent)
+    expect(labels).toEqual(['회비 합계', '찬조 합계', '총수입(입력 기준)', '현금 합계', '계좌이체 합계'])
+  })
+
+  it('총수입(입력 기준) 위·현금 합계 위에만 구분선(border-top)이 있다 — 회비/찬조 사이, 현금/계좌이체 사이에는 없다', () => {
+    render(<DuesTable settlementId="settle-preview-1" />)
+    const grid = screen.getByText('입력 금액 합계').nextElementSibling as HTMLElement
+    const labelCells = [...grid.children].filter((_, i) => i % 2 === 0) as HTMLElement[]
+    const [duesLabel, donationLabel, totalLabel, cashLabel, transferLabel] = labelCells
+    expect(duesLabel.style.borderTop).toBe('')
+    expect(donationLabel.style.borderTop).toBe('')
+    expect(totalLabel.style.borderTop).toBe('1px solid var(--border)')
+    expect(cashLabel.style.borderTop).toBe('1px solid var(--border)')
+    expect(transferLabel.style.borderTop).toBe('')
+  })
+})
