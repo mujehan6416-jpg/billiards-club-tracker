@@ -4,6 +4,7 @@ import { useAdmin } from '../store/adminStore'
 import { todayStr } from '../lib/date'
 import { uploadToCloud } from '../lib/cloudSync'
 import type { LedgerRecord } from '../types'
+import { MoneyInput } from '../components/MoneyInput'
 
 const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') || '0', 10))
 const fmt = (n: number) => n.toLocaleString('ko-KR')
@@ -61,12 +62,7 @@ function AmtInput({ label, value, onChange }: { label: string; value: string; on
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 80 }}>
       <span style={{ fontSize: 11, color: '#888' }}>{label}</span>
-      <input
-        type="number" inputMode="numeric" min={0} placeholder="0"
-        value={value}
-        onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, ''))}
-        style={{ width: '100%' }}
-      />
+      <MoneyInput ariaLabel={label} value={value} onChange={onChange} style={{ width: '100%' }} />
     </div>
   )
 }

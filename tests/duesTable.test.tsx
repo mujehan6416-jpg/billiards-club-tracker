@@ -402,6 +402,15 @@ describe('모바일 표 레이아웃 — 열 중앙 정렬 및 스크롤 보호'
   })
 })
 
+describe('행 추가 폼 — 금액 입력칸 천단위 콤마 표시', () => {
+  it('행 추가 금액칸에 1234567을 입력하면 1,234,567로 보인다', () => {
+    render(<DuesTable settlementId="settle-preview-1" />)
+    const input = screen.getByLabelText('금액') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '1234567' } })
+    expect(input.value).toBe('1,234,567')
+  })
+})
+
 describe('입력 금액 합계 카드 — 표시 순서와 구분선', () => {
   it('회비 합계 → 찬조 합계 → 총수입(입력 기준) → 현금 합계 → 계좌이체 합계 순서로 표시된다', () => {
     render(<DuesTable settlementId="settle-preview-1" />)

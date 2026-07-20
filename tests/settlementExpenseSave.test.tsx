@@ -210,6 +210,15 @@ describe('금액 입력칸 너비/높이 — index.css의 input[type=number]{wid
   })
 })
 
+describe('DinnerContributionForm — 전체 회식비 입력칸 천단위 콤마 표시', () => {
+  it('전체 회식비에 1234567을 입력하면 1,234,567로 보인다', () => {
+    render(<DinnerContributionForm settlementId="settle-expense-1" />)
+    const input = screen.getByLabelText('전체 회식비') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '1234567' } })
+    expect(input.value).toBe('1,234,567')
+  })
+})
+
 describe('지출 분류 — 10개 → 5개 단순화, 순서, 하위호환', () => {
   it('분류 선택칸이 정확히 5개, "당구비 다과비 회식비 상금 기타" 순서로 표시된다', () => {
     render(<SettlementExpenseForm settlementId="settle-expense-1" />)
@@ -314,14 +323,15 @@ describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모
     // 최초 저장 시 모임부담액을 비워서 5000원 전액이 자동 계산된 상태(=버그 이전엔 startEdit이
     // "5000"을 그대로 프리필해 금액을 3000으로 바꿔도 clubShare가 5000에 고정되던 지점).
     // "모임 부담액" 입력칸은 amount가 채워지면 placeholder가 "0"이 아니라 amount 값으로 바뀌므로
-    // getAllByPlaceholderText('0')로는 못 찾는다 — DOM 순서(금액→모임부담액→개인찬조액)로 직접 조회한다.
+    // getAllByPlaceholderText('0')로는 못 찾는다 — aria-label로 직접 조회한다.
     useSettlementStore.getState().addExpense('settle-expense-1', {
       date: '2026-07-16', label: '주차비', category: '기타', amount: 5000,
       method: '현금', clubShare: 5000, personalDonation: 0,
     })
-    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.click(screen.getByText('수정'))
-    const [amountInput, clubShareInput] = container.querySelectorAll('input[type="number"]') as unknown as HTMLInputElement[]
+    const amountInput = screen.getByLabelText('금액') as HTMLInputElement
+    const clubShareInput = screen.getByLabelText('모임 부담액') as HTMLInputElement
     expect(clubShareInput.value).toBe('')
     fireEvent.change(amountInput, { target: { value: '3000' } })
     fireEvent.click(screen.getByText('수정 저장'))
@@ -337,10 +347,10 @@ describe('[재현 및 수정 확인] 기타 지출 — 전체 금액 입력·모
       date: '2026-07-16', label: '트로피', category: '상금', amount: 100000,
       method: '체크카드', clubShare: 75000, personalDonation: 30000,
     })
-    const { container } = render(<SettlementExpenseForm settlementId="settle-expense-1" />)
+    render(<SettlementExpenseForm settlementId="settle-expense-1" />)
     fireEvent.click(screen.getByText('수정'))
-    const [, clubShareInput] = container.querySelectorAll('input[type="number"]') as unknown as HTMLInputElement[]
-    expect(clubShareInput.value).toBe('75000')
+    const clubShareInput = screen.getByLabelText('모임 부담액') as HTMLInputElement
+    expect(clubShareInput.value).toBe('75,000')
   })
 
   it('목록에 총액·모임부담·개인찬조가 함께 표시된다', () => {

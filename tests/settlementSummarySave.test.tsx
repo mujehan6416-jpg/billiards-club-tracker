@@ -126,6 +126,24 @@ describe('previewMode', () => {
   })
 })
 
+describe('통장 잔액 · 기타 통장 조정액 — 천단위 콤마 표시', () => {
+  it('전월 통장 잔액에 5680314를 입력하면 5,680,314로 보인다', () => {
+    render(<SettlementSummary settlementId="settle-summary-1" />)
+    const input = screen.getByLabelText('전월 통장 잔액') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '5680314' } })
+    expect(input.value).toBe('5,680,314')
+    expect(useSettlementStore.getState().getById('settle-summary-1')!.prevBankBalance).toBe(5680314)
+  })
+
+  it('기타 통장 조정액(±)에 -50000을 입력하면 -50,000으로 보이고, 저장값도 음수 그대로 반영된다', () => {
+    render(<SettlementSummary settlementId="settle-summary-1" />)
+    const input = screen.getByLabelText('기타 통장 조정액') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '-50000' } })
+    expect(input.value).toBe('-50,000')
+    expect(useSettlementStore.getState().getById('settle-summary-1')!.otherBankAdjustment).toBe(-50000)
+  })
+})
+
 describe('중복 클릭 방지', () => {
   it('저장 진행 중(syncStatus=saving)에는 상태 변경 버튼이 비활성화된다', async () => {
     // 로컬 상태 전이는 pushToCloud(Firestore 저장) 이전에 동기로 먼저 반영되므로, 확정 클릭 직후

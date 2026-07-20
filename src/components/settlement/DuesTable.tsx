@@ -9,6 +9,7 @@ import type { IncomeRowCategory, IncomeRowMethod } from '../../logic/settlement'
 import type { Member } from '../../types'
 import type { DuesStatus, DonationStatus } from '../../types/settlement'
 import { compactMoneyInputStyle } from './moneyInputStyle'
+import { MoneyInput } from '../MoneyInput'
 
 // 정산 "참가자" 탭의 회비·찬조 입력표. 기존 카드형 SettlementParticipantForm을 대체한다.
 // 데이터는 여전히 SettlementParticipant.dues/donation(참가자 1명당 회비 1개·찬조 1개)에 그대로
@@ -370,9 +371,9 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
               <option value="dues">회비</option>
               <option value="donation">찬조</option>
             </select>
-            <input
-              aria-label="금액" inputMode="numeric" placeholder="금액" value={addForm.amount}
-              onChange={(e) => setAddForm((f) => ({ ...f, amount: e.target.value.replace(/[^0-9]/g, '') }))}
+            <MoneyInput
+              ariaLabel="금액" placeholder="금액" value={addForm.amount}
+              onChange={(v) => setAddForm((f) => ({ ...f, amount: v }))}
               style={{ width: 100, textAlign: 'right' }}
             />
             <select

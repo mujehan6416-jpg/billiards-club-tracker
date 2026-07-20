@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSettlementStore } from '../../store/settlementStore'
 import { useAuth } from '../../store/authStore'
+import { MoneyInput } from '../MoneyInput'
 
 const fmt = (n: number) => `${n.toLocaleString('ko-KR')}원`
 const parseAmt = (v: string) => parseInt(v.replace(/[^0-9-]/g, '') || '0', 10)
@@ -101,17 +102,17 @@ export function SettlementSummary({ settlementId, previewMode = false }: { settl
         <span style={{ fontWeight: 700, fontSize: 14 }}>통장 잔액 (관리자 전용 — 회원 공유문에는 절대 포함되지 않음)</span>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span className="muted" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>전월 통장 잔액</span>
-          <input
-            type="number" inputMode="numeric" disabled={locked} value={settlement.prevBankBalance || ''}
-            placeholder="0" onChange={(e) => updatePrevBankBalance(settlementId, parseAmt(e.target.value))}
+          <MoneyInput
+            ariaLabel="전월 통장 잔액" disabled={locked} value={String(settlement.prevBankBalance || '')}
+            placeholder="0" onChange={(raw) => updatePrevBankBalance(settlementId, parseAmt(raw))}
             style={{ flex: 1 }}
           />
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span className="muted" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>기타 통장 조정액(±)</span>
-          <input
-            type="number" disabled={locked} value={settlement.otherBankAdjustment || ''}
-            placeholder="0" onChange={(e) => updateOtherBankAdjustment(settlementId, parseAmt(e.target.value))}
+          <MoneyInput
+            ariaLabel="기타 통장 조정액" allowNegative disabled={locked} value={String(settlement.otherBankAdjustment || '')}
+            placeholder="0" onChange={(raw) => updateOtherBankAdjustment(settlementId, parseAmt(raw))}
             style={{ flex: 1 }}
           />
         </div>

@@ -4,6 +4,7 @@ import { DINNER_CONTRIBUTOR_TITLE_PRESETS } from '../../lib/settlementConstants'
 import type { DinnerContribution, DinnerContributionType, DinnerContributor, ExpensePaymentMethod } from '../../types/settlement'
 import { SettlementSaveButtons } from './SettlementSaveButtons'
 import { moneyInputStyle, compactMoneyInputStyle } from './moneyInputStyle'
+import { MoneyInput } from '../MoneyInput'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') || '0', 10))
@@ -92,8 +93,7 @@ export function DinnerContributionForm({ settlementId, previewMode = false }: { 
             </div>
             <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span className="muted" style={{ fontSize: 12 }}>전체 회식비</span>
-              <input type="number" inputMode="numeric" min={0} value={form.totalAmount} placeholder="0"
-                onChange={(e) => set('totalAmount')(e.target.value)} style={{ ...moneyInputStyle, fontSize: 18 }} />
+              <MoneyInput ariaLabel="전체 회식비" value={form.totalAmount} placeholder="0" onChange={set('totalAmount')} style={{ ...moneyInputStyle, fontSize: 18 }} />
             </div>
           </div>
 
@@ -119,8 +119,8 @@ export function DinnerContributionForm({ settlementId, previewMode = false }: { 
               {form.contributors.map((c, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <input placeholder="이름" value={c.name} onChange={(e) => updateContributorRow(idx, { name: e.target.value })} style={{ flex: 1, minWidth: 80 }} />
-                  <input type="number" inputMode="numeric" placeholder="금액" value={c.amount}
-                    onChange={(e) => updateContributorRow(idx, { amount: e.target.value })} style={{ ...compactMoneyInputStyle, width: 110 }} />
+                  <MoneyInput value={c.amount} placeholder="금액"
+                    onChange={(v) => updateContributorRow(idx, { amount: v })} style={{ ...compactMoneyInputStyle, width: 110 }} />
                   <select value={c.title} onChange={(e) => updateContributorRow(idx, { title: e.target.value })} style={{ minWidth: 90 }}>
                     {DINNER_CONTRIBUTOR_TITLE_PRESETS.map((t) => <option key={t} value={t}>{t}</option>)}
                     <option value="직접 입력">직접 입력</option>

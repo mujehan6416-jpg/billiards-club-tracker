@@ -5,6 +5,7 @@ import { todayStr } from '../../lib/date'
 import type { CashDeposit, CashDepositStatus } from '../../types/settlement'
 import { SettlementSaveButtons } from './SettlementSaveButtons'
 import { moneyInputStyle } from './moneyInputStyle'
+import { MoneyInput } from '../MoneyInput'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') || '0', 10))
@@ -53,7 +54,7 @@ export function CashDepositForm({ settlementId, previewMode = false }: { settlem
         <div className="card col-card">
           <span style={{ fontWeight: 700, fontSize: 14 }}>{editingId ? '현금 통장 입금 수정' : '현금 통장 입금 추가'}</span>
           <input type="date" value={form.depositDate} onChange={(e) => set('depositDate')(e.target.value)} />
-          <input type="number" inputMode="numeric" min={0} value={form.amount} placeholder="입금액" onChange={(e) => set('amount')(e.target.value)} style={moneyInputStyle} />
+          <MoneyInput value={form.amount} placeholder="입금액" onChange={set('amount')} style={moneyInputStyle} />
           <select value={form.status} onChange={(e) => set('status')(e.target.value)}>
             <option value="입금전">입금전</option>
             <option value="입금예정">입금예정</option>

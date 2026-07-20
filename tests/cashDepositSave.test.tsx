@@ -131,10 +131,10 @@ describe('[재현 및 수정 확인] 입금액 입력칸 너비 — index.css의
     expect(input.style.minHeight).toBe('52px')
   })
 
-  it('730,700원을 입력해도 값이 잘리지 않는다', () => {
+  it('730,700원을 입력해도 값이 잘리지 않고, 천단위 콤마가 붙어 보인다', () => {
     render(<CashDepositForm settlementId="settle-cash-1" />)
     const input = screen.getByPlaceholderText('입금액') as HTMLInputElement
     fireEvent.change(input, { target: { value: '730700' } })
-    expect(input.value).toBe('730700')
+    expect(input.value).toBe('730,700')
   })
 })
