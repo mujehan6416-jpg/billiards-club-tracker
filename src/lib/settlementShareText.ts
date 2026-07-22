@@ -1,5 +1,6 @@
 import type { DinnerContribution, RegularSettlement, SettlementPublicSummary } from '../types/settlement'
 import {
+  allExpenseLineItems,
   calcBankSummary,
   calcCashSummary,
   calcExpenseByCategory,
@@ -72,25 +73,31 @@ function donorThankYouMessages(settlement: RegularSettlement): string[] {
   return messages
 }
 
-/** 회원 공개용 공유문 — 통장 잔액·현금 보유액·회원별 납부액·미확인 계좌이체는 절대 포함하지 않는다. */
+/**
+ * 회원 공개용 공유문 — 통장 잔액·현금 보유액·회원별 납부액·미확인 계좌이체는 절대 포함하지 않는다.
+ * 지출은 몇 건만 골라 보여주지 않고(과거 majorExpenses 방식), 등록된 지출 전체를 한 줄씩 나열한다
+ * (allExpenseLineItems) — 그래야 "총지출" 금액과 나열된 항목들의 합이 항상 정확히 일치한다.
+ */
 export function buildMemberShareText(settlement: RegularSettlement): string {
   const income = calcIncomeSummary(settlement)
   const profit = calcProfitSummary(settlement)
   const duesTotal = income.duesCash + income.duesTransferConfirmed
   const donationTotal = income.donationCash + income.donationTransferConfirmed + income.otherIncome
-  const top = majorExpenses(settlement)
+  const items = allExpenseLineItems(settlement)
   const thanks = donorThankYouMessages(settlement)
 
   const lines = [
     `[${settlement.meetingName}] ${settlement.meetingDate}`,
     '',
-    `총수입 ${won(profit.totalIncome)} (회비 ${won(duesTotal)} · 찬조금 ${won(donationTotal)})`,
+    `총수입 ${won(profit.totalIncome)}`,
+    `회비 ${won(duesTotal)}`,
+    `찬조금 ${won(donationTotal)}`,
+    '',
     `총지출 ${won(profit.totalExpense)}`,
+    ...items.map((it) => `${it.label} ${won(it.amount)}`),
+    '',
+    `[${settlement.meetingName}] 손익 ${won(profit.netProfit)}`,
   ]
-  if (top.length > 0) {
-    lines.push('주요 지출: ' + top.map((e) => `${e.label} ${won(e.amount)}`).join(', '))
-  }
-  lines.push(`모임 순익 ${won(profit.netProfit)}`)
   if (thanks.length > 0) {
     lines.push('', ...thanks)
   }

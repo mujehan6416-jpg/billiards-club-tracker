@@ -117,10 +117,67 @@ describe('buildMemberShareText', () => {
 
     expect(text).toContain('가상 정기모임 1회차')
     expect(text).toContain('총수입')
-    expect(text).toContain('모임 순익')
+    expect(text).toContain('손익')
     expect(text).toContain('찬조해 주신 테스트회원가 회원님께 감사드립니다.')
     expect(text).not.toContain('통장')
     expect(text).not.toContain('현금 보유')
+  })
+
+  it('[전체 형식 확인] 회식비(레거시)·지출 5건·회비·찬조·손익이 요청된 줄바꿈 형식 그대로 표시된다', () => {
+    const participants: SettlementParticipant[] = [
+      { id: 'p1', participantType: 'member', memberId: 'p1', displayName: '가상총무', addedVia: 'meeting_attendee', dues: { amount: 360000, method: '현금', status: '입금확인' } },
+      { id: 'p2', participantType: 'member', memberId: 'p2', displayName: '가상회원1', addedVia: 'meeting_attendee', donation: { amount: 100000, method: '현금', status: '입금확인' } },
+      { id: 'p3', participantType: 'member', memberId: 'p3', displayName: '가상회원2', addedVia: 'meeting_attendee', donation: { amount: 60000, method: '현금', status: '입금확인' } },
+    ]
+    const dinnerContributions: DinnerContribution[] = [
+      { id: 'd1', dinnerRound: 1, totalAmount: 519000, clubShare: 519000, method: '현금', contributionType: '모임회계지출', contributors: [], paidBy: '운칠복삼' },
+    ]
+    const expenses: SettlementExpense[] = [
+      { id: 'e1', date: '2026-07-15', label: '당구비(1차)', category: '당구비', amount: 140000, method: '현금', clubShare: 140000, personalDonation: 0 },
+      { id: 'e2', date: '2026-07-15', label: '2차 당구비', category: '당구비', amount: 50000, method: '현금', clubShare: 50000, personalDonation: 0 },
+      { id: 'e3', date: '2026-07-15', label: '주차비', category: '기타', amount: 10000, method: '현금', clubShare: 10000, personalDonation: 0 },
+      { id: 'e4', date: '2026-07-15', label: '간식비', category: '다과비', amount: 8000, method: '현금', clubShare: 8000, personalDonation: 0 },
+      { id: 'e5', date: '2026-07-15', label: '기타 운영비', category: '기타', amount: 8700, method: '현금', clubShare: 8700, personalDonation: 0 },
+    ]
+    const settlement = baseSettlement({
+      meetingName: '25차 정기모임', meetingDate: '2026-07-15', participants, dinnerContributions, expenses,
+    })
+    const text = buildMemberShareText(settlement)
+
+    expect(text).toBe(
+      '[25차 정기모임] 2026-07-15\n' +
+      '\n' +
+      '총수입 520,000원\n' +
+      '회비 360,000원\n' +
+      '찬조금 160,000원\n' +
+      '\n' +
+      '총지출 735,700원\n' +
+      '1차 회식비(운칠복삼) 519,000원\n' +
+      '당구비(1차) 140,000원\n' +
+      '2차 당구비 50,000원\n' +
+      '주차비 10,000원\n' +
+      '간식비 8,000원\n' +
+      '기타 운영비 8,700원\n' +
+      '\n' +
+      '[25차 정기모임] 손익 -215,700원\n' +
+      '\n' +
+      '찬조해 주신 가상회원1, 가상회원2 회원님께 감사드립니다.',
+    )
+  })
+
+  it('[누락 없음 확인] 지출이 여러 건이어도(6건) 몇 건만 골라 보여주지 않고 전부 표시되며, 나열된 금액 합이 총지출과 일치한다', () => {
+    const expenses: SettlementExpense[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `e${i}`, date: '2026-01-10', label: `가상지출항목${i + 1}`, category: '기타',
+      amount: 1000 * (i + 1), method: '현금' as const, clubShare: 1000 * (i + 1), personalDonation: 0,
+    }))
+    const settlement = baseSettlement({ expenses })
+    const text = buildMemberShareText(settlement)
+
+    for (let i = 1; i <= 6; i++) {
+      expect(text).toContain(`가상지출항목${i} ${(1000 * i).toLocaleString('ko-KR')}원`)
+    }
+    // 총지출(1000+2000+...+6000=21000)과 나열된 항목 합이 일치해야 한다.
+    expect(text).toContain('총지출 21,000원')
   })
 
   // [재현→수정 확인] 결제수단 select를 안 건드리고 금액만 입력한 찬조(현금, status 미확인 —

@@ -216,6 +216,24 @@ export function majorExpenses(settlement: RegularSettlement, limit = 3): { label
 }
 
 /**
+ * 정산에 저장된 모든 지출 항목을 하나도 빠짐없이, 등록된 순서 그대로 나열한다(카카오톡 공유 문구용).
+ * 금액은 amount(전체 금액)가 아니라 clubShare(모임 부담액)를 쓴다 — calcExpenseSummary의 "총지출"이
+ * clubShare 합계이므로, 여기 나열된 항목들의 금액 합도 그 총지출과 정확히 일치해야 한다.
+ * 회식비는 레거시 DinnerContribution(별도 배열, 회차 순 정렬)과 신규 지출분류(expenses, 등록 순서)
+ * 두 출처를 가질 수 있어 각각의 원래 정렬 기준을 유지한 채 레거시를 먼저, 신규 지출을 뒤에 잇는다.
+ */
+export function allExpenseLineItems(settlement: RegularSettlement): { label: string; amount: number }[] {
+  const dinnerLines = [...settlement.dinnerContributions]
+    .sort((a, b) => a.dinnerRound - b.dinnerRound)
+    .map((d) => ({
+      label: `${d.dinnerRound}차 회식비${d.paidBy ? `(${d.paidBy})` : ''}`,
+      amount: d.clubShare,
+    }))
+  const expenseLines = settlement.expenses.map((e) => ({ label: e.label, amount: e.clubShare }))
+  return [...dinnerLines, ...expenseLines]
+}
+
+/**
  * 지출 분류(당구비/다과비/회식비/상금/기타)별 모임 부담액 합계. 회원 공개용 요약(일반회원 정산 공개)에서
  * 통장 잔액·현금 보유액 등 민감 정보 없이 "어디에 얼마를 썼는지"만 보여줄 때 쓴다.
  * 예전 분류값(10개)은 displayExpenseCategory로 새 분류(5개)에 매핑해서 합산한다(저장된 원본 category는 그대로 둠).
