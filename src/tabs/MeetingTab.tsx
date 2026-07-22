@@ -485,8 +485,15 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   }
 
   const typeLabel = isFlash ? '⚡ 번개모임' : '📋 정기모임'
+  // 모임 정보 줄의 배지·버튼(번개모임/승인 대기/참석자/모임 삭제)이 전부 같은 높이·둥근 정도로
+  // 보이도록 공통 규격을 두고, border는 투명이라도 항상 넣어 테두리 있는 버튼과 높이가 어긋나지
+  // 않게 한다(테두리 유무에 따라 박스 높이가 1~2px씩 달라 보이던 문제).
+  const pillStyle: React.CSSProperties = {
+    fontSize: 14, fontWeight: 600, padding: '9px 14px', borderRadius: 8,
+    border: '1px solid transparent', lineHeight: 1.2, whiteSpace: 'nowrap',
+  }
   const typeBadgeStyle: React.CSSProperties = {
-    fontSize: 14, padding: '4px 10px', borderRadius: 4, fontWeight: 600,
+    ...pillStyle,
     background: isFlash ? '#fff3cd' : '#e1f5ee',
     color: isFlash ? '#856404' : '#0f6e56',
   }
@@ -594,27 +601,32 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
         <button style={{ fontSize: 16, padding: 13 }} onClick={onAddFlash}>⚡ 번개모임 추가</button>
       )}
 
-      <div className="board-head">
+      {/* 모바일에서 제목·배지·버튼이 한 줄에 억지로 들어가 제목이 이상하게 줄바꿈되고 버튼 높이가
+          들쭉날쭉해 보이던 문제 — 제목을 자기 줄에 온전히 두고, 배지·버튼은 그 아래 한 줄로 모아
+          같은 높이의 "알약" 모양으로 통일한다. .board-head의 가로 2분할(space-between) 대신
+          세로 배치를 쓰므로 레이아웃 관련 속성을 인라인으로 전부 덮어쓴다(index.css는 이번 작업
+          범위 밖이라 건드리지 않음). */}
+      <div className="board-head" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h2 className="tab-title" style={{ margin: 0 }}>{session.date} 모임</h2>
-            <span style={typeBadgeStyle}>{typeLabel}</span>
-            {isFlash && !isApproved && (
-              <span style={{ fontSize: 14, padding: '4px 10px', borderRadius: 4, background: '#fce8e8', color: '#c0392b', fontWeight: 600 }}>
-                승인 대기
-              </span>
-            )}
-          </div>
+          <h2 className="tab-title" style={{ margin: 0, whiteSpace: 'nowrap' }}>{session.date} 모임</h2>
           <span className="muted">참석 {session.attendeeIds.length}명 · 완료 {session.games.length}경기</span>
         </div>
-        {canEdit && (
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={() => setEditAttendees((v) => !v)}>참석자</button>
-            {isAdmin && (
-              <button onClick={removeSession} style={{ color: '#c0392b', borderColor: '#e0a0a0' }}>모임 삭제</button>
-            )}
-          </div>
-        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <span style={typeBadgeStyle}>{typeLabel}</span>
+          {isFlash && !isApproved && (
+            <span style={{ ...pillStyle, background: '#fce8e8', color: '#c0392b' }}>
+              승인 대기
+            </span>
+          )}
+          {canEdit && (
+            <>
+              <button onClick={() => setEditAttendees((v) => !v)} style={{ ...pillStyle, border: '1px solid var(--border)' }}>참석자</button>
+              {isAdmin && (
+                <button onClick={removeSession} style={{ ...pillStyle, color: '#c0392b', border: '1px solid #e0a0a0' }}>모임 삭제</button>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {isFlash && !isApproved && isAdmin && (
