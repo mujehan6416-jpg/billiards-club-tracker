@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../store/appStore'
-import type { Member, Session } from '../types'
+import type { Game, Member, Session } from '../types'
 import { winnerId } from '../logic/game'
 import { headToHead, memberStats, memberTimeline, winStreaks } from '../logic/stats'
 import { fmtScore } from '../lib/format'
@@ -98,11 +98,15 @@ function H2H({ sessions, members, name, isGuest }: { sessions: Session[]; member
   const [bId, setB] = useState(opts[1]?.id ?? '')
   if (opts.length < 2) return <p className="muted">회원이 2명 이상 필요합니다.</p>
   const h = headToHead(sessions, aId, bId)
+  // 상대전적 카드는 여러 날짜의 경기를 한 목록에 섞어 보여주므로(날짜별 탭과 달리 날짜 선택 UI가
+  // 없음), 어느 경기인지 구분할 수 있게 소속 모임(session)의 날짜를 각 경기에 함께 붙여 넘긴다.
   const games = sessions.flatMap((s) =>
-    s.games.filter(
-      (g) =>
-        (g.playerAId === aId && g.playerBId === bId) || (g.playerAId === bId && g.playerBId === aId),
-    ),
+    s.games
+      .filter(
+        (g) =>
+          (g.playerAId === aId && g.playerBId === bId) || (g.playerAId === bId && g.playerBId === aId),
+      )
+      .map((g) => ({ ...g, date: s.date })),
   )
   return (
     <div>
@@ -182,21 +186,26 @@ function Trend({ sessions, members, name, isGuest }: { sessions: Session[]; memb
   )
 }
 
-function GameList({ games, name }: { games: Session['games']; name: (id: string) => string }) {
+// date가 있는 항목(상대전적 카드)만 카드 첫째 줄 중앙에 날짜를 보여준다 — 날짜별 탭(ByDate)은
+// 이미 날짜 선택 드롭다운으로 날짜가 정해져 있어 카드마다 다시 보여주면 중복이라 date를 안 넘긴다.
+function GameList({ games, name }: { games: (Game & { date?: string })[]; name: (id: string) => string }) {
   if (games.length === 0) return <p className="muted">경기 없음</p>
   return (
     <ul className="result-list">
       {games.map((g) => {
         const win = winnerId(g)
         return (
-          <li key={g.id} className="card result-row">
-            <span className={win === g.playerAId ? 'win' : ''}>
-              {name(g.playerAId)} {fmtScore(g.scoreA, g.handicapA)}
-            </span>
-            <span className="vs">vs</span>
-            <span className={win === g.playerBId ? 'win right' : 'right'}>
-              {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
-            </span>
+          <li key={g.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {g.date && <div className="muted" style={{ textAlign: 'center', fontSize: 13 }}>{g.date}</div>}
+            <div className="result-row">
+              <span className={win === g.playerAId ? 'win' : ''}>
+                {name(g.playerAId)} {fmtScore(g.scoreA, g.handicapA)}
+              </span>
+              <span className="vs">vs</span>
+              <span className={win === g.playerBId ? 'win right' : 'right'}>
+                {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
+              </span>
+            </div>
           </li>
         )
       })}
