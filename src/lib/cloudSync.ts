@@ -17,7 +17,7 @@ export function markSynced(updatedAt: string | null): void {
 /** 다른 기기의 최신 클라우드 데이터를 덮어쓰지 않으려고 사용자가 업로드를 취소함 */
 export class UploadCancelledError extends Error {
   constructor() {
-    super('클라우드에 더 최신 데이터가 있어 업로드를 취소했습니다.')
+    super('서버에 더 최근 내용이 있어 저장을 취소했습니다.')
     this.name = 'UploadCancelledError'
   }
 }
@@ -33,7 +33,7 @@ export async function uploadToCloud(state: AppState): Promise<void> {
   }
   if (cloudUpdatedAt && cloudUpdatedAt !== getLastSyncedAt()) {
     const ok = window.confirm(
-      '다른 기기에서 저장한 더 최신 클라우드 데이터가 있을 수 있습니다.\n지금 업로드하면 클라우드 데이터를 이 기기의 데이터로 덮어씁니다.\n계속할까요?',
+      '다른 기기에서 더 최근에 저장한 내용이 서버에 있을 수 있습니다.\n지금 올리면 서버 내용을 이 기기의 내용으로 덮어씁니다.\n계속할까요?',
     )
     if (!ok) throw new UploadCancelledError()
   }
