@@ -432,13 +432,13 @@ export function SettingsTab() {
   const onExportJson = () => {
     exportJson({ members, sessions, settings, ledger }, todayStr())
     touchBackup()
-    setMsg('JSON 백업 파일을 다운로드했습니다.')
+    setMsg('전체 데이터를 파일로 보관했습니다. (JSON)')
   }
 
   const onExportCsv = () => {
     exportCsv(sessions, members, todayStr())
     touchBackup()
-    setMsg('CSV 파일을 다운로드했습니다.')
+    setMsg('경기기록을 엑셀 파일로 받았습니다. (CSV)')
   }
 
   const onExportHandicapCsv = () => {
@@ -449,11 +449,11 @@ export function SettingsTab() {
   const onImport = async (file: File) => {
     try {
       const state = await importJson(file)
-      if (!confirm('현재 데이터를 백업 파일로 전체 교체합니다. 계속할까요?')) return
+      if (!confirm('보관한 파일의 내용으로 이 기기의 현재 내용을 전부 바꿉니다. 계속할까요?')) return
       replaceAll(state)
-      setMsg('백업을 복원했습니다.')
+      setMsg('보관한 파일로 되돌렸습니다.')
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : '불러오기에 실패했습니다.')
+      setMsg(e instanceof Error ? e.message : '파일을 불러오지 못했습니다.')
     }
   }
 
@@ -492,28 +492,28 @@ export function SettingsTab() {
   }
 
   const onUploadCloud = async () => {
-    if (!confirm('현재 데이터를 클라우드에 저장합니다. 계속할까요?')) return
+    if (!confirm('이 기기의 내용을 서버에 올립니다. 계속할까요?')) return
     setSyncing(true)
     try {
       await uploadToCloud({ members, sessions, settings, ledger })
-      setMsg('클라우드에 저장했습니다.')
+      setMsg('서버에 올렸습니다.')
     } catch (e) {
-      if (e instanceof UploadCancelledError) setMsg('업로드를 취소했습니다.')
-      else setMsg('클라우드 저장 실패: ' + (e instanceof Error ? e.message : String(e)))
+      if (e instanceof UploadCancelledError) setMsg('서버에 올리기를 취소했습니다.')
+      else setMsg('서버에 올리지 못했습니다: ' + (e instanceof Error ? e.message : String(e)))
     } finally { setSyncing(false) }
   }
 
   const onDownloadCloud = async () => {
-    if (!confirm('클라우드 데이터를 불러옵니다. 현재 데이터가 교체됩니다. 계속할까요?')) return
+    if (!confirm('서버에 저장된 내용으로 이 기기의 현재 내용을 바꿉니다. 계속할까요?')) return
     setSyncing(true)
     try {
       const cloud = await downloadFromCloud()
-      if (!cloud) { setMsg('클라우드에 저장된 데이터가 없습니다.'); return }
+      if (!cloud) { setMsg('서버에 저장된 내용이 없습니다.'); return }
       replaceAll(cloud.state)
       markSynced(cloud.updatedAt)
-      setMsg('클라우드에서 불러왔습니다.')
+      setMsg('서버 내용을 이 기기로 받았습니다.')
     } catch (e) {
-      setMsg('클라우드 불러오기 실패: ' + (e instanceof Error ? e.message : String(e)))
+      setMsg('서버 내용을 받지 못했습니다: ' + (e instanceof Error ? e.message : String(e)))
     } finally { setSyncing(false) }
   }
 
@@ -547,16 +547,22 @@ export function SettingsTab() {
           {/* 2. 경기결과 승인 대기 (일반회원 제출 게임) */}
           <PendingGamesCard sessions={sessions} members={members} />
 
-          {/* 3. 클라우드 동기화 */}
+          {/* 3. 다른 기기와 데이터 맞추기 (기존 클라우드 동기화 — 기능은 그대로, 표시 문구만 쉬운 말로) */}
           <div className="card col-card">
-            <span style={{ fontWeight: 600, fontSize: 14 }}>☁️ 클라우드 동기화</span>
-            <span className="muted">PC와 휴대폰 간 데이터를 맞출 때 사용하세요.</span>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>📱 다른 기기와 데이터 맞추기</span>
+            <span className="muted">PC와 휴대폰에서 같은 내용을 보고 싶을 때 사용하세요.</span>
             <button className="primary block" disabled={syncing} onClick={onUploadCloud}>
-              {syncing ? '처리 중...' : '클라우드에 저장 (업로드)'}
+              {syncing ? '처리 중...' : '이 기기 내용을 서버에 올리기'}
             </button>
+            <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+              회원 추가나 파일 불러오기 후 다른 기기에서도 같은 내용을 사용하려면 서버에 올려 주세요.
+            </span>
             <button className="block" disabled={syncing} onClick={onDownloadCloud}>
-              {syncing ? '처리 중...' : '클라우드에서 불러오기 (다운로드)'}
+              {syncing ? '처리 중...' : '서버 내용을 이 기기로 받기'}
             </button>
+            <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+              서버에 저장된 내용으로 이 기기의 현재 내용을 바꿉니다.
+            </span>
           </div>
 
           {/* 4. 에버리지 직접 수정 */}
@@ -568,32 +574,33 @@ export function SettingsTab() {
           {/* 6. 핸디 이력 CSV */}
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>핸디 이력 파일</span>
-            <span className="muted">CSV 형식: <code>이름,날짜,핸디</code></span>
-            <button className="block" onClick={onExportHandicapCsv}>핸디 이력 CSV 다운로드</button>
-            <button className="primary block" onClick={() => hcapFileRef.current?.click()}>핸디 이력 CSV 업로드</button>
+            <span className="muted">파일 형식: <code>이름,날짜,핸디</code></span>
+            <button className="block" onClick={onExportHandicapCsv}>핸디 이력 파일 받기 (CSV)</button>
+            <button className="primary block" onClick={() => hcapFileRef.current?.click()}>핸디 이력 파일 올리기 (CSV)</button>
             <input ref={hcapFileRef} type="file" accept=".csv,text/csv" hidden
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportHandicap(f); e.target.value = '' }} />
           </div>
 
           {/* 6. 회원명부 CSV */}
           <div className="card col-card">
-            <span style={{ fontWeight: 600, fontSize: 14 }}>👥 회원명부 CSV</span>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>👥 회원명부 파일</span>
             <span className="muted">
-              형식: <code>이름,에버리지,직책,학과,학번,전화번호</code><br/>
-              엑셀 파일을 CSV로 저장 후 업로드 하세요.<br/>
-              신규 회원은 추가, 기존 회원은 에버리지만 업데이트됩니다.
+              파일 형식: <code>이름,에버리지</code><br/>
+              엑셀 파일을 CSV로 저장한 뒤 올려 주세요.<br/>
+              새 회원은 추가되고, 기존 회원은 에버리지만 바뀝니다.<br/>
+              ※ 직책·학과·학번·전화번호 칸이 있어도 앱에는 저장되지 않습니다.
             </span>
-            <button className="block" onClick={onExportMemberCsv}>회원명부 CSV 양식 다운로드</button>
-            <button className="primary block" onClick={() => memberFileRef.current?.click()}>회원명부 CSV 업로드</button>
+            <button className="block" onClick={onExportMemberCsv}>회원명부 양식 받기 (CSV)</button>
+            <button className="primary block" onClick={() => memberFileRef.current?.click()}>회원명부 파일 올리기 (CSV)</button>
             <input ref={memberFileRef} type="file" accept=".csv,text/csv" hidden
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportMemberCsv(f); e.target.value = '' }} />
           </div>
 
           {/* 7. 경기 기록 CSV */}
           <div className="card col-card">
-            <span style={{ fontWeight: 600, fontSize: 14 }}>🎱 경기 기록 CSV 업로드</span>
-            <span className="muted">형식: <code>날짜,선수1,선수2,승자,패자,승자점수,패자점수</code></span>
-            <button className="primary block" onClick={() => gameFileRef.current?.click()}>경기 기록 CSV 업로드</button>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>🎱 경기 기록 파일</span>
+            <span className="muted">파일 형식: <code>날짜,선수1,선수2,승자,패자,승자점수,패자점수</code></span>
+            <button className="primary block" onClick={() => gameFileRef.current?.click()}>경기 기록 파일 올리기 (CSV)</button>
             <input ref={gameFileRef} type="file" accept=".csv,text/csv" hidden
               onChange={async (e) => {
                 const f = e.target.files?.[0]; if (!f) return; e.target.value = ''
@@ -608,12 +615,13 @@ export function SettingsTab() {
               }} />
           </div>
 
-          {/* 8. 백업/복원 */}
+          {/* 8. 데이터 보관 / 복구 */}
           <div className="card col-card">
-            <span className="muted">마지막 백업: {settings.lastBackupAt ? new Date(settings.lastBackupAt).toLocaleString('ko-KR') : '없음'}</span>
-            <button className="primary block" onClick={onExportJson}>JSON 백업 다운로드</button>
-            <button className="block" onClick={onExportCsv}>CSV 다운로드 (엑셀용)</button>
-            <button className="block" onClick={() => fileRef.current?.click()}>백업 불러오기 (JSON)</button>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>💾 데이터 보관하기</span>
+            <span className="muted">마지막으로 보관한 때: {settings.lastBackupAt ? new Date(settings.lastBackupAt).toLocaleString('ko-KR') : '없음'}</span>
+            <button className="primary block" onClick={onExportJson}>전체 데이터 파일로 보관하기 (JSON)</button>
+            <button className="block" onClick={onExportCsv}>경기기록 엑셀로 받기 (CSV)</button>
+            <button className="block" onClick={() => fileRef.current?.click()}>보관한 파일로 되돌리기 (JSON)</button>
             <input ref={fileRef} type="file" accept="application/json" hidden
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = '' }} />
           </div>
@@ -621,15 +629,17 @@ export function SettingsTab() {
           {/* 9. PIN 변경 */}
           <ChangePinCard />
 
-          {/* 10. 전체 초기화 (맨 밑) */}
+          {/* 10. 모든 데이터 지우기 (맨 밑) */}
           <div className="card col-card">
-            <span className="muted">데이터는 이 기기(브라우저)에만 저장됩니다.</span>
+            <span className="muted" style={{ lineHeight: 1.5 }}>
+              데이터는 이 기기에 저장되며, 서버와도 맞춰서 다른 기기에서 사용할 수 있습니다.
+            </span>
             <button className="block danger" onClick={() => {
               if (confirm('모든 회원·경기 기록이 삭제됩니다. 되돌릴 수 없습니다.')) {
                 replaceAll({ members: [], sessions: [], settings: { lastBackupAt: null }, ledger: [] })
-                setMsg('전체 데이터를 초기화했습니다.')
+                setMsg('이 기기의 모든 데이터를 지웠습니다.')
               }
-            }}>전체 초기화</button>
+            }}>모든 데이터 지우기</button>
           </div>
         </>
       )}

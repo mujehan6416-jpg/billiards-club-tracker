@@ -307,47 +307,7 @@ export function MembersTab() {
         </p>
       )}
 
-      {isAdmin && (
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <input
-            value={name}
-            placeholder="이름"
-            style={{ width: '100%' }}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && name.trim()) {
-                addMember(name.trim(), hcap)
-                setName('')
-              }
-            }}
-          />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <label className="hcap-label" style={{ flex: 1 }}>
-              핸디
-              <input
-                type="number"
-                min={1}
-                value={hcap}
-                style={{ width: 70 }}
-                onChange={(e) => setHcap(Math.max(1, +e.target.value))}
-              />
-            </label>
-            <button
-              className="primary"
-              disabled={!name.trim()}
-              style={{ flex: 1 }}
-              onClick={() => {
-                addMember(name.trim(), hcap)
-                setName('')
-              }}
-            >
-              추가
-            </button>
-          </div>
-        </div>
-      )}
-
-      {sorted.length === 0 && <p className="muted">아직 회원이 없습니다. 위에서 추가하세요.</p>}
+      {sorted.length === 0 && <p className="muted">아직 회원이 없습니다. 아래에서 추가하세요.</p>}
       {sorted.length > 0 && filtered.length === 0 && <p className="muted">검색 결과가 없습니다.</p>}
 
       <ul className="member-list">
@@ -422,6 +382,48 @@ export function MembersTab() {
           )
         })}
       </ul>
+
+      {/* 새 회원 추가는 회원 목록을 먼저 보여준 뒤 화면 맨 아래에 둔다(관리자 전용). */}
+      {isAdmin && (
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>새 회원 추가</span>
+          <input
+            value={name}
+            placeholder="이름"
+            style={{ width: '100%' }}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && name.trim()) {
+                addMember(name.trim(), hcap)
+                setName('')
+              }
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <label className="hcap-label" style={{ flex: 1 }}>
+              핸디
+              <input
+                type="number"
+                min={1}
+                value={hcap}
+                style={{ width: 70 }}
+                onChange={(e) => setHcap(Math.max(1, +e.target.value))}
+              />
+            </label>
+            <button
+              className="primary"
+              disabled={!name.trim()}
+              style={{ flex: 1 }}
+              onClick={() => {
+                addMember(name.trim(), hcap)
+                setName('')
+              }}
+            >
+              추가
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -175,12 +175,18 @@ export const useApp = create<Store>()(
                   ...ss,
                   games: ss.games.map((g) => {
                     if (g.id !== gameId) return g
-                    const updated = { ...g, ...patch }
-                    const endType: 'cleared' | 'time' =
+                    const updated: Game = { ...g, ...patch }
+                    updated.endType =
                       updated.scoreA >= updated.handicapA || updated.scoreB >= updated.handicapB
                         ? 'cleared'
                         : 'time'
-                    return { ...updated, endType }
+                    // 과거 CSV 임포트 경기에는 명시적 winnerId가 저장돼 있고, logic/game.ts의
+                    // winnerId()는 그 값을 그대로 신뢰한다. 점수·핸디를 고쳐도 옛 승자가 남아
+                    // 새 결과와 모순되므로, 관리자가 실제로 수정한 이 경기 하나만 명시적 승자를
+                    // 지워 일반 경기와 똑같이 달성률 기준으로 다시 판정되게 한다.
+                    // (과거 데이터 일괄 변경·마이그레이션은 하지 않는다.)
+                    delete updated.winnerId
+                    return updated
                   }),
                 }
               : ss,

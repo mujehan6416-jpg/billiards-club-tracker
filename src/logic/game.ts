@@ -33,3 +33,38 @@ export function winnerId(game: Game): string | null {
 export function hasRecordedResult(game: Game): boolean {
   return Number.isFinite(game.scoreA) && Number.isFinite(game.scoreB) && !!game.endType
 }
+
+/** 경기 결과(적용 핸디·득점) 입력값 검증 결과. */
+export type GameResultValidation =
+  | { ok: true; values: { handicapA: number; scoreA: number; handicapB: number; scoreB: number } }
+  | { ok: false; message: string }
+
+/** 화면 입력칸은 문자열이므로 문자열·숫자를 모두 받아 정수로 바꾼다. 정수가 아니면 null. */
+function toInt(v: string | number): number | null {
+  const s = String(v).trim()
+  if (!/^-?\d+$/.test(s)) return null
+  return parseInt(s, 10)
+}
+
+/**
+ * 경기 결과 입력값을 검증한다. 새 경기 저장(MeetingTab의 save)과 완전히 같은 규칙을 쓴다 —
+ * 적용 핸디는 1 이상, 득점은 0 이상, 득점은 그 선수의 적용 핸디를 넘을 수 없다.
+ * 실패 메시지는 그대로 화면에 보여줄 수 있는 쉬운 한국어 문장이다.
+ */
+export function validateGameResult(input: {
+  handicapA: string | number
+  scoreA: string | number
+  handicapB: string | number
+  scoreB: string | number
+}): GameResultValidation {
+  const handicapA = toInt(input.handicapA)
+  const handicapB = toInt(input.handicapB)
+  const scoreA = toInt(input.scoreA)
+  const scoreB = toInt(input.scoreB)
+  if (handicapA === null || handicapB === null) return { ok: false, message: '적용 핸디를 숫자로 입력해 주세요.' }
+  if (scoreA === null || scoreB === null) return { ok: false, message: '득점을 숫자로 입력해 주세요.' }
+  if (handicapA < 1 || handicapB < 1) return { ok: false, message: '적용 핸디는 1 이상이어야 합니다.' }
+  if (scoreA < 0 || scoreB < 0) return { ok: false, message: '득점은 0보다 작을 수 없습니다.' }
+  if (scoreA > handicapA || scoreB > handicapB) return { ok: false, message: '득점은 적용 핸디보다 클 수 없습니다.' }
+  return { ok: true, values: { handicapA, scoreA, handicapB, scoreB } }
+}

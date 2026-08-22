@@ -15,6 +15,7 @@ import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
 import { MemberSettlementSummary } from '../components/settlement/MemberSettlementSummary'
 import { MemberGameResultEntry } from '../components/meeting/MemberGameResultEntry'
+import { CompletedGameEditor } from '../components/meeting/CompletedGameEditor'
 
 // 카톡 대진표용: 기본 장소 + 날짜별 예외 장소
 const LOCATION_DEFAULT = '수영 센텀당구클럽'
@@ -294,6 +295,8 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   const [matchMode, setMatchMode] = useState<'auto' | 'manual' | null>(null)
   const [manualSel, setManualSel] = useState<{ round: number; id: string } | null>(null)
   const [lineupText, setLineupText] = useState<string | null>(null)
+  // 저장된 경기의 적용 핸디·득점을 관리자가 고치는 중인 경기 id (한 번에 하나만 연다)
+  const [editGameId, setEditGameId] = useState<string | null>(null)
   const resultsRef = useRef<HTMLUListElement>(null)
 
   const meetCount = useMemo(() => buildMeetCount(sessions), [sessions])
@@ -647,6 +650,19 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
       {session.games.filter((g) => isAdmin || !g.pending).length > 0 && (() => {
         const visibleGames = session.games.filter((g) => isAdmin || !g.pending)
         const renderGameRow = (g: typeof visibleGames[0]) => {
+          // 수정 중인 경기는 결과 줄 대신 수정 폼으로 바꿔 보여준다(한 번에 한 경기만).
+          if (editGameId === g.id) {
+            return (
+              <li key={g.id}>
+                <CompletedGameEditor
+                  game={g}
+                  sessionId={session.id}
+                  nameOf={name}
+                  onDone={() => setEditGameId(null)}
+                />
+              </li>
+            )
+          }
           const win = winnerId(g)
           return (
             <li key={g.id} className="card result-row" style={g.pending ? { opacity: 0.75 } : undefined}>
@@ -661,6 +677,14 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
                 <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#fff3cd', color: '#856404', fontWeight: 600, whiteSpace: 'nowrap' }}>
                   승인대기
                 </span>
+              )}
+              {isAdmin && (
+                <button
+                  style={{ fontSize: 13, padding: '6px 10px', whiteSpace: 'nowrap' }}
+                  onClick={() => setEditGameId(g.id)}
+                >
+                  수정
+                </button>
               )}
               {canEdit && (
                 <button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>
@@ -684,9 +708,15 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
                   const copied = await shareText(buildResultText(session, members))
                   if (copied) alert('결과를 클립보드에 복사했습니다.')
                 }}>텍스트 공유</button>
-                <button onClick={() => {
-                  if (resultsRef.current) shareImage(resultsRef.current, `당구결과-${session.date}.png`)
-                }}>이미지 공유</button>
+                {/* 수정 폼이 열려 있으면 결과 목록 안에 입력칸이 그대로 찍히므로 이미지 공유를 막는다.
+                    (텍스트 공유는 화면이 아니라 경기 데이터로 만들어서 영향이 없다.) */}
+                <button
+                  disabled={editGameId !== null}
+                  title={editGameId !== null ? '경기 수정을 마친 뒤 공유할 수 있습니다.' : undefined}
+                  onClick={() => {
+                    if (resultsRef.current) shareImage(resultsRef.current, `당구결과-${session.date}.png`)
+                  }}
+                >이미지 공유</button>
               </div>
             </div>
             <div ref={resultsRef as unknown as React.RefObject<HTMLDivElement>}>
