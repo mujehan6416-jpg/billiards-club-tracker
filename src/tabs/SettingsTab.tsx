@@ -283,7 +283,7 @@ function HandicapEditCard({ members }: { members: Member[] }) {
       await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
       setMsg(`${m.name} 에버리지 ${latestHandicap} 반영 완료`)
     } catch {
-      setMsg(`${m.name} 에버리지 ${latestHandicap} 반영 완료 (클라우드 저장 실패)`)
+      setMsg(`${m.name} 에버리지 ${latestHandicap} 반영 완료 (서버 저장 실패)`)
     }
     setHandicap('')
   }
@@ -334,7 +334,7 @@ function AdminMemberPwCard({ members }: { members: Member[] }) {
       setMsg(`${m?.name ?? ''} 비밀번호 변경 완료`)
       setPw('')
     } catch {
-      setMsg('변경했으나 클라우드 저장 실패')
+      setMsg('변경했으나 서버 저장 실패')
     } finally { setSaving(false) }
   }
 

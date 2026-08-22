@@ -436,11 +436,11 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
       .catch((err) => {
         if (err instanceof UploadCancelledError) {
-          alert('클라우드 업로드를 취소했습니다.\n경기는 이 기기에만 저장되었습니다.')
+          alert('서버 저장을 취소했습니다.\n경기는 이 기기에만 저장되었습니다.')
           return
         }
-        console.error('클라우드 업로드 실패:', err)
-        alert('경기는 기기에 저장되었지만 클라우드 동기화에 실패했습니다.\n네트워크 확인 후 설정 탭에서 수동 업로드해 주세요.')
+        console.error('서버 저장 실패:', err)
+        alert('경기는 이 기기에 저장되었지만 서버 저장에 실패했습니다.\n인터넷 확인 후 설정 탭에서 "이 기기 내용을 서버에 올리기"를 눌러 주세요.')
       })
   }
 
