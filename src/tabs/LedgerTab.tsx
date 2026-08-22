@@ -137,7 +137,7 @@ function LedgerContent() {
       await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
       setMsg('저장 완료')
     } catch {
-      setMsg('로컬 저장 완료 (클라우드 저장 실패)')
+      setMsg('이 기기에 저장했지만 서버에 반영하지 못했습니다. 인터넷 연결을 확인해 주세요.')
     }
     setSaving(false)
   }

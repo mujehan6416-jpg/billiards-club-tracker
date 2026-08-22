@@ -52,7 +52,7 @@ function MatchResultRow({ session, match, game, opponentName }: {
       await uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
     } catch (err) {
       if (!(err instanceof UploadCancelledError)) {
-        alert('결과는 이 기기에 저장되었지만 클라우드 동기화에 실패했습니다.\n네트워크 확인 후 다시 시도해주세요.')
+        alert('결과는 이 기기에 저장됐지만 서버에 반영하지 못했습니다.\n인터넷 연결을 확인한 뒤 다시 시도해 주세요.')
       }
     }
     setSaving(false)

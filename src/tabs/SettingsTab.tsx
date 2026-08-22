@@ -4,6 +4,7 @@ import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
 import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv, importGameCsv } from '../lib/backup'
 import { uploadToCloud, downloadFromCloud, markSynced, UploadCancelledError } from '../lib/cloudSync'
+import { saveToServer } from '../lib/autoSave'
 import { todayStr } from '../lib/date'
 import { winnerId } from '../logic/game'
 import { fmtScore } from '../lib/format'
@@ -451,7 +452,9 @@ export function SettingsTab() {
       const state = await importJson(file)
       if (!confirm('보관한 파일의 내용으로 이 기기의 현재 내용을 전부 바꿉니다. 계속할까요?')) return
       replaceAll(state)
-      setMsg('보관한 파일로 되돌렸습니다.')
+      // 전체 복원은 일부러 서버에 자동 저장하지 않는다 — 서버의 기존 내용을 되돌리기 어렵게
+      // 덮어쓸 수 있으므로, 사용자가 이 기기에서 내용을 확인한 뒤 직접 올리도록 안내한다.
+      setMsg('보관한 파일로 되돌렸습니다. 내용을 확인한 뒤, 서버에도 반영하려면 아래 "이 기기 내용을 서버에 올리기"를 눌러 주세요.')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '파일을 불러오지 못했습니다.')
     }
@@ -471,7 +474,9 @@ export function SettingsTab() {
       if (existing.length > 0) msg += `, 에버리지 업데이트 ${existing.length}명`
       if (!confirm(`${msg}\n\n계속할까요?`)) return
       applyMemberCsv(rows)
-      setMsg(`회원명부 반영 완료: ${msg}`)
+      // 파일을 제대로 불러와 반영한 경우에만 서버에 저장한다(파싱 실패는 위 catch로 빠진다).
+      const failed = await saveToServer()
+      setMsg(failed ?? `회원명부 반영 완료: ${msg}`)
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '파일 처리에 실패했습니다.')
     }
@@ -485,7 +490,8 @@ export function SettingsTab() {
       if (unknownNames.length > 0) confirmMsg += `\n\n※ 무시되는 이름: ${unknownNames.join(', ')}`
       if (!confirm(confirmMsg + '\n\n계속할까요?')) return
       applyHandicapCsv(rows)
-      setMsg(`핸디 이력 ${rows.length}개 행을 반영했습니다.`)
+      const failed = await saveToServer()
+      setMsg(failed ?? `핸디 이력 ${rows.length}개 행을 반영했습니다.`)
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '파일 처리에 실패했습니다.')
     }
@@ -547,31 +553,37 @@ export function SettingsTab() {
           {/* 2. 경기결과 승인 대기 (일반회원 제출 게임) */}
           <PendingGamesCard sessions={sessions} members={members} />
 
-          {/* 3. 다른 기기와 데이터 맞추기 (기존 클라우드 동기화 — 기능은 그대로, 표시 문구만 쉬운 말로) */}
+          {/* 3. 회원 관리 — 에버리지 직접 수정 */}
+          <HandicapEditCard members={members} />
+
+          {/* 4. 회원 관리 — 회원 비밀번호 (관리자) */}
+          <AdminMemberPwCard members={members} />
+
+          {/* 5. 데이터 관리 — 회원·경기·모임·회계 변경은 이제 자동으로 서버에 저장되므로,
+              평소에 눌러야 하는 버튼은 "서버 내용 받기"뿐이다. 수동 올리기는 지우지 않고 남겨
+              두되(전체 복원 후·저장 실패 후에는 여전히 필요하다) 언제 쓰는지 함께 설명한다. */}
           <div className="card col-card">
-            <span style={{ fontWeight: 600, fontSize: 14 }}>📱 다른 기기와 데이터 맞추기</span>
-            <span className="muted">PC와 휴대폰에서 같은 내용을 보고 싶을 때 사용하세요.</span>
-            <button className="primary block" disabled={syncing} onClick={onUploadCloud}>
-              {syncing ? '처리 중...' : '이 기기 내용을 서버에 올리기'}
-            </button>
-            <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
-              회원 추가나 파일 불러오기 후 다른 기기에서도 같은 내용을 사용하려면 서버에 올려 주세요.
+            <span style={{ fontWeight: 600, fontSize: 14 }}>💾 데이터 관리</span>
+            <span className="muted" style={{ lineHeight: 1.5 }}>
+              회원·모임·경기·회계 변경 내용은 자동으로 서버에 저장됩니다.
+              PC와 휴대폰에서 같은 내용을 보려면 아래에서 서버 내용을 받아오세요.
             </span>
-            <button className="block" disabled={syncing} onClick={onDownloadCloud}>
+            <button className="primary block" disabled={syncing} onClick={onDownloadCloud}>
               {syncing ? '처리 중...' : '서버 내용을 이 기기로 받기'}
             </button>
             <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
               서버에 저장된 내용으로 이 기기의 현재 내용을 바꿉니다.
             </span>
+            <button className="block" disabled={syncing} onClick={onUploadCloud}>
+              {syncing ? '처리 중...' : '이 기기 내용을 서버에 올리기'}
+            </button>
+            <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+              평소에는 누르지 않아도 됩니다. 아래에서 "보관한 파일로 되돌리기"를 했거나,
+              저장하지 못했다는 안내를 봤을 때만 사용하세요.
+            </span>
           </div>
 
-          {/* 4. 에버리지 직접 수정 */}
-          <HandicapEditCard members={members} />
-
-          {/* 5. 회원 비밀번호 관리 (관리자) */}
-          <AdminMemberPwCard members={members} />
-
-          {/* 6. 핸디 이력 CSV */}
+          {/* 6. 파일로 보관/불러오기 — 핸디 이력 CSV */}
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>핸디 이력 파일</span>
             <span className="muted">파일 형식: <code>이름,날짜,핸디</code></span>
@@ -581,7 +593,7 @@ export function SettingsTab() {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportHandicap(f); e.target.value = '' }} />
           </div>
 
-          {/* 6. 회원명부 CSV */}
+          {/* 7. 파일로 보관/불러오기 — 회원명부 CSV */}
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>👥 회원명부 파일</span>
             <span className="muted">
@@ -596,7 +608,7 @@ export function SettingsTab() {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportMemberCsv(f); e.target.value = '' }} />
           </div>
 
-          {/* 7. 경기 기록 CSV */}
+          {/* 8. 파일로 보관/불러오기 — 경기 기록 CSV */}
           <div className="card col-card">
             <span style={{ fontWeight: 600, fontSize: 14 }}>🎱 경기 기록 파일</span>
             <span className="muted">파일 형식: <code>날짜,선수1,선수2,승자,패자,승자점수,패자점수</code></span>
@@ -608,16 +620,17 @@ export function SettingsTab() {
                   const rows = await importGameCsv(f)
                   if (!confirm(`${rows.length}개 경기를 불러옵니다. 계속할까요?`)) return
                   applyGameCsv(rows)
-                  setMsg(`경기 기록 ${rows.length}개를 반영했습니다.`)
+                  const failed = await saveToServer()
+                  setMsg(failed ?? `경기 기록 ${rows.length}개를 반영했습니다.`)
                 } catch (err) {
                   setMsg(err instanceof Error ? err.message : '오류가 발생했습니다.')
                 }
               }} />
           </div>
 
-          {/* 8. 데이터 보관 / 복구 */}
+          {/* 9. 파일로 보관/불러오기 — 전체 데이터(JSON) */}
           <div className="card col-card">
-            <span style={{ fontWeight: 600, fontSize: 14 }}>💾 데이터 보관하기</span>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>🗄️ 전체 데이터 보관하기</span>
             <span className="muted">마지막으로 보관한 때: {settings.lastBackupAt ? new Date(settings.lastBackupAt).toLocaleString('ko-KR') : '없음'}</span>
             <button className="primary block" onClick={onExportJson}>전체 데이터 파일로 보관하기 (JSON)</button>
             <button className="block" onClick={onExportCsv}>경기기록 엑셀로 받기 (CSV)</button>
@@ -626,10 +639,10 @@ export function SettingsTab() {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = '' }} />
           </div>
 
-          {/* 9. PIN 변경 */}
+          {/* 10. 보안 — PIN 변경 */}
           <ChangePinCard />
 
-          {/* 10. 모든 데이터 지우기 (맨 밑) */}
+          {/* 11. 위험 구역 — 모든 데이터 지우기 (맨 밑) */}
           <div className="card col-card">
             <span className="muted" style={{ lineHeight: 1.5 }}>
               데이터는 이 기기에 저장되며, 서버와도 맞춰서 다른 기기에서 사용할 수 있습니다.

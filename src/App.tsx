@@ -144,7 +144,7 @@ export function App() {
           local.sessions.length > cloud.state.sessions.length ||
           local.ledger.length > (cloud.state.ledger ?? []).length
         if (localAhead && !window.confirm(
-          '이 기기에 클라우드보다 많은 기록이 저장되어 있습니다.\n클라우드 데이터로 덮어쓰면 이 기기의 최근 기록이 사라질 수 있습니다.\n클라우드 데이터를 불러올까요?',
+          '이 기기에 서버보다 많은 기록이 저장되어 있습니다.\n서버 내용으로 덮어쓰면 이 기기의 최근 기록이 사라질 수 있습니다.\n서버 내용을 불러올까요?',
         )) return
         replaceAll(cloud.state)
         markSynced(cloud.updatedAt)

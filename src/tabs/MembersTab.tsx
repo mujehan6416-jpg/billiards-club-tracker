@@ -5,6 +5,7 @@ import type { MemberStat } from '../logic/stats'
 import type { Member } from '../types'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
+import { saveToServer } from '../lib/autoSave'
 
 function calcRanks(members: Member[]): Map<string, number> {
   const active = members.filter((m) => m.active)
@@ -210,6 +211,8 @@ export function MembersTab() {
   const [editHcap, setEditHcap] = useState(20)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  // 서버 저장에 실패했을 때만 보여주는 안내(성공은 조용히 넘어간다 — 매번 알리면 방해가 된다)
+  const [saveError, setSaveError] = useState('')
   const { isAdmin } = useAdmin()
   const { isGuest, memberId } = useAuth()
   const blind = (n: string) => isGuest ? '●●●' : n
@@ -263,12 +266,23 @@ export function MembersTab() {
     setDetailId(null)
   }
 
+  // 회원 정보를 바꾼 뒤 서버에도 자동 반영한다. 이름·핸디를 함께 고쳐도 서버 저장은 한 번만 한다.
+  const applyAndSave = async (change: () => void) => {
+    change()
+    setSaveError(await saveToServer() ?? '')
+  }
+
+  const addMemberAndSave = (memberName: string, memberHcap: number) =>
+    applyAndSave(() => addMember(memberName, memberHcap))
+
   const saveEdit = (id: string) => {
     const trimmed = editName.trim()
     if (!trimmed) return
-    updateMember(id, { name: trimmed })
     const cur = members.find((m) => m.id === id)
-    if (cur && editHcap !== cur.handicap) setHandicap(id, editHcap)
+    applyAndSave(() => {
+      updateMember(id, { name: trimmed })
+      if (cur && editHcap !== cur.handicap) setHandicap(id, editHcap)
+    })
     setEditId(null)
   }
 
@@ -280,6 +294,10 @@ export function MembersTab() {
   return (
     <div className="tab">
       <h2 className="tab-title">회원</h2>
+
+      {saveError && (
+        <p className="info-msg" style={{ color: 'var(--danger)', background: '#fdeceb' }}>{saveError}</p>
+      )}
 
       {!isGuest && (
         <input
@@ -364,7 +382,7 @@ export function MembersTab() {
                     {isAdmin && (
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button style={{ flex: 1, fontSize: 12 }} onClick={() => startEdit(m.id, m.name, m.handicap)}>수정</button>
-                        <button style={{ flex: 1, fontSize: 12 }} onClick={() => setActive(m.id, !m.active)}>{m.active ? '비활성' : '활성'}</button>
+                        <button style={{ flex: 1, fontSize: 12 }} onClick={() => applyAndSave(() => setActive(m.id, !m.active))}>{m.active ? '비활성' : '활성'}</button>
                       </div>
                     )}
                   </div>
@@ -394,7 +412,7 @@ export function MembersTab() {
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && name.trim()) {
-                addMember(name.trim(), hcap)
+                addMemberAndSave(name.trim(), hcap)
                 setName('')
               }
             }}
@@ -415,7 +433,7 @@ export function MembersTab() {
               disabled={!name.trim()}
               style={{ flex: 1 }}
               onClick={() => {
-                addMember(name.trim(), hcap)
+                addMemberAndSave(name.trim(), hcap)
                 setName('')
               }}
             >

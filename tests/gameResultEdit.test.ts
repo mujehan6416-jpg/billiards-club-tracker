@@ -144,6 +144,14 @@ describe('updateGameResult — 저장된 경기의 적용 핸디·득점 수정'
     const after = memberStats(useApp.getState().sessions).find((s) => s.memberId === 'm1')!
     expect(after.wins).toBe(1)
     expect(after.losses).toBe(0)
+    expect(after.winRate).toBe(1)
     expect(headToHead(useApp.getState().sessions, 'm1', 'm2').aWins).toBe(1)
+
+    // 상대(m2)쪽 통계도 같이 뒤집혀야 한다
+    const opponent = memberStats(useApp.getState().sessions).find((s) => s.memberId === 'm2')!
+    expect(opponent.wins).toBe(0)
+    expect(opponent.losses).toBe(1)
+    expect(opponent.winRate).toBe(0)
+    expect(headToHead(useApp.getState().sessions, 'm1', 'm2').bWins).toBe(0)
   })
 })
