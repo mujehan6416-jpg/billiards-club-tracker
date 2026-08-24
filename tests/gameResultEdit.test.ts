@@ -45,7 +45,7 @@ describe('validateGameResult — 경기 결과 입력 검증', () => {
   it('득점이 적용 핸디보다 크면 막는다', () => {
     const r = validateGameResult({ handicapA: 20, scoreA: 21, handicapB: 25, scoreB: 10 })
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.message).toBe('득점은 적용 핸디보다 클 수 없습니다.')
+    if (!r.ok) expect(r.message).toBe('입력 점수는 이 경기의 적용 핸디를 초과할 수 없습니다.')
   })
 
   it('상대 선수 득점이 적용 핸디보다 커도 막는다', () => {

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Member } from '../types'
+import { buildMemberLabels } from '../logic/memberLabel'
 
 interface Props {
   members: Member[]
@@ -23,7 +24,8 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
   const active = lastMember
     ? [lastMember, ...sorted.filter((m) => m.id !== lastMember.id)]
     : sorted
-  const [name, setName] = useState(lastMember?.name ?? '')
+  // 선택값은 이름이 아니라 회원 고유 ID다 — 동명이인이 있어도 각자 본인으로 로그인된다.
+  const [selectedId, setSelectedId] = useState(lastMember?.id ?? '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [showAdminModal, setShowAdminModal] = useState(false)
@@ -32,11 +34,13 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
 
   const logoSrc = (import.meta as unknown as { env: { BASE_URL: string } }).env.BASE_URL + 'ICON-SKKU.jpg'
 
-  const isGuest = name === '__guest__'
+  const isGuest = selectedId === '__guest__'
+  // 동명이인이 있을 때만 구분정보를 덧붙인 이름표 (없으면 기존처럼 이름만)
+  const labels = useMemo(() => buildMemberLabels(active), [active])
 
   const tryLogin = () => {
     if (isGuest) { onLogin('__guest__', 'GUEST'); return }
-    const member = active.find((m) => m.name === name)
+    const member = active.find((m) => m.id === selectedId)
     if (!member) { setError('이름을 선택해 주세요.'); return }
     const pw = member.password ?? '0000'
     if (password !== pw) { setError('비밀번호가 틀렸습니다.'); return }
@@ -89,19 +93,19 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
             fontSize: 15, lineHeight: 1.5, color: '#072B61', background: '#eef3fb',
             borderRadius: 8, padding: '10px 12px',
           }}>
-            👤 최근 로그인: <b>{lastMember.name}</b>
-            {name === lastMember.name && ' — 비밀번호만 입력하세요'}
+            👤 최근 로그인: <b>{labels.get(lastMember.id) ?? lastMember.name}</b>
+            {selectedId === lastMember.id && ' — 비밀번호만 입력하세요'}
           </div>
         )}
         <select
-          value={name}
-          onChange={(e) => { setName(e.target.value); setError('') }}
+          value={selectedId}
+          onChange={(e) => { setSelectedId(e.target.value); setError('') }}
           style={{ width: '100%' }}
         >
           <option value="">이름 선택</option>
           {active.map((m) => (
-            <option key={m.id} value={m.name}>
-              {m.name}{lastMember && m.id === lastMember.id ? ' (최근 로그인)' : ''}
+            <option key={m.id} value={m.id}>
+              {labels.get(m.id) ?? m.name}{lastMember && m.id === lastMember.id ? ' (최근 로그인)' : ''}
             </option>
           ))}
           <option value="__guest__">GUEST</option>

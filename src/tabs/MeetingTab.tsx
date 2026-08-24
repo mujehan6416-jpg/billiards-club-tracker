@@ -419,8 +419,15 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     const scoreA = Math.max(0, parseInt(o.scoreA || '0', 10) || 0)
     const scoreB = Math.max(0, parseInt(o.scoreB || '0', 10) || 0)
     if (scoreA > o.handicapA || scoreB > o.handicapB) {
-      alert('오류: 핸디보다 많은 점수 입력')
+      alert('입력 점수는 이 경기의 적용 핸디를 초과할 수 없습니다.')
       return
+    }
+    // 기본 핸디보다 높여서 치는 것은 그대로 진행하고, 낮춰서 치는 경우에만 한 번 확인한다.
+    for (const [id, applied] of [[o.aId, o.handicapA], [o.bId, o.handicapB]] as const) {
+      const base = memberMap.get(id)?.handicap
+      if (base !== undefined && applied < base) {
+        if (!window.confirm(`현재 기본 핸디는 ${base}입니다.\n${name(id)} 님의 적용 핸디를 ${applied}로 낮춰 진행하시겠습니까?`)) return
+      }
     }
     const endType = scoreA >= o.handicapA || scoreB >= o.handicapB ? 'cleared' : 'time'
     const isPending = isFlash && !isAdmin
@@ -657,6 +664,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
                 <CompletedGameEditor
                   game={g}
                   sessionId={session.id}
+                  sessionDate={session.date}
                   nameOf={name}
                   onDone={() => setEditGameId(null)}
                 />
@@ -687,7 +695,15 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
                 </button>
               )}
               {canEdit && (
-                <button className="del" onClick={() => deleteGame(session.id, g.id)} aria-label="삭제">✕</button>
+                <button
+                  className="del"
+                  aria-label="삭제"
+                  onClick={() => {
+                    // 완료된 경기 기록은 되돌릴 수 없으므로 반드시 한 번 확인한다.
+                    if (!window.confirm(`이 경기 기록을 삭제하시겠습니까?\n\n${name(g.playerAId)} vs ${name(g.playerBId)}`)) return
+                    deleteGame(session.id, g.id)
+                  }}
+                >✕</button>
               )}
             </li>
           )

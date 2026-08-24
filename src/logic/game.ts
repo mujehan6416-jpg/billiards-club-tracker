@@ -65,6 +65,6 @@ export function validateGameResult(input: {
   if (scoreA === null || scoreB === null) return { ok: false, message: '득점을 숫자로 입력해 주세요.' }
   if (handicapA < 1 || handicapB < 1) return { ok: false, message: '적용 핸디는 1 이상이어야 합니다.' }
   if (scoreA < 0 || scoreB < 0) return { ok: false, message: '득점은 0보다 작을 수 없습니다.' }
-  if (scoreA > handicapA || scoreB > handicapB) return { ok: false, message: '득점은 적용 핸디보다 클 수 없습니다.' }
+  if (scoreA > handicapA || scoreB > handicapB) return { ok: false, message: '입력 점수는 이 경기의 적용 핸디를 초과할 수 없습니다.' }
   return { ok: true, values: { handicapA, scoreA, handicapB, scoreB } }
 }

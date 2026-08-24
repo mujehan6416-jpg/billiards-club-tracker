@@ -56,7 +56,8 @@ export const useApp = create<Store>()(
               name,
               handicap,
               active: true,
-              handicapHistory: [{ value: handicap, changedAt: now() }],
+              // 첫 등록이라 prev는 없다(변경이 아니라 최초 지정).
+              handicapHistory: [{ value: handicap, changedAt: now(), source: 'admin' }],
             },
           ],
         })),
@@ -70,7 +71,14 @@ export const useApp = create<Store>()(
         set((s) => ({
           members: s.members.map((m) =>
             m.id === id
-              ? { ...m, handicap, handicapHistory: [...m.handicapHistory, { value: handicap, changedAt: now() }] }
+              ? {
+                  ...m,
+                  handicap,
+                  handicapHistory: [
+                    ...m.handicapHistory,
+                    { value: handicap, changedAt: now(), prev: m.handicap, source: 'admin' },
+                  ],
+                }
               : m,
           ),
         })),
@@ -232,7 +240,7 @@ export const useApp = create<Store>()(
             const id = nameMap.get(row.name)
             if (!id) continue
             if (!patches.has(id)) patches.set(id, [])
-            patches.get(id)!.push({ value: row.handicap, changedAt: row.date + 'T00:00:00.000Z' })
+            patches.get(id)!.push({ value: row.handicap, changedAt: row.date + 'T00:00:00.000Z', source: 'csv' })
           }
           const members = s.members.map((m) => {
             const newEntries = patches.get(m.id)
@@ -240,8 +248,12 @@ export const useApp = create<Store>()(
             const existingKeys = new Set(m.handicapHistory.map((h) => h.changedAt.slice(0, 10)))
             const toAdd = newEntries.filter((e) => !existingKeys.has(e.changedAt.slice(0, 10)))
             const merged = [...m.handicapHistory, ...toAdd].sort((a, b) => a.changedAt.localeCompare(b.changedAt))
-            const latest = merged[merged.length - 1]
-            return { ...m, handicapHistory: merged, handicap: latest.value }
+            // 날짜순으로 줄을 세운 뒤 바로 앞 항목의 값을 prev로 채운다(새로 들어온 항목만).
+            const withPrev = merged.map((h, i) =>
+              toAdd.includes(h) && i > 0 ? { ...h, prev: merged[i - 1].value } : h,
+            )
+            const latest = withPrev[withPrev.length - 1]
+            return { ...m, handicapHistory: withPrev, handicap: latest.value }
           })
           return { members }
         }),
@@ -255,7 +267,7 @@ export const useApp = create<Store>()(
             name: r.name,
             handicap: r.handicap,
             active: true,
-            handicapHistory: [{ value: r.handicap, changedAt: now() }],
+            handicapHistory: [{ value: r.handicap, changedAt: now(), source: 'csv' as const }],
           }))
           // 기존 회원 핸디 업데이트 (이름 일치)
           const updated = s.members.map((m) => {
@@ -264,7 +276,10 @@ export const useApp = create<Store>()(
             return {
               ...m,
               handicap: row.handicap,
-              handicapHistory: [...m.handicapHistory, { value: row.handicap, changedAt: now() }],
+              handicapHistory: [
+                ...m.handicapHistory,
+                { value: row.handicap, changedAt: now(), prev: m.handicap, source: 'csv' as const },
+              ],
             }
           })
           return { members: [...updated, ...newMembers] }

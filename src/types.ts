@@ -1,6 +1,22 @@
+/** 핸디 변경 경로. admin=관리자가 화면에서 직접, csv=파일 불러오기, auto=프로그램 자동(현재 미사용) */
+export type HandicapChangeSource = 'admin' | 'csv' | 'auto'
+
 export interface HandicapChange {
-  value: number
+  value: number // 변경 후 핸디
   changedAt: string // ISO datetime
+  /**
+   * 아래 네 필드는 전부 optional이다 — 이 필드들이 생기기 전에 저장된 기존 이력은 값이 없는
+   * 상태로 그대로 읽히고, 화면은 값이 있을 때만 표시한다(마이그레이션하지 않는다).
+   */
+  prev?: number // 변경 전 핸디 (첫 등록이면 없음)
+  reason?: string // 변경 사유
+  source?: HandicapChangeSource // 변경 경로
+  /**
+   * 변경한 관리자 ID. 신뢰할 수 있는 관리자 신원(Firebase Authentication)이 확보된 경우에만 채운다.
+   * 현재 앱 전체 관리자 모드는 기기 localStorage의 PIN 비교라 신원을 보증할 수 없으므로,
+   * PIN 정보를 관리자 ID처럼 저장하지 않고 이 필드를 비워 둔다.
+   */
+  byAdminId?: string
 }
 
 export interface Member {
@@ -10,6 +26,12 @@ export interface Member {
   handicapHistory: HandicapChange[]
   active: boolean
   password?: string // 미설정시 기본값 '0000'
+  /**
+   * 동명이인을 사람이 구분하기 위한 자유 문자열(예: '90학번 · 경영'). 표시 전용이며 시스템의
+   * 회원 식별은 언제나 id로만 한다. 학교·동문회 구조에 종속되지 않도록 형식을 강제하지 않는다.
+   * 없으면(기존 회원 포함) 이름만 표시한다.
+   */
+  displayTag?: string
 }
 
 export type GameEndType = 'cleared' | 'time'

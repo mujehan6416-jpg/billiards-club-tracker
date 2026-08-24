@@ -274,7 +274,14 @@ function HandicapEditCard({ members }: { members: Member[] }) {
     // 같은 날짜 기존 항목은 덮어쓰기 (applyHandicapCsv는 중복 날짜 건너뜀)
     const changedAt = date + 'T00:00:00.000Z'
     const filtered = m.handicapHistory.filter((h) => h.changedAt.slice(0, 10) !== date)
-    const newHistory = [...filtered, { value: hv, changedAt }]
+    // 지정한 날짜 바로 앞 이력의 값이 이 변경의 "변경 전" 핸디다(과거 날짜로도 넣을 수 있으므로
+    // 현재 핸디가 아니라 날짜 순서를 기준으로 찾는다). 앞 이력이 없으면 첫 등록이라 prev를 비운다.
+    const before = [...filtered]
+      .filter((h) => h.changedAt < changedAt)
+      .sort((a, b) => a.changedAt.localeCompare(b.changedAt))
+      .pop()
+    const entry = { value: hv, changedAt, source: 'admin' as const, ...(before ? { prev: before.value } : {}) }
+    const newHistory = [...filtered, entry]
       .sort((a, b) => a.changedAt.localeCompare(b.changedAt))
     // 이력 중 가장 최신 날짜의 값이 현재 핸디
     const latestHandicap = newHistory[newHistory.length - 1].value

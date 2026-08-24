@@ -6,6 +6,7 @@ import type { Member } from '../types'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
 import { saveToServer } from '../lib/autoSave'
+import { buildMemberLabels } from '../logic/memberLabel'
 
 function calcRanks(members: Member[]): Map<string, number> {
   const active = members.filter((m) => m.active)
@@ -209,6 +210,7 @@ export function MembersTab() {
   const [editId, setEditId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editHcap, setEditHcap] = useState(20)
+  const [editTag, setEditTag] = useState('')
   const [detailId, setDetailId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   // 서버 저장에 실패했을 때만 보여주는 안내(성공은 조용히 넘어간다 — 매번 알리면 방해가 된다)
@@ -221,6 +223,9 @@ export function MembersTab() {
   const statOf = (id: string) => stats.find((s) => s.memberId === id)
 
   const rankMap = useMemo(() => calcRanks(members), [members])
+  // 동명이인이 있을 때만 구분정보가 붙은 이름표 (없으면 기존처럼 이름만)
+  const labels = useMemo(() => buildMemberLabels(members), [members])
+  const labelOf = (m: Member) => labels.get(m.id) ?? m.name
   const activeCount = members.filter((m) => m.active).length
 
   const ROLES: Record<string, string> = {
@@ -256,13 +261,17 @@ export function MembersTab() {
   const listSource = me ? sorted.filter((m) => m.id !== me.id) : sorted
   const searchTerm = search.trim()
   const filtered = searchTerm
-    ? listSource.filter((m) => m.name.includes(searchTerm) || (ROLES[m.name] ?? '').includes(searchTerm))
+    ? listSource.filter((m) =>
+        m.name.includes(searchTerm) ||
+        (m.displayTag ?? '').includes(searchTerm) ||
+        (ROLES[m.name] ?? '').includes(searchTerm))
     : listSource
 
-  const startEdit = (id: string, curName: string, curHcap: number) => {
+  const startEdit = (id: string, curName: string, curHcap: number, curTag: string) => {
     setEditId(id)
     setEditName(curName)
     setEditHcap(curHcap)
+    setEditTag(curTag)
     setDetailId(null)
   }
 
@@ -279,8 +288,10 @@ export function MembersTab() {
     const trimmed = editName.trim()
     if (!trimmed) return
     const cur = members.find((m) => m.id === id)
+    const tag = editTag.trim()
     applyAndSave(() => {
-      updateMember(id, { name: trimmed })
+      // 구분정보를 비우면 필드 자체를 지워 기존(=구분정보 없는) 회원과 같은 상태로 되돌린다.
+      updateMember(id, { name: trimmed, displayTag: tag || undefined })
       if (cur && editHcap !== cur.handicap) setHandicap(id, editHcap)
     })
     setEditId(null)
@@ -312,7 +323,7 @@ export function MembersTab() {
         <div className="card member-hero">
           <span className="hero-badge">내 실적</span>
           <MemberCardBody
-            displayName={me.name}
+            displayName={labelOf(me)}
             roleLabel={roleOf(me)}
             handicap={me.handicap}
             stat={statOf(me.id)}
@@ -361,6 +372,14 @@ export function MembersTab() {
                           onChange={(e) => setEditHcap(Math.max(1, +e.target.value))}
                         />
                       </label>
+                      <input
+                        style={{ width: '100%' }}
+                        value={editTag}
+                        placeholder="같은 이름 구분 (예: 90학번 · 경영)"
+                        aria-label="같은 이름 구분정보"
+                        onChange={(e) => setEditTag(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(m.id) }}
+                      />
                     </div>
                     <button className="primary" disabled={!editName.trim()} onClick={() => saveEdit(m.id)}>저장</button>
                     <button onClick={() => setEditId(null)}>취소</button>
@@ -372,7 +391,7 @@ export function MembersTab() {
                       onClick={() => !isGuest && toggleDetail(m.id)}
                     >
                       <MemberCardBody
-                        displayName={blind(m.name)}
+                        displayName={blind(labelOf(m))}
                         roleLabel={roleOf(m)}
                         handicap={m.handicap}
                         stat={st}
@@ -381,7 +400,7 @@ export function MembersTab() {
                     </div>
                     {isAdmin && (
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button style={{ flex: 1, fontSize: 12 }} onClick={() => startEdit(m.id, m.name, m.handicap)}>수정</button>
+                        <button style={{ flex: 1, fontSize: 12 }} onClick={() => startEdit(m.id, m.name, m.handicap, m.displayTag ?? '')}>수정</button>
                         <button style={{ flex: 1, fontSize: 12 }} onClick={() => applyAndSave(() => setActive(m.id, !m.active))}>{m.active ? '비활성' : '활성'}</button>
                       </div>
                     )}
