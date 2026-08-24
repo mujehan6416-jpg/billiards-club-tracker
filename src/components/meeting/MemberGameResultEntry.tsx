@@ -31,7 +31,7 @@ function MatchResultRow({ session, match, game, opponentName }: {
     const sA = Math.max(0, parseInt(scoreA || '0', 10) || 0)
     const sB = Math.max(0, parseInt(scoreB || '0', 10) || 0)
     if (sA > match.handicapA || sB > match.handicapB) {
-      alert('오류: 핸디보다 많은 점수 입력')
+      alert('입력 점수는 이 경기의 적용 핸디를 초과할 수 없습니다.')
       return
     }
     const endType: Game['endType'] = sA >= match.handicapA || sB >= match.handicapB ? 'cleared' : 'time'

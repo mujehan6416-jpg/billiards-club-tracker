@@ -121,7 +121,7 @@ describe('MemberGameResultEntry — 경기 참가자 본인 결과 입력', () =
     fireEvent.change(screen.getByPlaceholderText('내 득점'), { target: { value: '25' } })
     fireEvent.click(screen.getByText('결과 제출'))
 
-    expect(alertSpy).toHaveBeenCalledWith('오류: 핸디보다 많은 점수 입력')
+    expect(alertSpy).toHaveBeenCalledWith('입력 점수는 이 경기의 적용 핸디를 초과할 수 없습니다.')
     expect(useApp.getState().sessions.find((s) => s.id === 'session-1')!.games).toHaveLength(0)
     expect(uploadToCloudMock).not.toHaveBeenCalled()
     alertSpy.mockRestore()
