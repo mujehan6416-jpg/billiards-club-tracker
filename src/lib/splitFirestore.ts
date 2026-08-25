@@ -1,9 +1,10 @@
 import { collection, doc, getDoc, getDocs, setDoc, writeBatch } from 'firebase/firestore'
 import { db } from './firebase'
-import type { Game, LedgerRecord } from '../types'
+import type { AppState, Game, LedgerRecord } from '../types'
 import type {
-  ClubConfig, MemberPrivate, PublicMember, SessionDoc, SplitFirestoreData,
+  ClubConfig, MemberPrivate, PublicMember, SessionDoc, SplitFirestoreData, SplitGame,
 } from '../types/splitFirestore'
+import { mergeSplitToAppState } from '../logic/splitAppState'
 
 /**
  * 분리된 Firestore 구조 접근 어댑터.
@@ -62,6 +63,44 @@ export async function fetchGames(sessionId: string, clubId = DEFAULT_CLUB_ID): P
 export async function fetchLedger(clubId = DEFAULT_CLUB_ID): Promise<LedgerRecord[]> {
   const snap = await getDocs(ledgerCol(clubId))
   return snap.docs.map((d) => d.data() as LedgerRecord)
+}
+
+/**
+ * split 경로 전체를 읽어 legacy AppState 모양으로 다시 합친다.
+ *
+ * ⚠ 이 함수는 아직 앱 부팅 흐름에 연결돼 있지 않다(호출하는 곳 없음). USE_SPLIT_FIRESTORE가
+ * false인 동안에는 이 함수가 있어도 실제로 쓰이지 않는다 — split "쓰기" 경로가 아직 일반회원
+ * 기기에는 열려 있지 않아서(현재 split Rules는 members/sessions/games/ledger write를
+ * 관리자에게만 허용한다), 지금 이 함수로 읽기를 전환하면 회원이 만든 새 변경이 split에는
+ * 반영되지 않아 다음 접속 때 사라진 것처럼 보일 수 있다. 이 문제가 먼저 해결된 뒤에
+ * App.tsx 부팅 흐름에서 이 함수를 호출하도록 연결해야 한다.
+ *
+ * Firestore 컬렉션 조회는 저장 순서를 보장하지 않는다 — 화면들은 이미 필요한 곳마다
+ * 자체적으로 정렬(.sort())하므로 이 함수는 순서를 맞추지 않고 그대로 돌려준다.
+ */
+export async function loadSplitAppState(clubId = DEFAULT_CLUB_ID): Promise<AppState> {
+  const [config, members, sessions, ledger] = await Promise.all([
+    fetchConfig(clubId),
+    fetchMembers(clubId),
+    fetchSessions(clubId),
+    fetchLedger(clubId),
+  ])
+
+  const gamesBySession = await Promise.all(
+    sessions.map(async (s): Promise<SplitGame[]> => {
+      const games = await fetchGames(s.id, clubId)
+      return games.map((game) => ({ sessionId: s.id, game }))
+    }),
+  )
+
+  return mergeSplitToAppState({
+    config: config ?? { lastBackupAt: null },
+    members,
+    memberPrivate: [], // mergeSplitToAppState는 memberPrivate를 쓰지 않는다
+    sessions,
+    games: gamesBySession.flat(),
+    ledger,
+  })
 }
 
 // ── 쓰기 ────────────────────────────────────────────────────────────
