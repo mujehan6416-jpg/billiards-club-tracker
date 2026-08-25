@@ -71,7 +71,10 @@ export const useAdminAuthStore = create<AdminAuthState>()((set) => ({
 
   init: () => {
     const unsubscribe = subscribeAuthState((user) => {
-      if (!user) {
+      // 익명 사용자(lib/appAuth.ts가 앱 시작 시 확보하는 기기 인증)는 관리자 후보가 아니다.
+      // 이걸 걸러내지 않으면 관리자가 로그인하기도 전에 admins 문서를 찾다 실패해서
+      // "관리자 권한이 없습니다" 오류가 먼저 뜬다 — 로그인 화면을 그대로 보여줘야 한다.
+      if (!user || user.isAnonymous) {
         set({ status: 'unauthenticated', uid: null, email: null, adminDisplayName: null, errorMessage: null })
         return
       }

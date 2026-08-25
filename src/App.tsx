@@ -11,6 +11,7 @@ import { useAdmin } from './store/adminStore'
 import { useAuth } from './store/authStore'
 import { useApp } from './store/appStore'
 import { downloadFromCloud, markSynced } from './lib/cloudSync'
+import { ensureAppAuth, keepAppAuthAlive } from './lib/appAuth'
 
 // 'settlement'은 일부러 TABS(하단 탭바) 배열에 넣지 않는다 — 일반 회원 화면에는 전혀 노출되지 않고,
 // 아래 TopBar의 관리자 모드(PIN) 전용 버튼으로만 진입 가능하다.
@@ -117,6 +118,9 @@ function TopBar({ onOpenSettlement }: { onOpenSettlement: () => void }) {
 export function App() {
   const [tab, setTab] = useState<Tab>('home')
   const [syncing, setSyncing] = useState(true)
+  // 서버 인증(익명)을 확보하지 못한 상태 — 이때는 데이터를 내려받지 않고 안내 화면을 보여준다
+  const [authFailed, setAuthFailed] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
   const [exitReady, setExitReady] = useState(false)
   const [backToast, setBackToast] = useState(false)
   const { memberId, logout: memberLogout } = useAuth()
@@ -131,12 +135,27 @@ export function App() {
   // 탭 안에서 로그아웃 후 재로그인하면(페이지 새로고침 없이) 재조회가 전혀 일어나지 않아
   // 다른 기기가 그 사이 저장한 최신 결과가 보이지 않는 문제가 있었다(재접속 시 결과 미표시).
   useEffect(() => {
+    let cancelled = false
     setSyncing(true)
+    setAuthFailed(false)
     cleanupOldPending()
-    downloadFromCloud()
-      .then((cloud) => {
-        if (!cloud) return
-        // 이 기기에 클라우드보다 많은 기록이 있으면(업로드 누락 가능성) 덮어쓰기 전에 확인
+
+    const run = async () => {
+      // ① 서버 인증(익명)을 먼저 확보한다. 실패하면 서버 데이터를 내려받지 않는다 —
+      //    지금은 규칙이 공개라 받아올 수는 있지만, 인증 없이 도는 상태를 남기지 않는다.
+      try {
+        await ensureAppAuth()
+      } catch {
+        if (!cancelled) { setAuthFailed(true); setSyncing(false) }
+        return
+      }
+      if (cancelled) return
+
+      // ② 인증이 끝난 뒤에만 서버 데이터를 내려받는다(다운로드 실패는 기존과 동일하게 넘어간다).
+      try {
+        const cloud = await downloadFromCloud()
+        if (cancelled || !cloud) return
+        // 이 기기에 서버보다 많은 기록이 있으면(업로드 누락 가능성) 덮어쓰기 전에 확인
         const local = useApp.getState()
         const gameCount = (ss: { games: unknown[] }[]) => ss.reduce((n, s) => n + s.games.length, 0)
         const localAhead =
@@ -148,10 +167,19 @@ export function App() {
         )) return
         replaceAll(cloud.state)
         markSynced(cloud.updatedAt)
-      })
-      .catch(() => {})
-      .finally(() => setSyncing(false))
-  }, [memberId])
+      } catch {
+        // 네트워크 오류 등 — 기존 동작 그대로 이 기기에 저장된 내용으로 계속 사용한다
+      } finally {
+        if (!cancelled) setSyncing(false)
+      }
+    }
+
+    void run()
+    return () => { cancelled = true }
+  }, [memberId, retryCount])
+
+  // 관리자가 정산에서 로그아웃하면 Firebase 사용자가 사라지므로 익명 인증을 다시 확보한다.
+  useEffect(() => keepAppAuthAlive(), [])
 
   // 안드로이드 뒤로 가기 버튼 — 2회 연속 눌러야 종료
   useEffect(() => {
@@ -177,12 +205,28 @@ export function App() {
     }
   }, [])
 
+  if (authFailed) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f4f5f3', flexDirection: 'column', gap: 14, padding: '0 24px' }}>
+        <div style={{ fontSize: 28 }}>🎱</div>
+        <div style={{ fontSize: 14, color: '#072B61', fontWeight: 500 }}>당신회</div>
+        <div style={{ fontSize: 15, color: '#c0392b', textAlign: 'center', lineHeight: 1.6 }}>
+          서버 연결을 준비하지 못했습니다.<br />인터넷 연결을 확인한 뒤 다시 시도해 주세요.
+        </div>
+        <button className="primary" style={{ fontSize: 16, padding: '12px 26px' }}
+          onClick={() => setRetryCount((n) => n + 1)}>
+          다시 시도
+        </button>
+      </div>
+    )
+  }
+
   if (syncing) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f4f5f3', flexDirection: 'column', gap: 12 }}>
         <div style={{ fontSize: 28 }}>🎱</div>
         <div style={{ fontSize: 14, color: '#072B61', fontWeight: 500 }}>당신회</div>
-        <div style={{ fontSize: 12, color: '#aaa' }}>데이터 동기화 중...</div>
+        <div style={{ fontSize: 12, color: '#aaa' }}>서버 연결 준비 중...</div>
       </div>
     )
   }
