@@ -16,6 +16,16 @@ export const UID_MEMBER_B = 'uid-member-b'
 export const UID_ADMIN_ACTIVE = 'uid-admin-active'
 export const UID_ADMIN_DISABLED = 'uid-admin-disabled'
 
+// ── split Firestore 구조(보안 4단계) 테스트 전용 가상 값 ────────────────
+export const SPLIT_CLUB_ID = 'skkubc'
+export const CLUB_A = 'club-a'
+export const CLUB_B = 'club-b'
+export const MEMBER_ID_1 = 'member-001'
+export const MEMBER_ID_2 = 'member-002'
+export const UID_UNLINKED = 'uid-unlinked'
+export const UID_MEMBER_ACTIVE = 'uid-member-active'
+export const UID_MEMBER_INACTIVE = 'uid-member-inactive'
+
 /**
  * Firestore Emulator 연결을 시도하고, 실패하면 null을 돌려준다.
  * 로컬에 emulator가 떠 있지 않을 때(예: Java 버전 문제) 이 파일의 Rules 테스트 전체를
@@ -47,5 +57,21 @@ export async function createRulesTestEnv(): Promise<RulesTestEnvironment | null>
 export async function seedAdmin(testEnv: RulesTestEnvironment, uid: string, active: boolean): Promise<void> {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     await context.firestore().doc(`admins/${uid}`).set({ active })
+  })
+}
+
+/** clubs/{clubId}/memberLinks/{uid} 문서를 Rules 우회로 직접 심는다 (테스트 fixture 전용). */
+export async function seedMemberLink(
+  testEnv: RulesTestEnvironment,
+  clubId: string,
+  uid: string,
+  memberId: string,
+  active: boolean,
+): Promise<void> {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context
+      .firestore()
+      .doc(`clubs/${clubId}/memberLinks/${uid}`)
+      .set({ memberId, role: 'member', active, linkedAt: '2026-08-26T00:00:00+09:00' })
   })
 }

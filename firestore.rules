@@ -10,6 +10,22 @@ service cloud.firestore {
         ).data.active == true;
     }
 
+    // ── split Firestore 구조(보안 4단계) 전용 helper ────────────────────
+    // 주의: isAdmin()과 달리 exists()를 먼저 확인한다 — memberLinks 문서가
+    // 없는(=연결 안 된) 사용자가 대부분일 것이므로, 그 경우 get().data 접근으로
+    // Null value 평가 오류를 만들지 않고 곧바로 false로 판정한다.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasActiveMemberLink(clubId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/clubs/$(clubId)/memberLinks/$(request.auth.uid))
+        && get(
+          /databases/$(database)/documents/clubs/$(clubId)/memberLinks/$(request.auth.uid)
+        ).data.active == true;
+    }
+
     match /clubs/skkubc {
       allow read, write: if true;
     }
@@ -56,6 +72,45 @@ service cloud.firestore {
     match /clubs/{clubId}/memberLinks/{firebaseUid} {
       allow get: if request.auth != null && request.auth.uid == firebaseUid;
       allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── split Firestore 구조 (보안 4단계) ──────────────────────────────
+    // 아직 앱은 이 경로를 쓰지 않는다(USE_SPLIT_FIRESTORE=false, 실제 데이터 없음).
+    // legacy clubs/{clubId} 공개 문서와 완전히 별개로, 새 구조는 처음부터
+    // "연결된 활성 회원 = 조회만, 관리자 = 전체" 최소 권한으로 설계한다.
+    //
+    // 주의: isAdmin()은 top-level admins/{uid} 기반 전역 관리자 판정이라, 활성 관리자는
+    // 아래 모든 clubId의 split 데이터에 접근할 수 있다(club별 관리자 분리가 아직 없음).
+    // 이는 향후 멀티클럽 권한 모델에서 별도로 다룬다(tests/rules/splitMultiClubIsolation.rules.test.ts 참고).
+
+    match /clubs/{clubId}/config/main {
+      allow get: if hasActiveMemberLink(clubId) || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /clubs/{clubId}/members/{memberId} {
+      allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /clubs/{clubId}/memberPrivate/{memberId} {
+      allow get, list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /clubs/{clubId}/sessions/{sessionId} {
+      allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
+      allow create, update, delete: if isAdmin();
+
+      match /games/{gameId} {
+        allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
+        allow create, update, delete: if isAdmin();
+      }
+    }
+
+    match /clubs/{clubId}/ledger/{recordId} {
+      allow get, list: if isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
