@@ -5,6 +5,8 @@ import { useAuth } from '../store/authStore'
 import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv, importGameCsv } from '../lib/backup'
 import { uploadToCloud, downloadFromCloud, markSynced, UploadCancelledError } from '../lib/cloudSync'
 import { saveToServer } from '../lib/autoSave'
+import { DeviceLinkCard } from '../components/memberLink/DeviceLinkCard'
+import { DeviceLinkAdminCard } from '../components/memberLink/DeviceLinkAdminCard'
 import { todayStr } from '../lib/date'
 import { winnerId } from '../logic/game'
 import { fmtScore } from '../lib/format'
@@ -552,6 +554,9 @@ export function SettingsTab() {
       {/* 내 비밀번호 변경 (일반회원 항상 표시, GUEST 제외) */}
       {!isGuest && <MyPasswordCard open={myPwOpen} onToggle={() => setMyPwOpen((v) => !v)} />}
 
+      {/* 이 기기 연결 (일반회원) — 아직 부가 기능이라, 연결하지 않아도 앱은 그대로 쓸 수 있다 */}
+      {!isGuest && <DeviceLinkCard />}
+
       {!isGuest && isAdmin && (
         <>
           {/* 1. 번개모임 세션 승인 대기 (맨 위) */}
@@ -565,6 +570,9 @@ export function SettingsTab() {
 
           {/* 4. 회원 관리 — 회원 비밀번호 (관리자) */}
           <AdminMemberPwCard members={members} />
+
+          {/* 4-1. 회원 관리 — 기기 연결 승인 (Firebase 관리자 인증 필요) */}
+          <DeviceLinkAdminCard />
 
           {/* 5. 데이터 관리 — 회원·경기·모임·회계 변경은 이제 자동으로 서버에 저장되므로,
               평소에 눌러야 하는 버튼은 "서버 내용 받기"뿐이다. 수동 올리기는 지우지 않고 남겨

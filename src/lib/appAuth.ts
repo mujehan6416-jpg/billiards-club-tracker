@@ -58,6 +58,15 @@ export async function ensureAppAuth(): Promise<void> {
 }
 
 /**
+ * 지금 이 기기의 Firebase UID. 인증 전이면 null.
+ * 회원-기기 연결(memberLinks)에서 "이 기기"를 가리키는 값으로만 쓰고,
+ * 화면에 표시하거나 Member.id 대신 쓰지 않는다.
+ */
+export function currentAuthUid(): string | null {
+  return auth.currentUser?.uid ?? null
+}
+
+/**
  * 관리자가 정산 화면에서 로그아웃하면 Firebase 사용자가 아예 없어져, 그 뒤로는 일반 데이터
  * 동기화까지 인증 없는 상태가 된다(다음 단계에서 규칙을 잠그면 앱이 멈춘다).
  * 그래서 사용자가 사라지면 익명 인증을 다시 확보한다.

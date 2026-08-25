@@ -24,6 +24,41 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // ── 회원-기기 연결 (보안 강화 2단계) ───────────────────────────────
+    // 기존 clubs/skkubc 문서 규칙은 그대로 두고, 새 경로만 추가로 연다.
+    // 이번 단계에서는 이 연결이 기존 데이터 접근 권한에 아직 쓰이지 않는다(기반만 마련).
+
+    // 연결 요청: 회원이 자기 UID 문서 하나만 만들 수 있다.
+    match /clubs/{clubId}/linkRequests/{firebaseUid} {
+      // 자기 요청만 확인할 수 있고, 전체 목록은 관리자만 볼 수 있다.
+      allow get: if request.auth != null && request.auth.uid == firebaseUid;
+      allow list: if isAdmin();
+
+      // 요청자가 쓸 수 있는 값은 memberId·requestedAt 두 개뿐이다.
+      // role·active·승인정보를 끼워 넣어 스스로 관리자가 되는 것을 막는다.
+      allow create: if request.auth != null
+        && request.auth.uid == firebaseUid
+        && request.resource.data.keys().hasOnly(['memberId', 'requestedAt'])
+        && request.resource.data.memberId is string
+        && request.resource.data.memberId.size() > 0
+        && request.resource.data.memberId.size() < 200
+        && request.resource.data.requestedAt is string;
+
+      // 만든 요청을 나중에 다른 회원으로 바꿔치기할 수 없다 — 취소하고 다시 요청해야 한다.
+      allow update: if false;
+
+      // 본인은 취소할 수 있고, 관리자는 승인·거절 처리 과정에서 지운다.
+      allow delete: if isAdmin()
+        || (request.auth != null && request.auth.uid == firebaseUid);
+    }
+
+    // 연결 기록: 만들고 바꾸는 것은 Firebase 관리자만 할 수 있다.
+    match /clubs/{clubId}/memberLinks/{firebaseUid} {
+      allow get: if request.auth != null && request.auth.uid == firebaseUid;
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
