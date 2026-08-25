@@ -7,6 +7,7 @@ import { uploadToCloud, downloadFromCloud, markSynced, UploadCancelledError } fr
 import { saveToServer } from '../lib/autoSave'
 import { DeviceLinkCard } from '../components/memberLink/DeviceLinkCard'
 import { DeviceLinkAdminCard } from '../components/memberLink/DeviceLinkAdminCard'
+import { SplitMigrationCard } from '../components/admin/SplitMigrationCard'
 import { todayStr } from '../lib/date'
 import { winnerId } from '../logic/game'
 import { fmtScore } from '../lib/format'
@@ -573,6 +574,10 @@ export function SettingsTab() {
 
           {/* 4-1. 회원 관리 — 기기 연결 승인 (Firebase 관리자 인증 필요) */}
           <DeviceLinkAdminCard />
+
+          {/* 4-2. 새 저장 구조로 데이터 복사 (Firebase 관리자 인증 필요).
+              기존 데이터는 그대로 두고 같은 내용을 한 벌 더 복사만 한다. */}
+          <SplitMigrationCard />
 
           {/* 5. 데이터 관리 — 회원·경기·모임·회계 변경은 이제 자동으로 서버에 저장되므로,
               평소에 눌러야 하는 버튼은 "서버 내용 받기"뿐이다. 수동 올리기는 지우지 않고 남겨

@@ -1,7 +1,9 @@
 import type { AppState } from '../types'
 import type { SplitFirestoreData, SplitValidation } from '../types/splitFirestore'
 import { splitLegacyAppState, validateSplit } from '../logic/splitAppState'
-import { writeAllSplitData, DEFAULT_CLUB_ID } from './splitFirestore'
+import {
+  writeAllSplitData, DEFAULT_CLUB_ID, fetchConfig, fetchMembers, fetchSessions, fetchGames, fetchLedger,
+} from './splitFirestore'
 
 /**
  * 기존 AppState를 새 Firestore 구조로 옮기는 작업.
@@ -108,4 +110,128 @@ export async function executeMigration(
 
   const count = await writeAllSplitData(plan.split, clubId)
   return { written: true, documentCount: count, validation: plan.validation }
+}
+
+/**
+ * 관리자 화면에서 실제 복사를 실행할 때 쓰는 입구.
+ *
+ * executeMigration()의 안전장치(dry-run 기본값·확인 문구·검증 게이트)를 그대로 쓰면서,
+ * "Firebase 관리자로 인증된 상태"라는 조건을 하나 더 요구한다. 기기 localStorage의
+ * 관리자 PIN은 서버가 신뢰할 수 없으므로 이 값으로 쓸 수 없다 — 반드시 Firebase
+ * Authentication으로 확인된 UID여야 한다(Firestore 규칙도 같은 기준으로 막고 있다).
+ *
+ * 실패해도 legacy(clubs/{clubId} 단일 문서)는 건드리지 않는다. 이 함수는 새 split 경로에
+ * "복사"만 하며, 기존 데이터를 지우거나 고치지 않는다.
+ */
+export async function runAdminMigration(
+  state: AppState,
+  options: { adminUid?: string | null; confirmPhrase?: string; clubId?: string } = {},
+): Promise<MigrationResult> {
+  const { adminUid, confirmPhrase, clubId } = options
+
+  if (!adminUid) {
+    return {
+      written: false,
+      documentCount: prepareMigration(state).documentCounts.total,
+      validation: prepareMigration(state).validation,
+      skippedReason: '관리자 로그인이 확인되지 않아 실행하지 않았습니다.',
+    }
+  }
+
+  return executeMigration(state, { dryRun: false, confirmPhrase, clubId })
+}
+
+/** 복사가 끝난 뒤, 새 구조에서 다시 읽어 legacy와 개수·ID가 맞는지 확인한 결과. */
+export interface MigrationVerification {
+  ok: boolean
+  counts: {
+    config: { legacy: number; split: number }
+    members: { legacy: number; split: number }
+    sessions: { legacy: number; split: number }
+    games: { legacy: number; split: number }
+    ledger: { legacy: number; split: number }
+  }
+  /** legacy에는 있는데 새 구조에서 찾지 못한 항목 수. */
+  missing: number
+  /** 개수는 맞지만 값이 다른 항목 수(현재는 ID 기준). */
+  mismatched: number
+  /** 사람이 읽을 수 있는 문제 목록. 개인정보는 담지 않고 개수·종류만 적는다. */
+  issues: string[]
+}
+
+/**
+ * 실제 복사가 끝난 뒤 새 split 경로를 다시 읽어 legacy와 맞는지 확인한다.
+ *
+ * 읽기만 한다 — 어떤 문서도 쓰거나 지우지 않는다.
+ * 결과에는 회원 이름·경기 내용 같은 실제 값을 담지 않고 개수와 ID 일치 여부만 담는다.
+ */
+export async function verifyMigration(
+  state: AppState,
+  clubId = DEFAULT_CLUB_ID,
+): Promise<MigrationVerification> {
+  const [config, members, sessions, ledger] = await Promise.all([
+    fetchConfig(clubId),
+    fetchMembers(clubId),
+    fetchSessions(clubId),
+    fetchLedger(clubId),
+  ])
+
+  // 경기는 모임별 하위 컬렉션이라 모임 수만큼 나눠 읽는다.
+  const gamesBySession = await Promise.all(
+    sessions.map(async (s) => ({ sessionId: s.id, games: await fetchGames(s.id, clubId) })),
+  )
+  const splitGameCount = gamesBySession.reduce((n, g) => n + g.games.length, 0)
+  const legacyGameCount = state.sessions.reduce((n, s) => n + s.games.length, 0)
+
+  const counts = {
+    config: { legacy: 1, split: config ? 1 : 0 },
+    members: { legacy: state.members.length, split: members.length },
+    sessions: { legacy: state.sessions.length, split: sessions.length },
+    games: { legacy: legacyGameCount, split: splitGameCount },
+    ledger: { legacy: state.ledger.length, split: ledger.length },
+  }
+
+  const issues: string[] = []
+  let missing = 0
+  let mismatched = 0
+
+  for (const [name, c] of Object.entries(counts)) {
+    if (c.split < c.legacy) {
+      missing += c.legacy - c.split
+      issues.push(`${name}: ${c.legacy}건 중 ${c.split}건만 확인됩니다.`)
+    } else if (c.split > c.legacy) {
+      mismatched += c.split - c.legacy
+      issues.push(`${name}: 새 구조에 ${c.split - c.legacy}건이 더 있습니다.`)
+    }
+  }
+
+  // ID 대조 — 개수가 같아도 다른 문서가 들어가 있을 수 있다.
+  const splitMemberIds = new Set(members.map((m) => m.id))
+  const memberIdMisses = state.members.filter((m) => !splitMemberIds.has(m.id)).length
+  if (memberIdMisses > 0) {
+    missing += memberIdMisses
+    issues.push(`회원 ID ${memberIdMisses}건을 새 구조에서 찾지 못했습니다.`)
+  }
+
+  const splitSessionIds = new Set(sessions.map((s) => s.id))
+  const sessionIdMisses = state.sessions.filter((s) => !splitSessionIds.has(s.id)).length
+  if (sessionIdMisses > 0) {
+    missing += sessionIdMisses
+    issues.push(`모임 ID ${sessionIdMisses}건을 새 구조에서 찾지 못했습니다.`)
+  }
+
+  const splitLedgerIds = new Set(ledger.map((r) => r.id))
+  const ledgerIdMisses = state.ledger.filter((r) => !splitLedgerIds.has(r.id)).length
+  if (ledgerIdMisses > 0) {
+    missing += ledgerIdMisses
+    issues.push(`회계 ID ${ledgerIdMisses}건을 새 구조에서 찾지 못했습니다.`)
+  }
+
+  // 비밀번호가 새 구조로 새어 들어갔는지 — 복사 후에도 반드시 확인한다.
+  if (members.some((m) => 'password' in m)) {
+    mismatched += 1
+    issues.push('새 구조 회원 문서에 비밀번호가 들어 있습니다.')
+  }
+
+  return { ok: issues.length === 0, counts, missing, mismatched, issues }
 }
