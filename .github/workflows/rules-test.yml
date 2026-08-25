@@ -1,0 +1,41 @@
+name: Firestore Rules Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firestore.rules'
+      - 'firebase.json'
+      - 'tests/rules/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/rules-test.yml'
+  pull_request:
+    paths:
+      - 'firestore.rules'
+      - 'firebase.json'
+      - 'tests/rules/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/rules-test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  rules-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # firebase-tools 15.x의 Firestore Emulator는 Java 21 미만을 지원하지 않는다.
+          # (로컬 Java 8 환경에서 실제로 "Java version before 21" 오류로 확인됨)
+          java-version: '21'
+      - run: npm ci
+      - run: npm run test:rules
