@@ -230,9 +230,12 @@ describe.skipIf(!testEnv)('firestore.rules — 회원 전용 split write (보안
   describe('games — 수정(재제출)', () => {
     const SESSION_ID = 'regular-1'
     const GAME_ID = 'game-1'
+    // playerBId는 MEMBER_ID_2가 아니라 이 describe 블록과 무관한 제3자('member-003')로 둔다 —
+    // linkOtherActive()가 MEMBER_ID_2에 연결돼 있으므로, 여기서 MEMBER_ID_2를 참가자로 넣으면
+    // "참가자가 아닌 회원" 테스트가 실제로는 본인 확인이 되어버려 의도와 반대로 통과해 버린다.
     const seedGame = (over: object = {}) =>
       seedDoc(gamePath(SESSION_ID, GAME_ID), {
-        id: GAME_ID, playerAId: MEMBER_ID_1, playerBId: MEMBER_ID_2,
+        id: GAME_ID, playerAId: MEMBER_ID_1, playerBId: 'member-003',
         handicapA: 18, handicapB: 20, scoreA: 10, scoreB: 12,
         endType: 'time', playedAt: '2026-08-26T10:00:00.000Z',
         pending: true, revisionRequested: true, ...over,
@@ -283,9 +286,10 @@ describe.skipIf(!testEnv)('firestore.rules — 회원 전용 split write (보안
   describe('games — 삭제', () => {
     const SESSION_ID = 'flash-1'
     const GAME_ID = 'game-1'
+    // playerBId는 MEMBER_ID_2가 아니라 제3자('member-003')로 둔다 — 이유는 위 "게임 수정" 블록과 같다.
     const seedGame = (over: object = {}) =>
       seedDoc(gamePath(SESSION_ID, GAME_ID), {
-        id: GAME_ID, playerAId: MEMBER_ID_1, playerBId: MEMBER_ID_2,
+        id: GAME_ID, playerAId: MEMBER_ID_1, playerBId: 'member-003',
         handicapA: 18, handicapB: 20, scoreA: 10, scoreB: 12,
         endType: 'time', playedAt: '2026-08-26T10:00:00.000Z', pending: true, ...over,
       })
