@@ -142,3 +142,45 @@ describe('setRoundParticipants — 라운드별 참가자 명단 저장', () => 
     expect(session.round2ParticipantIds).toBeUndefined()
   })
 })
+
+// 보안 8단계: split write 화면(MeetingTab.save·MemberGameResultEntry.submit)이 "방금 만든 문서
+// 하나"를 정확히 알아야 그 문서만 Firestore에 쓸 수 있다. id를 미리 알 수 없으므로(uid() 내부
+// 생성) addGame·upsertLedger가 만든 결과를 그대로 돌려주는지 여기서 고정해 둔다.
+describe('addGame — 만든 경기를 그대로 돌려준다(split write 연결용)', () => {
+  it('반환된 Game이 저장된 것과 id·필드가 정확히 같다', () => {
+    const sessionId = useApp.getState().createSession('2026-07-07', ['m1', 'm2'], 'flash')
+    const created = useApp.getState().addGame(sessionId, {
+      playerAId: 'm1', playerBId: 'm2',
+      handicapA: 20, handicapB: 18,
+      scoreA: 20, scoreB: 15,
+      endType: 'cleared',
+    })
+    const stored = useApp.getState().sessions.find((s) => s.id === sessionId)!.games[0]
+    expect(created).toEqual(stored)
+    expect(created.id).toBeTruthy()
+    expect(created.playedAt).toBeTruthy()
+  })
+})
+
+describe('upsertLedger — 저장한 회계 기록을 그대로 돌려준다(split write 연결용)', () => {
+  it('새로 만든 기록은 반환값에 생성된 id가 담겨 있다', () => {
+    const saved = useApp.getState().upsertLedger({
+      date: '2026-07-07',
+      inCashMembership: 10000, inCashDonation: 0, inTransferMembership: 0, inTransferDonation: 0,
+      inCardDonation: 0, inAnnualFee: 0, outCash: 0, outCard: 0, outTransfer: 0,
+    })
+    expect(saved.id).toBeTruthy()
+    expect(useApp.getState().ledger).toEqual([saved])
+  })
+
+  it('기존 id로 덮어써도 반환값의 id가 그대로 유지된다', () => {
+    const first = useApp.getState().upsertLedger({
+      date: '2026-07-07',
+      inCashMembership: 10000, inCashDonation: 0, inTransferMembership: 0, inTransferDonation: 0,
+      inCardDonation: 0, inAnnualFee: 0, outCash: 0, outCard: 0, outTransfer: 0,
+    })
+    const second = useApp.getState().upsertLedger({ ...first, inCashMembership: 20000 })
+    expect(second.id).toBe(first.id)
+    expect(useApp.getState().ledger).toEqual([second])
+  })
+})

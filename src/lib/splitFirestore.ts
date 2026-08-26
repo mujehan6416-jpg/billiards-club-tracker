@@ -1,6 +1,6 @@
-import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, writeBatch } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { db } from './firebase'
-import type { AppState, Game, LedgerRecord } from '../types'
+import type { AppState, Game, LedgerRecord, Member, Session } from '../types'
 import type {
   ClubConfig, MemberPrivate, PublicMember, SessionDoc, SplitFirestoreData, SplitGame,
 } from '../types/splitFirestore'
@@ -37,6 +37,30 @@ const gameDoc = (clubId: string, sessionId: string, gameId: string) =>
   doc(db, 'clubs', clubId, 'sessions', sessionId, 'games', gameId)
 const ledgerCol = (clubId: string) => collection(db, 'clubs', clubId, 'ledger')
 const ledgerDoc = (clubId: string, recordId: string) => doc(db, 'clubs', clubId, 'ledger', recordId)
+
+// ── legacy ↔ split 문서 모양 변환 ─────────────────────────────────────
+// 이 두 함수가 split에 실제로 나가는 문서의 "허용 필드 목록"이다. 절대 원본 객체를 그대로
+// spread하지 않는다 — 특히 Member에는 password가 있고, 이 필드는 어떤 이유로도 split
+// members(연결된 회원이면 누구나 read 가능)에 들어가면 안 된다. Session도 games는 별도
+// 하위컬렉션이라 여기서 뺀다.
+
+/** Member → PublicMember. password는 의도적으로 옮기지 않는다(설계 문서: types/splitFirestore.ts). */
+export function toPublicMember(member: Member): PublicMember {
+  return {
+    id: member.id,
+    name: member.name,
+    handicap: member.handicap,
+    handicapHistory: member.handicapHistory.map((h) => ({ ...h })),
+    active: member.active,
+    ...(member.displayTag ? { displayTag: member.displayTag } : {}),
+  }
+}
+
+/** Session → SessionDoc. games 배열은 하위컬렉션(sessions/{id}/games)이라 여기서 뺀다. */
+export function toSessionDoc(session: Session): SessionDoc {
+  const { games: _games, ...rest } = session
+  return JSON.parse(JSON.stringify(rest)) as SessionDoc
+}
 
 // ── 읽기 ────────────────────────────────────────────────────────────
 
@@ -150,6 +174,10 @@ export async function writeLedgerRecord(record: LedgerRecord, clubId = DEFAULT_C
   await setDoc(ledgerDoc(clubId, record.id), record)
 }
 
+export async function deleteSplitLedgerRecord(recordId: string, clubId = DEFAULT_CLUB_ID): Promise<void> {
+  await deleteDoc(ledgerDoc(clubId, recordId))
+}
+
 // ── 회원 전용 쓰기 (보안 7단계) ────────────────────────────────────────
 // 관리자 없이도 Rules가 허용하는 범위(연결된 활성 회원)에서 쓰는 함수들.
 // 아직 앱 UI 어디에서도 호출하지 않는다 — write 정책이 확정·검증된 뒤 연결한다.
@@ -178,6 +206,23 @@ export async function submitMemberGameResult(sessionId: string, game: Game, club
     ...(game.round !== undefined ? { round: game.round } : {}),
   }
   await setDoc(gameDoc(clubId, sessionId, game.id), payload)
+}
+
+/**
+ * 회원이 번개모임 세션의 참석자 명단만 바꾼다(참석자 추가 등).
+ *
+ * setDoc(전체 덮어쓰기) 대신 updateDoc(부분 갱신)을 쓴다 — Rules는 이 update가 attendeeIds
+ * 외의 필드를 하나도 바꾸지 않을 때만 허용하는데, updateDoc은 여기 적은 필드만 실제로
+ * Firestore에 보내므로 로컬 상태가 서버와 잠깐 어긋나 있어도(다른 필드 값 차이) 항상
+ * attendeeIds 하나만 바뀐 것으로 평가된다. setDoc으로 세션 전체를 다시 써서 보내면 그
+ * 순간의 로컬 스냅샷에 있는 다른 필드 값 차이가 통째로 "바뀐 필드"로 잡혀 거부될 수 있다.
+ */
+export async function updateFlashSessionAttendees(
+  sessionId: string,
+  attendeeIds: string[],
+  clubId = DEFAULT_CLUB_ID,
+): Promise<void> {
+  await updateDoc(sessionDoc(clubId, sessionId), { attendeeIds })
 }
 
 /**
@@ -222,4 +267,100 @@ export async function writeAllSplitData(split: SplitFirestoreData, clubId = DEFA
     await batch.commit()
   }
   return ops.length
+}
+
+// ── 관리자 전체 상태 동기화 (보안 8단계) ──────────────────────────────
+// 관리자 화면(회원 관리·에버리지 수정·CSV 반영·세션 삭제·경기 확인/수정·정산 등)에서 상태를
+// 바꾼 뒤, 바뀐 문서만 골라 split에 반영한다. admin은 Rules상 쓰기 제한이 없으므로(각
+// 컬렉션의 `allow ...: if isAdmin()`) 여기서는 실제로 값이 달라진 문서만 set/delete하면
+// 된다 — 매번 회원·세션·경기 전체를 다시 쓰는 legacy식 "전체 스냅샷" 방식은 쓰지 않는다.
+//
+// ⚠ 일반회원 행동에는 이 함수를 쓰지 않는다. 일반회원은 Rules가 허용하는 좁은 필드만 쓸 수
+// 있는데, 이 함수는 바뀐 필드가 무엇이든 문서를 통째로 set()하므로 회원 Rules(예: 경기 수정은
+// scoreA/scoreB/endType/pending/revisionRequested 다섯 필드로 제한)에 걸려 거부된다.
+// 회원 행동은 submitMemberGameResult/resubmitMemberGameResult/updateFlashSessionAttendees처럼
+// "그 행동이 실제로 바꾸는 필드만" 쓰는 전용 함수를 쓴다.
+export async function syncSplitChanges(
+  previous: AppState,
+  next: AppState,
+  clubId = DEFAULT_CLUB_ID,
+): Promise<void> {
+  type Op =
+    | { kind: 'set'; ref: ReturnType<typeof doc>; data: object }
+    | { kind: 'delete'; ref: ReturnType<typeof doc> }
+  const ops: Op[] = []
+  // 이 값들은 전부 JSON으로 표현되는 데이터(문자열·숫자·불리언·배열·객체)이고, toPublicMember·
+  // toSessionDoc이 항상 같은 순서로 필드를 만들어 내므로 문자열 비교로 충분하다.
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+
+  // ── 회원 ──
+  const prevMembers = new Map(previous.members.map((m) => [m.id, m]))
+  const nextMembers = new Map(next.members.map((m) => [m.id, m]))
+  for (const [id, m] of nextMembers) {
+    const before = prevMembers.get(id)
+    const pub = toPublicMember(m)
+    if (!before || !same(toPublicMember(before), pub)) {
+      ops.push({ kind: 'set', ref: memberDoc(clubId, id), data: pub })
+    }
+  }
+  for (const id of prevMembers.keys()) {
+    if (!nextMembers.has(id)) ops.push({ kind: 'delete', ref: memberDoc(clubId, id) })
+  }
+
+  // ── 세션 + 경기(하위컬렉션) ──
+  const prevSessions = new Map(previous.sessions.map((s) => [s.id, s]))
+  const nextSessions = new Map(next.sessions.map((s) => [s.id, s]))
+  for (const [id, s] of nextSessions) {
+    const before = prevSessions.get(id)
+    const sessionData = toSessionDoc(s)
+    if (!before || !same(toSessionDoc(before), sessionData)) {
+      ops.push({ kind: 'set', ref: sessionDoc(clubId, id), data: sessionData })
+    }
+    const prevGames = new Map((before?.games ?? []).map((g) => [g.id, g]))
+    const nextGames = new Map(s.games.map((g) => [g.id, g]))
+    for (const [gid, g] of nextGames) {
+      const gameBefore = prevGames.get(gid)
+      if (!gameBefore || !same(gameBefore, g)) {
+        ops.push({ kind: 'set', ref: gameDoc(clubId, id, gid), data: g })
+      }
+    }
+    for (const gid of prevGames.keys()) {
+      if (!nextGames.has(gid)) ops.push({ kind: 'delete', ref: gameDoc(clubId, id, gid) })
+    }
+  }
+  for (const [id, s] of prevSessions) {
+    if (!nextSessions.has(id)) {
+      // 세션 자체가 없어졌다 — 그 세션의 경기까지 함께 지운다(deleteSplitSession과 같은 이유).
+      for (const g of s.games) ops.push({ kind: 'delete', ref: gameDoc(clubId, id, g.id) })
+      ops.push({ kind: 'delete', ref: sessionDoc(clubId, id) })
+    }
+  }
+
+  // ── 회계 ──
+  const prevLedger = new Map(previous.ledger.map((r) => [r.id, r]))
+  const nextLedger = new Map(next.ledger.map((r) => [r.id, r]))
+  for (const [id, r] of nextLedger) {
+    const before = prevLedger.get(id)
+    if (!before || !same(before, r)) ops.push({ kind: 'set', ref: ledgerDoc(clubId, id), data: r })
+  }
+  for (const id of prevLedger.keys()) {
+    if (!nextLedger.has(id)) ops.push({ kind: 'delete', ref: ledgerDoc(clubId, id) })
+  }
+
+  // ── 설정 ──
+  if (previous.settings.lastBackupAt !== next.settings.lastBackupAt) {
+    ops.push({ kind: 'set', ref: configDoc(clubId), data: { lastBackupAt: next.settings.lastBackupAt } })
+  }
+
+  if (ops.length === 0) return
+
+  const BATCH_LIMIT = 450
+  for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
+    const batch = writeBatch(db)
+    for (const op of ops.slice(i, i + BATCH_LIMIT)) {
+      if (op.kind === 'set') batch.set(op.ref, op.data)
+      else batch.delete(op.ref)
+    }
+    await batch.commit()
+  }
 }

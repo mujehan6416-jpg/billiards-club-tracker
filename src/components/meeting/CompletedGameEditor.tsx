@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../../store/appStore'
 import { uploadToCloud, UploadCancelledError } from '../../lib/cloudSync'
+import { USE_SPLIT_FIRESTORE, writeGame } from '../../lib/splitFirestore'
 import { validateGameResult, winnerId } from '../../logic/game'
 import type { Game } from '../../types'
 
@@ -75,9 +76,16 @@ export function CompletedGameEditor({ game, sessionId, sessionDate, nameOf, onDo
     setSaving(true)
     updateGameResult(sessionId, game.id, pending)
     // 다른 저장 경로(MeetingTab의 save 등)와 동일하게 저장 직후 서버에 반영한다.
+    // 이 화면은 항상 관리자 전용(MeetingTab에서 isAdmin일 때만 렌더링)이라 split 모드에서도
+    // 이 경기 하나만 제한 없이 그대로 쓰면 된다(writeGame).
     try {
-      const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      if (USE_SPLIT_FIRESTORE) {
+        const updated = useApp.getState().sessions.find((s) => s.id === sessionId)?.games.find((g) => g.id === game.id)
+        if (updated) await writeGame(sessionId, updated)
+      } else {
+        const s = useApp.getState()
+        await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      }
     } catch (err) {
       if (err instanceof UploadCancelledError) {
         alert('서버 저장을 취소했습니다.\n수정한 내용은 이 기기에만 저장되었습니다.')

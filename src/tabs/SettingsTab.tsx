@@ -5,6 +5,7 @@ import { useAuth } from '../store/authStore'
 import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv, importGameCsv } from '../lib/backup'
 import { uploadToCloud, downloadFromCloud, markSynced, UploadCancelledError } from '../lib/cloudSync'
 import { saveToServer } from '../lib/autoSave'
+import { USE_SPLIT_FIRESTORE, syncSplitChanges } from '../lib/splitFirestore'
 import { DeviceLinkCard } from '../components/memberLink/DeviceLinkCard'
 import { DeviceLinkAdminCard } from '../components/memberLink/DeviceLinkAdminCard'
 import { SplitMigrationCard } from '../components/admin/SplitMigrationCard'
@@ -86,29 +87,46 @@ export function PendingGameRow({ game, sessionId, sessionDate, name }: {
   const [saving, setSaving] = useState(false)
   const [requesting, setRequesting] = useState(false)
 
-  const syncAfter = async () => {
+  // previous(관리자 행동 직전 상태)를 넘기면 split 모드에서 바뀐 문서만 골라 반영한다.
+  const syncAfter = async (previous?: import('../types').AppState) => {
     try {
       const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      if (USE_SPLIT_FIRESTORE && previous) {
+        await syncSplitChanges(previous, s)
+      } else {
+        await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      }
     } catch { /* ignore */ }
   }
 
   const doSave = async () => {
     const sA = Math.max(0, parseInt(scoreA || '0', 10) || 0)
     const sB = Math.max(0, parseInt(scoreB || '0', 10) || 0)
+    const previous = useApp.getState()
     setSaving(true)
     updateGameResult(sessionId, game.id, { scoreA: sA, scoreB: sB, handicapA: hA, handicapB: hB })
     confirmGame(sessionId, game.id)
-    await syncAfter()
+    await syncAfter(previous)
     setSaving(false)
   }
 
   // 확인완료(저장)와 달리 점수는 그대로 두고 상태만 "수정 요청"으로 바꾼다 — 참가자가 다시 입력해야 한다.
   const doRequestRevision = async () => {
+    const previous = useApp.getState()
     setRequesting(true)
     requestGameRevision(sessionId, game.id)
-    await syncAfter()
+    await syncAfter(previous)
     setRequesting(false)
+  }
+
+  // 삭제도 다른 행동과 동일하게 저장 직후 서버에 반영한다(이전에는 여기서 반영하지 않고
+  // 다음 행동의 전체 저장에 묻어가는 방식이었는데, split 모드에서는 행동별로 정확히 반영해야
+  // 하므로 이 삭제도 명시적으로 반영한다).
+  const doDelete = async () => {
+    if (!window.confirm('이 경기 결과를 삭제할까요?')) return
+    const previous = useApp.getState()
+    deleteGame(sessionId, game.id)
+    await syncAfter(previous)
   }
 
   return (
@@ -149,8 +167,7 @@ export function PendingGameRow({ game, sessionId, sessionDate, name }: {
         <button style={{ fontSize: 12 }} disabled={requesting || game.revisionRequested} onClick={doRequestRevision}>
           {requesting ? '요청 중...' : game.revisionRequested ? '수정 요청됨' : '수정 요청'}
         </button>
-        <button style={{ fontSize: 12, color: '#c0392b', borderColor: '#e0a0a0' }}
-          onClick={() => { if (window.confirm('이 경기 결과를 삭제할까요?')) deleteGame(sessionId, game.id) }}>
+        <button style={{ fontSize: 12, color: '#c0392b', borderColor: '#e0a0a0' }} onClick={doDelete}>
           삭제
         </button>
       </div>
@@ -226,9 +243,13 @@ function PendingFlashCard({ sessions, members }: { sessions: Session[]; members:
               </button>
               <button className="primary" style={{ fontSize: 12 }} onClick={async () => {
                 if (!window.confirm(`${s.date} 번개모임 기록을 승인할까요?\n정규 통계에 반영됩니다.`)) return
+                const previous = useApp.getState()
                 approveSession(s.id)
                 const st = useApp.getState()
-                try { await uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger }) } catch { /* ignore */ }
+                try {
+                  if (USE_SPLIT_FIRESTORE) await syncSplitChanges(previous, st)
+                  else await uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
+                } catch { /* ignore */ }
               }}>승인</button>
             </div>
           </div>
@@ -288,10 +309,12 @@ function HandicapEditCard({ members }: { members: Member[] }) {
       .sort((a, b) => a.changedAt.localeCompare(b.changedAt))
     // 이력 중 가장 최신 날짜의 값이 현재 핸디
     const latestHandicap = newHistory[newHistory.length - 1].value
+    const previous = useApp.getState()
     updateMember(m.id, { handicap: latestHandicap, handicapHistory: newHistory })
     try {
       const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      if (USE_SPLIT_FIRESTORE) await syncSplitChanges(previous, s)
+      else await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
       setMsg(`${m.name} 에버리지 ${latestHandicap} 반영 완료`)
     } catch {
       setMsg(`${m.name} 에버리지 ${latestHandicap} 반영 완료 (서버 저장 실패)`)
@@ -483,9 +506,10 @@ export function SettingsTab() {
       let msg = `신규 회원 ${newOnes.length}명`
       if (existing.length > 0) msg += `, 에버리지 업데이트 ${existing.length}명`
       if (!confirm(`${msg}\n\n계속할까요?`)) return
+      const previous = useApp.getState()
       applyMemberCsv(rows)
       // 파일을 제대로 불러와 반영한 경우에만 서버에 저장한다(파싱 실패는 위 catch로 빠진다).
-      const failed = await saveToServer()
+      const failed = await saveToServer(previous)
       setMsg(failed ?? `회원명부 반영 완료: ${msg}`)
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '파일 처리에 실패했습니다.')
@@ -499,8 +523,9 @@ export function SettingsTab() {
       let confirmMsg = `${rows.length}개 행을 불러옵니다.`
       if (unknownNames.length > 0) confirmMsg += `\n\n※ 무시되는 이름: ${unknownNames.join(', ')}`
       if (!confirm(confirmMsg + '\n\n계속할까요?')) return
+      const previous = useApp.getState()
       applyHandicapCsv(rows)
-      const failed = await saveToServer()
+      const failed = await saveToServer(previous)
       setMsg(failed ?? `핸디 이력 ${rows.length}개 행을 반영했습니다.`)
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '파일 처리에 실패했습니다.')
@@ -639,8 +664,9 @@ export function SettingsTab() {
                 try {
                   const rows = await importGameCsv(f)
                   if (!confirm(`${rows.length}개 경기를 불러옵니다. 계속할까요?`)) return
+                  const previous = useApp.getState()
                   applyGameCsv(rows)
-                  const failed = await saveToServer()
+                  const failed = await saveToServer(previous)
                   setMsg(failed ?? `경기 기록 ${rows.length}개를 반영했습니다.`)
                 } catch (err) {
                   setMsg(err instanceof Error ? err.message : '오류가 발생했습니다.')

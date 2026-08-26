@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../../store/appStore'
 import { uploadToCloud, UploadCancelledError } from '../../lib/cloudSync'
+import { USE_SPLIT_FIRESTORE, submitMemberGameResult, resubmitMemberGameResult } from '../../lib/splitFirestore'
 import type { Game, LineupMatch, Member, Session } from '../../types'
 
 // 정기모임 참가자 본인 경기 결과 입력 — 관리자가 아닌 일반회원 전용 UI.
@@ -36,20 +37,28 @@ function MatchResultRow({ session, match, game, opponentName }: {
     }
     const endType: Game['endType'] = sA >= match.handicapA || sB >= match.handicapB ? 'cleared' : 'time'
     setSaving(true)
+    let created: Game | null = null
     if (game) {
       resubmitGameResult(session.id, game.id, { scoreA: sA, scoreB: sB, endType })
     } else {
-      addGame(session.id, {
+      created = addGame(session.id, {
         playerAId: match.aId, playerBId: match.bId,
         handicapA: match.handicapA, handicapB: match.handicapB,
         scoreA: sA, scoreB: sB, endType, round: match.round,
         pending: true, // 일반회원이 직접 입력한 정기모임 결과는 항상 관리자 확인 대기로 저장한다.
       })
     }
-    // 번개모임 회원 입력과 동일하게, 저장 직후 클라우드에 반영한다.
-    const st = useApp.getState()
+    // 번개모임 회원 입력과 동일하게, 저장 직후 클라우드에 반영한다. 이 화면은 항상 회원 전용
+    // (MeetingTab에서 !isAdmin일 때만 렌더링)이라 split 모드에서는 Rules가 허용하는 좁은
+    // 회원 전용 함수만 쓴다 — game(기존 경기)이 있으면 재제출, 없으면 최초 제출.
     try {
-      await uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
+      if (USE_SPLIT_FIRESTORE) {
+        if (game) await resubmitMemberGameResult(session.id, { id: game.id, scoreA: sA, scoreB: sB, endType })
+        else if (created) await submitMemberGameResult(session.id, created)
+      } else {
+        const st = useApp.getState()
+        await uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
+      }
     } catch (err) {
       if (!(err instanceof UploadCancelledError)) {
         alert('결과는 이 기기에 저장됐지만 서버에 반영하지 못했습니다.\n인터넷 연결을 확인한 뒤 다시 시도해 주세요.')

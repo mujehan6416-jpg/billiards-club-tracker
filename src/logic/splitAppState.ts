@@ -153,3 +153,26 @@ export function mergeSplitToAppState(split: SplitFirestoreData): AppState {
     ledger: split.ledger.map((r) => ({ ...r })),
   }
 }
+
+/**
+ * split에서 읽은 AppState(비밀번호 없음)에 legacy 문서의 비밀번호만 회원 ID 기준으로 채워 넣는다.
+ *
+ * 비밀번호는 설계상 split members에 절대 들어가지 않는다(splitLegacyAppState 주석 참고).
+ * 그런데 로그인 화면(LoginScreen)은 회원이 직접 정한 비밀번호(Member.password)로 본인 확인을
+ * 하므로, split을 앱의 기본 read 경로로 쓰기 시작하면 이 필드를 legacy 문서에서 따로 가져와
+ * 합쳐 주지 않으면 모든 회원의 비밀번호가 조용히 사라진 것처럼 보인다(기본값 '0000'으로 되돌아감).
+ *
+ * legacyState가 없으면(legacy 문서가 아직 없거나 조회 실패) 비밀번호 없이 그대로 돌려준다 —
+ * 이 경우도 로그인 자체는 기본값 '0000'으로 계속 동작한다.
+ */
+export function mergeLegacyPasswords(splitState: AppState, legacyState: AppState | null): AppState {
+  if (!legacyState) return splitState
+  const legacyPasswordById = new Map(legacyState.members.map((m) => [m.id, m.password]))
+  return {
+    ...splitState,
+    members: splitState.members.map((m) => {
+      const password = legacyPasswordById.get(m.id)
+      return password !== undefined ? { ...m, password } : m
+    }),
+  }
+}

@@ -11,6 +11,10 @@ import { todayStr } from '../lib/date'
 import { fmtScore } from '../lib/format'
 import { buildResultText, shareImage, shareText } from '../lib/share'
 import { uploadToCloud, UploadCancelledError } from '../lib/cloudSync'
+import {
+  USE_SPLIT_FIRESTORE, writeSession, writeGame,
+  deleteSplitSession, submitMemberGameResult, updateFlashSessionAttendees, toSessionDoc,
+} from '../lib/splitFirestore'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
 import { MemberSettlementSummary } from '../components/settlement/MemberSettlementSummary'
@@ -74,6 +78,21 @@ export function MeetingTab() {
     // 참석자 선택 화면에서 아래로 스크롤된 상태 그대로 남으면
     // 자동/수동매칭 버튼이 화면 위쪽 밖에 있게 되므로 맨 위로 이동
     window.scrollTo({ top: 0 })
+    // 새 모임(특히 번개모임)을 만든 직후 바로 서버에 반영한다 — 이후 행동(참석자 편집 등)이
+    // 하나도 없이 기기를 닫아도 이 모임 자체는 남아 있어야 한다. admin이든 회원(번개모임만
+    // 만들 수 있음)이든 Rules상 세션 create는 같은 writeSession() 호출로 통과한다(관리자는
+    // 무제한, 회원은 type:'flash'+approved:false+정해진 필드일 때만 — createSession()이 항상
+    // 그렇게 만든다).
+    const created = useApp.getState().sessions.find((s) => s.id === id)
+    if (created) {
+      if (USE_SPLIT_FIRESTORE) {
+        writeSession(toSessionDoc(created)).catch(() => { /* 다음 저장 때 다시 반영됨 */ })
+      } else {
+        const s = useApp.getState()
+        uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+          .catch(() => { /* 다음 저장 때 다시 반영됨 */ })
+      }
+    }
   }
 
   if (isGuest) {
@@ -431,24 +450,38 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     }
     const endType = scoreA >= o.handicapA || scoreB >= o.handicapB ? 'cleared' : 'time'
     const isPending = isFlash && !isAdmin
-    addGame(session.id, {
+    const created = addGame(session.id, {
       playerAId: o.aId, playerBId: o.bId,
       handicapA: o.handicapA, handicapB: o.handicapB,
       scoreA, scoreB, endType, round: o.round,
       ...(isPending ? { pending: true } : {}),
     })
     cancel(o.key)
-    // 저장 직후 클라우드 반영 (관리자 정기/번개, 일반회원 pending 모두 동일)
-    const st = useApp.getState()
-    uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
-      .catch((err) => {
-        if (err instanceof UploadCancelledError) {
-          alert('서버 저장을 취소했습니다.\n경기는 이 기기에만 저장되었습니다.')
-          return
-        }
-        console.error('서버 저장 실패:', err)
-        alert('경기는 이 기기에 저장되었지만 서버 저장에 실패했습니다.\n인터넷 확인 후 설정 탭에서 "이 기기 내용을 서버에 올리기"를 눌러 주세요.')
-      })
+    // 저장 직후 클라우드 반영 (관리자 정기/번개, 일반회원 pending 모두 동일).
+    // split 모드에서는 관리자/회원 행동을 서로 다른 함수로 나눈다 — 회원은 Rules가 허용하는
+    // "본인이 만든 pending 경기 하나"만 쓸 수 있고(submitMemberGameResult), 관리자는 제한이
+    // 없으므로 경기 하나만 그대로 쓴다(writeGame). 둘 다 이 세션의 다른 경기·다른 세션은
+    // 건드리지 않는다.
+    const saveFailedMessage = () => {
+      alert('경기는 이 기기에 저장되었지만 서버 저장에 실패했습니다.\n인터넷 확인 후 설정 탭에서 "이 기기 내용을 서버에 올리기"를 눌러 주세요.')
+    }
+    if (USE_SPLIT_FIRESTORE) {
+      const splitWrite = isAdmin
+        ? writeGame(session.id, created)
+        : submitMemberGameResult(session.id, created)
+      splitWrite.catch((err) => { console.error('서버 저장 실패:', err); saveFailedMessage() })
+    } else {
+      const st = useApp.getState()
+      uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
+        .catch((err) => {
+          if (err instanceof UploadCancelledError) {
+            alert('서버 저장을 취소했습니다.\n경기는 이 기기에만 저장되었습니다.')
+            return
+          }
+          console.error('서버 저장 실패:', err)
+          saveFailedMessage()
+        })
+    }
   }
 
   // 카톡 배포용 대진표 텍스트 생성 (1부/2부 + 대기자)
@@ -470,19 +503,49 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     return txt
   }
 
-  // 모임 통째로 삭제 (날짜 오설정 등) → 게시 대진표·경기 모두 제거, 클라우드 반영
+  // 모임 통째로 삭제 (날짜 오설정 등) → 게시 대진표·경기 모두 제거, 클라우드 반영.
+  // 화면상 이 버튼은 isAdmin일 때만 보인다(canEdit만으로는 노출되지 않음, Rules도 세션 삭제는
+  // admin 전용) — 그래서 여기는 항상 관리자 경로만 있으면 된다.
   const removeSession = async () => {
     if (!window.confirm(`${session.date} 모임을 삭제할까요?\n게시된 대진표와 입력된 경기 기록이 모두 삭제됩니다.`)) return
     deleteSession(session.id)
-    const s = useApp.getState()
     try {
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      if (USE_SPLIT_FIRESTORE) {
+        await deleteSplitSession(session.id)
+      } else {
+        const s = useApp.getState()
+        await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      }
     } catch {
       // 업로드 실패해도 로컬에서는 삭제됨
     }
   }
 
-  // 대진표를 게시(클라우드 업로드) → 일반회원 열람 가능
+  // 참석자 명단 편집(늦게 온 사람 추가 등) 직후 서버에 반영한다. 관리자는 정기·번개모임 모두
+  // 편집 가능(admin 무제한)하고, 회원은 canEdit 조건상 번개모임일 때만 여기 닿을 수 있다 —
+  // 그래서 회원 쪽은 항상 updateFlashSessionAttendees(attendeeIds 한 필드만 partial update)를
+  // 쓴다. writeSession()으로 세션 전체를 다시 쓰면 회원 Rules(diff가 attendeeIds 하나여야
+  // 함)에 걸릴 수 있어 절대 쓰지 않는다.
+  const saveAttendees = (ids: string[]) => {
+    setAttendees(session.id, ids)
+    if (USE_SPLIT_FIRESTORE) {
+      const splitWrite = isAdmin
+        ? (async () => {
+            const updated = useApp.getState().sessions.find((s) => s.id === session.id)
+            if (updated) await writeSession(toSessionDoc(updated))
+          })()
+        : updateFlashSessionAttendees(session.id, ids)
+      splitWrite.catch(() => { /* 다음 저장 때 다시 반영됨 */ })
+    } else {
+      const s = useApp.getState()
+      uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+        .catch(() => { /* 다음 저장 때 다시 반영됨 */ })
+    }
+  }
+
+  // 대진표를 게시(클라우드 업로드) → 일반회원 열람 가능.
+  // 이 버튼은 화면상 정기모임(!isFlash)에서만 나타나고, 정기모임 편집은 canEdit=isAdmin일 때만
+  // 가능하므로 여기는 항상 관리자 경로다.
   const doPublish = async () => {
     const lineup: LineupMatch[] = ongoing
       .filter((o) => o.round === 1 || o.round === 2)
@@ -490,8 +553,13 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     const inLineup = new Set(lineup.flatMap((m) => [m.aId, m.bId]))
     const sitOutIds = session.attendeeIds.filter((id) => !inLineup.has(id))
     publishLineup(session.id, lineup, sitOutIds)
-    const s = useApp.getState()
-    await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+    if (USE_SPLIT_FIRESTORE) {
+      const updated = useApp.getState().sessions.find((s) => s.id === session.id)
+      if (updated) await writeSession(toSessionDoc(updated))
+    } else {
+      const s = useApp.getState()
+      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+    }
   }
 
   const typeLabel = isFlash ? '⚡ 번개모임' : '📋 정기모임'
@@ -775,7 +843,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             <AttendeeEditor
               members={members}
               attendeeIds={session.attendeeIds}
-              onChange={(ids) => setAttendees(session.id, ids)}
+              onChange={saveAttendees}
             />
           )}
 

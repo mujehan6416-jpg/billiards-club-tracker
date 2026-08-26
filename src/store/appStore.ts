@@ -14,7 +14,8 @@ interface Store extends AppState {
   publishLineup: (sessionId: string, lineup: import('../types').LineupMatch[], sitOutIds: string[]) => void
   setAttendees: (sessionId: string, attendeeIds: string[]) => void
   setRoundParticipants: (sessionId: string, round: 1 | 2, participantIds: string[]) => void
-  addGame: (sessionId: string, game: Omit<Game, 'id' | 'playedAt'>) => void
+  /** 만든 경기(id·playedAt 포함)를 그대로 돌려준다 — 저장 직후 그 경기 하나만 클라우드에 반영할 때 쓴다. */
+  addGame: (sessionId: string, game: Omit<Game, 'id' | 'playedAt'>) => Game
   deleteGame: (sessionId: string, gameId: string) => void
   confirmGame: (sessionId: string, gameId: string) => void
   updateGameResult: (sessionId: string, gameId: string, patch: Partial<Pick<Game, 'scoreA' | 'scoreB' | 'handicapA' | 'handicapB'>>) => void
@@ -26,7 +27,8 @@ interface Store extends AppState {
    */
   resubmitGameResult: (sessionId: string, gameId: string, patch: { scoreA: number; scoreB: number; endType: Game['endType'] }) => void
   cleanupOldPending: () => void
-  upsertLedger: (record: Omit<LedgerRecord, 'id'> & { id?: string }) => void
+  /** 저장한 회계 기록(id 포함)을 그대로 돌려준다 — 저장 직후 그 기록 하나만 클라우드에 반영할 때 쓴다. */
+  upsertLedger: (record: Omit<LedgerRecord, 'id'> & { id?: string }) => LedgerRecord
   deleteLedger: (id: string) => void
   touchBackup: () => void
   applyHandicapCsv: (rows: import('../lib/backup').HandicapRow[]) => void
@@ -134,12 +136,15 @@ export const useApp = create<Store>()(
           sessions: s.sessions.map((ss) => (ss.id === sessionId ? { ...ss, attendeeIds } : ss)),
         })),
 
-      addGame: (sessionId, game) =>
+      addGame: (sessionId, game) => {
+        const created: Game = { ...game, id: uid(), playedAt: now() }
         set((s) => ({
           sessions: s.sessions.map((ss) =>
-            ss.id === sessionId ? { ...ss, games: [...ss.games, { ...game, id: uid(), playedAt: now() }] } : ss,
+            ss.id === sessionId ? { ...ss, games: [...ss.games, created] } : ss,
           ),
-        })),
+        }))
+        return created
+      },
 
       deleteGame: (sessionId, gameId) =>
         set((s) => ({
@@ -201,10 +206,10 @@ export const useApp = create<Store>()(
           ),
         })),
 
-      upsertLedger: (record) =>
+      upsertLedger: (record) => {
+        const id = record.id ?? uid()
+        const full: LedgerRecord = { ...record, id }
         set((s) => {
-          const id = record.id ?? uid()
-          const full: LedgerRecord = { ...record, id }
           const idx = s.ledger.findIndex((r) => r.id === id)
           if (idx >= 0) {
             const updated = [...s.ledger]
@@ -212,7 +217,9 @@ export const useApp = create<Store>()(
             return { ledger: updated }
           }
           return { ledger: [...s.ledger, full] }
-        }),
+        })
+        return full
+      },
 
       deleteLedger: (id) =>
         set((s) => ({ ledger: s.ledger.filter((r) => r.id !== id) })),

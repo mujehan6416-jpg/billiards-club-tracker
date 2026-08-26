@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitLegacyAppState, validateSplit, mergeSplitToAppState } from '../src/logic/splitAppState'
+import { splitLegacyAppState, validateSplit, mergeSplitToAppState, mergeLegacyPasswords } from '../src/logic/splitAppState'
 import { makeLegacyAppState, withoutPassword } from './fixtures/legacyAppState'
 import type { AppState } from '../src/types'
 
@@ -315,5 +315,49 @@ describe('mergeSplitToAppState — 나눴다 합쳐도 같은 값', () => {
     const state = legacy()
     const merged = mergeSplitToAppState(splitLegacyAppState(state))
     for (const m of merged.members) expect('password' in m).toBe(false)
+  })
+})
+
+// 보안 8단계: split을 앱의 기본 read 경로로 쓰기 시작하면 loadSplitAppState()가 비밀번호 없이
+// AppState를 돌려준다(위 테스트가 확인한 그대로). 그런데 로그인 화면(LoginScreen)은 회원이 직접
+// 정한 Member.password로 본인 확인을 하므로, 이 함수로 legacy 문서의 비밀번호를 회원 ID 기준으로
+// 다시 채워 넣지 않으면 모든 회원의 비밀번호가 조용히 기본값('0000')으로 되돌아간 것처럼 보인다.
+describe('mergeLegacyPasswords — split에서 사라진 비밀번호를 legacy에서 되찾아온다', () => {
+  it('legacy에 있는 비밀번호를 회원 ID 기준으로 split 결과에 채워 넣는다', () => {
+    const state = legacy()
+    const splitState = mergeSplitToAppState(splitLegacyAppState(state))
+    const merged = mergeLegacyPasswords(splitState, state)
+
+    for (const original of state.members) {
+      const back = merged.members.find((m) => m.id === original.id)!
+      expect(back.password).toBe(original.password)
+    }
+  })
+
+  it('비밀번호를 뺀 나머지 필드는 split 결과를 그대로 유지한다(legacy 값으로 덮어쓰지 않음)', () => {
+    const state = legacy()
+    const splitState = mergeSplitToAppState(splitLegacyAppState(state))
+    const merged = mergeLegacyPasswords(splitState, state)
+
+    for (const m of merged.members) expect(withoutPassword(m)).toEqual(withoutPassword(splitState.members.find((x) => x.id === m.id)!))
+    expect(merged.sessions).toEqual(splitState.sessions)
+    expect(merged.ledger).toEqual(splitState.ledger)
+  })
+
+  it('legacy 조회 결과가 없으면(null) split 결과를 그대로 돌려준다', () => {
+    const state = legacy()
+    const splitState = mergeSplitToAppState(splitLegacyAppState(state))
+    const merged = mergeLegacyPasswords(splitState, null)
+    expect(merged).toEqual(splitState)
+  })
+
+  it('legacy에 없는 회원 ID(예: 새 split 전용 회원)는 비밀번호를 채우지 않고 그대로 둔다', () => {
+    const splitState: AppState = {
+      members: [{ id: 'new-member', name: '새회원', handicap: 20, handicapHistory: [], active: true }],
+      sessions: [], settings: { lastBackupAt: null }, ledger: [],
+    }
+    const merged = mergeLegacyPasswords(splitState, legacy())
+    expect(merged.members[0]).toEqual(splitState.members[0])
+    expect('password' in merged.members[0]).toBe(false)
   })
 })

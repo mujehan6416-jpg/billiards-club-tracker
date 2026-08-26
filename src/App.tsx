@@ -11,7 +11,24 @@ import { useAdmin } from './store/adminStore'
 import { useAuth } from './store/authStore'
 import { useApp } from './store/appStore'
 import { downloadFromCloud, markSynced } from './lib/cloudSync'
+import { USE_SPLIT_FIRESTORE, loadSplitAppState } from './lib/splitFirestore'
+import { mergeLegacyPasswords } from './logic/splitAppState'
 import { ensureAppAuth, keepAppAuthAlive } from './lib/appAuth'
+import type { AppState } from './types'
+
+/**
+ * 이 기기에 서버(원격)보다 많은 기록이 있는지 — 덮어쓰기 전에 사용자에게 확인받을지 판단한다.
+ * legacy(clubs/skkubc 문서)든 split(loadSplitAppState)이든 결과가 똑같은 AppState 모양이라
+ * 같은 기준으로 비교할 수 있다.
+ */
+function isLocalAheadOf(local: AppState, remote: AppState): boolean {
+  const gameCount = (ss: { games: unknown[] }[]) => ss.reduce((n, s) => n + s.games.length, 0)
+  return (
+    gameCount(local.sessions) > gameCount(remote.sessions) ||
+    local.sessions.length > remote.sessions.length ||
+    local.ledger.length > (remote.ledger ?? []).length
+  )
+}
 
 // 'settlement'은 일부러 TABS(하단 탭바) 배열에 넣지 않는다 — 일반 회원 화면에는 전혀 노출되지 않고,
 // 아래 TopBar의 관리자 모드(PIN) 전용 버튼으로만 진입 가능하다.
@@ -120,6 +137,10 @@ export function App() {
   const [syncing, setSyncing] = useState(true)
   // 서버 인증(익명)을 확보하지 못한 상태 — 이때는 데이터를 내려받지 않고 안내 화면을 보여준다
   const [authFailed, setAuthFailed] = useState(false)
+  // split 모드(USE_SPLIT_FIRESTORE=true)에서 split 읽기 자체가 실패한 상태 — legacy로 조용히
+  // 넘어가지 않는다(그러면 두 저장 구조가 서로 다른 내용을 가진 채로 갈라질 수 있다). 이 상태면
+  // 화면을 아예 보여주지 않으므로 이 기기에서 어떤 write도 일어나지 않는다.
+  const [splitReadError, setSplitReadError] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [exitReady, setExitReady] = useState(false)
   const [backToast, setBackToast] = useState(false)
@@ -138,6 +159,7 @@ export function App() {
     let cancelled = false
     setSyncing(true)
     setAuthFailed(false)
+    setSplitReadError(false)
     cleanupOldPending()
 
     const run = async () => {
@@ -151,18 +173,39 @@ export function App() {
       }
       if (cancelled) return
 
-      // ② 인증이 끝난 뒤에만 서버 데이터를 내려받는다(다운로드 실패는 기존과 동일하게 넘어간다).
+      // ②-split: split을 기본 read 경로로 쓴다. 실패하면 legacy로 조용히 넘어가지 않고
+      // 화면에 오류를 명확히 보여주고 멈춘다(write 진행 금지) — 조용히 legacy로 넘어가면 두
+      // 저장 구조가 서로 다른 내용을 가진 채로 갈라질 수 있다.
+      if (USE_SPLIT_FIRESTORE) {
+        try {
+          const splitState = await loadSplitAppState()
+          if (cancelled) return
+          // 비밀번호는 split에 없다(설계상 의도적 제외) — legacy 문서에서 회원 ID 기준으로
+          // 채워 넣지 않으면 모든 회원의 로그인 비밀번호가 조용히 사라진 것처럼 보인다.
+          // 이 legacy 조회가 실패해도 split 읽기 자체는 막지 않는다(비밀번호만 기본값 '0000'
+          // 취급으로 남는다).
+          const legacy = await downloadFromCloud().catch(() => null)
+          const remoteState = mergeLegacyPasswords(splitState, legacy?.state ?? null)
+          const local = useApp.getState()
+          if (isLocalAheadOf(local, remoteState) && !window.confirm(
+            '이 기기에 서버보다 많은 기록이 저장되어 있습니다.\n서버 내용으로 덮어쓰면 이 기기의 최근 기록이 사라질 수 있습니다.\n서버 내용을 불러올까요?',
+          )) return
+          replaceAll(remoteState)
+        } catch {
+          if (!cancelled) setSplitReadError(true)
+        } finally {
+          if (!cancelled) setSyncing(false)
+        }
+        return
+      }
+
+      // ②-legacy: 인증이 끝난 뒤에만 서버 데이터를 내려받는다(다운로드 실패는 기존과 동일하게 넘어간다).
       try {
         const cloud = await downloadFromCloud()
         if (cancelled || !cloud) return
         // 이 기기에 서버보다 많은 기록이 있으면(업로드 누락 가능성) 덮어쓰기 전에 확인
         const local = useApp.getState()
-        const gameCount = (ss: { games: unknown[] }[]) => ss.reduce((n, s) => n + s.games.length, 0)
-        const localAhead =
-          gameCount(local.sessions) > gameCount(cloud.state.sessions) ||
-          local.sessions.length > cloud.state.sessions.length ||
-          local.ledger.length > (cloud.state.ledger ?? []).length
-        if (localAhead && !window.confirm(
+        if (isLocalAheadOf(local, cloud.state) && !window.confirm(
           '이 기기에 서버보다 많은 기록이 저장되어 있습니다.\n서버 내용으로 덮어쓰면 이 기기의 최근 기록이 사라질 수 있습니다.\n서버 내용을 불러올까요?',
         )) return
         replaceAll(cloud.state)
@@ -212,6 +255,22 @@ export function App() {
         <div style={{ fontSize: 14, color: '#072B61', fontWeight: 500 }}>당신회</div>
         <div style={{ fontSize: 15, color: '#c0392b', textAlign: 'center', lineHeight: 1.6 }}>
           서버 연결을 준비하지 못했습니다.<br />인터넷 연결을 확인한 뒤 다시 시도해 주세요.
+        </div>
+        <button className="primary" style={{ fontSize: 16, padding: '12px 26px' }}
+          onClick={() => setRetryCount((n) => n + 1)}>
+          다시 시도
+        </button>
+      </div>
+    )
+  }
+
+  if (splitReadError) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f4f5f3', flexDirection: 'column', gap: 14, padding: '0 24px' }}>
+        <div style={{ fontSize: 28 }}>🎱</div>
+        <div style={{ fontSize: 14, color: '#072B61', fontWeight: 500 }}>당신회</div>
+        <div style={{ fontSize: 15, color: '#c0392b', textAlign: 'center', lineHeight: 1.6 }}>
+          최신 내용을 서버에서 불러오지 못했습니다.<br />인터넷 연결을 확인한 뒤 다시 시도해 주세요.
         </div>
         <button className="primary" style={{ fontSize: 16, padding: '12px 26px' }}
           onClick={() => setRetryCount((n) => n + 1)}>

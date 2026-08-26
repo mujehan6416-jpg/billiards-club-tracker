@@ -276,9 +276,11 @@ export function MembersTab() {
   }
 
   // 회원 정보를 바꾼 뒤 서버에도 자동 반영한다. 이름·핸디를 함께 고쳐도 서버 저장은 한 번만 한다.
+  // 바꾸기 직전 상태(previous)를 넘겨야 split 모드에서 실제로 바뀐 회원 문서만 골라 쓸 수 있다.
   const applyAndSave = async (change: () => void) => {
+    const previous = useApp.getState()
     change()
-    setSaveError(await saveToServer() ?? '')
+    setSaveError(await saveToServer(previous) ?? '')
   }
 
   const addMemberAndSave = (memberName: string, memberHcap: number) =>

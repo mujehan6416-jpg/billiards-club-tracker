@@ -3,6 +3,7 @@ import { useApp } from '../store/appStore'
 import { useAdmin } from '../store/adminStore'
 import { todayStr } from '../lib/date'
 import { uploadToCloud } from '../lib/cloudSync'
+import { USE_SPLIT_FIRESTORE, writeLedgerRecord, deleteSplitLedgerRecord } from '../lib/splitFirestore'
 import type { LedgerRecord } from '../types'
 import { MoneyInput } from '../components/MoneyInput'
 
@@ -118,7 +119,7 @@ function LedgerContent() {
   const doSave = async () => {
     setSaving(true)
     setMsg('')
-    upsertLedger({
+    const saved = upsertLedger({
       id: editingId ?? undefined,
       date,
       note: form.note || undefined,
@@ -133,8 +134,12 @@ function LedgerContent() {
       outTransfer: n('outTransfer'),
     })
     try {
-      const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      if (USE_SPLIT_FIRESTORE) {
+        await writeLedgerRecord(saved)
+      } else {
+        const s = useApp.getState()
+        await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      }
       setMsg('저장 완료')
     } catch {
       setMsg('이 기기에 저장했지만 서버에 반영하지 못했습니다. 인터넷 연결을 확인해 주세요.')
@@ -147,8 +152,12 @@ function LedgerContent() {
     if (!window.confirm(`${date} 장부 기록을 삭제할까요?`)) return
     deleteLedger(editingId)
     try {
-      const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      if (USE_SPLIT_FIRESTORE) {
+        await deleteSplitLedgerRecord(editingId)
+      } else {
+        const s = useApp.getState()
+        await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
+      }
     } catch { /* ignore */ }
     setForm(emptyForm())
     setEditingId(null)
