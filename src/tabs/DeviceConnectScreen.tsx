@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AdminPinButton } from '../components/AdminPinButton'
 import { fetchMemberIndex } from '../lib/splitFirestore'
-import { cancelMyRequest, createLinkRequest, fetchMyRequest } from '../lib/memberLink'
+import { cancelMyRequest, createLinkRequest, fetchMyLink, fetchMyRequest } from '../lib/memberLink'
 import { currentAuthUid } from '../lib/appAuth'
 import { buildMemberLabels } from '../logic/memberLabel'
 import type { MemberIndexEntry } from '../types/splitFirestore'
@@ -28,6 +28,9 @@ export function DeviceConnectScreen({ onAdminLogin, onRetry }: {
   const [selectedId, setSelectedId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // "승인됐는지 다시 확인"을 눌렀는데 아직 이 기기가 승인되지 않은 상태. 예전에는 이 경우
+  // 화면이 똑같이 다시 그려지기만 해서 눌러도 아무 일도 없는 것처럼 보였다.
+  const [notApprovedYet, setNotApprovedYet] = useState(false)
 
   const load = async () => {
     setStatus({ kind: 'loading' })
@@ -74,12 +77,46 @@ export function DeviceConnectScreen({ onAdminLogin, onRetry }: {
   const cancel = async () => {
     const uid = currentAuthUid()
     if (!uid) return
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setNotApprovedYet(false)
     try {
       await cancelMyRequest(uid)
       await load()
     } catch {
       setError('요청을 취소하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 승인됐는지 이 기기 기준으로 직접 확인한다.
+   *
+   * 예전에는 이 버튼이 곧바로 onRetry()(앱 전체 다시 읽기)만 불렀다. 그래서 아직 승인 전이면
+   * 똑같은 화면이 다시 그려질 뿐이라, 눌러도 아무 반응이 없는 것처럼 보였다. 게다가 관리자가
+   * 분명히 승인했는데도 이 화면에 머무는 경우(= 승인이 "다른 기기 요청" 앞으로 처리된 경우)를
+   * 사용자가 알 방법이 전혀 없었다.
+   *
+   * 연결 승인은 기기마다 따로 이뤄지고, 그 기준은 이 기기의 서버 인증 정보다. 사파리에서 열 때와
+   * 홈 화면 앱으로 열 때가 서로 다른 기기로 취급되거나(iOS), 저장 공간이 비워지면 같은 iPad라도
+   * 다른 기기로 잡힌다. 그때는 승인이 예전 요청 앞으로만 남아 이 기기에는 반영되지 않는다.
+   * 그래서 여기서 memberLinks(이 기기의 연결 문서)를 직접 확인하고, 없으면 그 사실과 함께
+   * 다시 요청하는 방법을 안내한다.
+   */
+  const recheck = async () => {
+    const uid = currentAuthUid()
+    // 서버 인증이 아직/이미 없는 상태라면 여기서 막지 말고 앱 쪽에 넘긴다 — 앱 부팅 흐름이
+    // 인증을 다시 확보한 뒤 처음부터 다시 확인해 준다(그 편이 스스로 회복될 확률이 높다).
+    if (!uid) { onRetry(); return }
+    setBusy(true); setError(''); setNotApprovedYet(false)
+    try {
+      const link = await fetchMyLink(uid)
+      if (link?.active) {
+        onRetry() // 승인 확인 — 앱이 데이터를 다시 읽어 그 회원으로 시작한다
+        return
+      }
+      setNotApprovedYet(true)
+    } catch {
+      setError('확인하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.')
     } finally {
       setBusy(false)
     }
@@ -159,8 +196,20 @@ export function DeviceConnectScreen({ onAdminLogin, onRetry }: {
               ⏳ <b>{status.memberName}</b> 님으로 연결을 요청했습니다.<br />
               관리자 승인을 기다려 주세요.
             </span>
+            {notApprovedYet && (
+              <span style={{
+                fontSize: 14, lineHeight: 1.6, color: '#8a6d00',
+                background: '#fff8e1', borderRadius: 8, padding: '10px 12px',
+              }}>
+                아직 이 기기는 승인되지 않았습니다.<br />
+                관리자가 이미 승인했다고 하면, 승인이 <b>다른 기기의 요청</b>에 적용됐을 수 있습니다.
+                아래 <b>요청 취소</b>를 누른 뒤 이름을 다시 선택해 요청해 주세요.
+              </span>
+            )}
             {error && <span style={{ fontSize: 13, color: '#c0392b' }}>{error}</span>}
-            <button className="primary block" onClick={onRetry}>승인됐는지 다시 확인</button>
+            <button className="primary block" disabled={busy} onClick={() => void recheck()}>
+              {busy ? '확인 중...' : '승인됐는지 다시 확인'}
+            </button>
             <button className="block" disabled={busy} onClick={cancel}>
               {busy ? '처리 중...' : '요청 취소'}
             </button>
