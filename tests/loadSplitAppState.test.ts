@@ -182,3 +182,61 @@ describe('loadSplitAppState — split을 읽어 legacy AppState로 재조립', (
     expect(firestore.writeBatch).not.toHaveBeenCalled()
   })
 })
+
+describe('loadSplitAppState — 회계 읽기 권한이 없는 일반 회원 기기', () => {
+  /** 회계만 권한 거부되고 나머지는 정상인 상태 — 연결된 "일반 회원" 기기의 실제 상황이다.
+   *  (firestore.rules상 ledger는 관리자만 읽을 수 있고, 나머지는 연결된 회원도 읽을 수 있다.) */
+  function mockLedgerDenied(state: AppState) {
+    mockSplitFirestore(state)
+    const allowed = getDocsMock.getMockImplementation()!
+    getDocsMock.mockImplementation((ref: { path: string }) => {
+      if (ref.path === 'clubs/skkubc/ledger') {
+        return Promise.reject(Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' }))
+      }
+      return allowed(ref)
+    })
+  }
+
+  it('회계 권한이 없어도 전체 읽기가 실패하지 않는다', async () => {
+    const state = legacy()
+    mockLedgerDenied(state)
+
+    // 예전에는 여기서 permission-denied가 그대로 터졌고, 앱은 그것을 "이 기기가 아직 연결되지
+    // 않음"으로 잘못 해석해 승인이 끝난 회원 기기를 기기 연결 화면으로 되돌려 보냈다.
+    const result = await loadSplitAppState()
+
+    expect(result.members).toHaveLength(state.members.length)
+    expect(result.sessions).toHaveLength(state.sessions.length)
+  })
+
+  it('회계는 빈 목록으로 돌려준다 — 회계 화면은 어차피 관리자 전용이다', async () => {
+    const state = legacy()
+    mockLedgerDenied(state)
+
+    const result = await loadSplitAppState()
+
+    expect(result.ledger).toEqual([])
+  })
+
+  it('관리자처럼 회계를 읽을 수 있으면 그대로 다 담는다', async () => {
+    const state = legacy()
+    mockSplitFirestore(state)
+
+    const result = await loadSplitAppState()
+
+    expect(result.ledger).toHaveLength(state.ledger.length)
+  })
+
+  it('권한 문제가 아닌 실패(네트워크 등)는 조용히 삼키지 않고 그대로 알린다', async () => {
+    const state = legacy()
+    mockSplitFirestore(state)
+    const allowed = getDocsMock.getMockImplementation()!
+    getDocsMock.mockImplementation((ref: { path: string }) => {
+      if (ref.path === 'clubs/skkubc/ledger') return Promise.reject(new Error('offline'))
+      return allowed(ref)
+    })
+
+    // 관리자가 회계를 못 읽은 것을 눈치채지 못한 채 앱을 쓰는 일이 없어야 한다.
+    await expect(loadSplitAppState()).rejects.toThrow('offline')
+  })
+})

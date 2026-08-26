@@ -108,6 +108,31 @@ export async function fetchLedger(clubId = DEFAULT_CLUB_ID): Promise<LedgerRecor
 }
 
 /**
+ * 회계를 읽되, "권한 없음"은 오류가 아니라 빈 목록으로 돌려준다.
+ *
+ * 회계(ledger)만 다른 split 데이터와 읽기 권한이 다르다 — 회원·모임·경기·설정은 연결된 회원도
+ * 읽을 수 있지만, 회계는 Rules상 관리자만 읽을 수 있다(firestore.rules의
+ * `match /clubs/{clubId}/ledger/{recordId}` 참고). 그래서 일반 회원 기기에서 이 조회는 항상
+ * permission-denied가 나는 것이 "정상"이다.
+ *
+ * 이걸 그대로 예외로 흘려보내면 loadSplitAppState()의 Promise.all이 통째로 실패하고, 앱은 그
+ * permission-denied를 "이 기기가 아직 연결되지 않음"으로 잘못 해석해 기기 연결 화면으로
+ * 되돌아간다. 실제로 승인까지 끝난 회원 기기가 앱에 영영 들어가지 못하던 원인이 이것이다.
+ *
+ * 회계 화면(LedgerTab)은 어차피 관리자에게만 열리므로, 일반 회원에게 회계가 빈 목록인 것은
+ * 화면 동작에 아무 영향이 없다. 네트워크 오류 등 다른 실패는 그대로 예외로 올려보낸다 —
+ * 조용히 삼키면 관리자가 회계를 못 읽은 것을 눈치채지 못한 채 앱을 쓰게 된다.
+ */
+async function fetchLedgerIfAllowed(clubId: string): Promise<LedgerRecord[]> {
+  try {
+    return await fetchLedger(clubId)
+  } catch (e) {
+    if ((e as { code?: string })?.code === 'permission-denied') return []
+    throw e
+  }
+}
+
+/**
  * "이름 찾기" 목록을 읽는다. 연결되지 않은 새 기기(로그인 전, 서명만 된 상태)도 부를 수 있다 —
  * Rules가 `request.auth != null`(연결·관리자 여부와 무관하게 로그인만 됐으면)만 요구한다.
  */
@@ -134,7 +159,8 @@ export async function loadSplitAppState(clubId = DEFAULT_CLUB_ID): Promise<AppSt
     fetchConfig(clubId),
     fetchMembers(clubId),
     fetchSessions(clubId),
-    fetchLedger(clubId),
+    // 회계는 관리자만 읽을 수 있다 — 일반 회원 기기에서는 빈 목록으로 넘어간다(위 함수 주석 참고).
+    fetchLedgerIfAllowed(clubId),
   ])
 
   const gamesBySession = await Promise.all(

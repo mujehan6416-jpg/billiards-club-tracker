@@ -69,7 +69,20 @@ function hasActiveMemberLink(): boolean {
   return link?.active === true
 }
 
-/** 이 경로를 지금 사용자가 읽을 수 있는지 — firestore.rules와 같은 기준. */
+/** firestore.rules의 isAdmin()과 같은 판정 — admins/{uid}.active == true. */
+function isAdmin(): boolean {
+  const uid = authState.currentUser?.uid
+  if (!uid) return false
+  return store.docs.get(`admins/${uid}`)?.active === true
+}
+
+/**
+ * 이 경로를 지금 사용자가 읽을 수 있는지 — firestore.rules와 같은 기준.
+ *
+ * ⚠ 회계(ledger)만 다른 split 데이터와 권한이 다르다: 연결된 회원도 읽을 수 없고 관리자만
+ * 읽을 수 있다(firestore.rules의 `match /clubs/{clubId}/ledger/{recordId}` 참고).
+ * 이 차이를 그대로 흉내 내야 실제 기기에서 나는 문제를 테스트로 재현할 수 있다.
+ */
 function canRead(path: string): boolean {
   const uid = authState.currentUser?.uid
   if (!uid) return false
@@ -78,11 +91,13 @@ function canRead(path: string): boolean {
   // 본인 연결 문서·본인 요청 문서는 본인이 읽을 수 있다
   if (path === `clubs/${CLUB}/memberLinks/${uid}`) return true
   if (path === `clubs/${CLUB}/linkRequests/${uid}`) return true
-  // 나머지 split 데이터는 연결된 활성 회원만
+  // 회계는 관리자 전용
+  if (path.startsWith(`clubs/${CLUB}/ledger`)) return isAdmin()
+  // 회원·모임·경기·설정은 연결된 활성 회원 또는 관리자
   if (
     path.startsWith(`clubs/${CLUB}/members`) || path.startsWith(`clubs/${CLUB}/sessions`) ||
-    path.startsWith(`clubs/${CLUB}/ledger`) || path.startsWith(`clubs/${CLUB}/config`)
-  ) return hasActiveMemberLink()
+    path.startsWith(`clubs/${CLUB}/config`)
+  ) return hasActiveMemberLink() || isAdmin()
   return false
 }
 
@@ -164,6 +179,7 @@ function seedServer() {
 async function adminApproves(requestUid: string, memberId: string) {
   const before = authState.currentUser
   authState.currentUser = { uid: 'admin-uid', isAnonymous: false, email: 'a@example.test' }
+  store.docs.set('admins/admin-uid', { active: true }) // 실제 관리자 인증 상태
   await approveLinkRequest(requestUid, memberId, 'admin-uid')
   authState.currentUser = before // iPad 쪽 세션으로 되돌린다
 }
