@@ -42,6 +42,18 @@ async function resolveAdmin(user: User, set: (patch: Partial<AdminAuthState>) =>
   }
 }
 
+// 여러 화면(App.tsx, SettlementAdminTab, DeviceLinkAdminCard, SplitMigrationCard 등)이 각자
+// init()을 부른다. onAuthStateChanged 구독을 화면마다 새로 만들면, 그 구독은 생성되는 순간
+// Firebase가 "현재 상태"를 즉시 한 번 다시 불러주므로(Firebase 표준 동작) resolveAdmin()이
+// 매번 다시 실행돼 status가 이미 'authorizedAdmin'이어도 'authenticated'로 잠깐 되돌아간다.
+// 이 잠깐의 'authenticated' 상태가 App.tsx의 관리자 게이트 조건(status !== 'authorizedAdmin')을
+// 다시 true로 만들어 관리자 화면이 사라졌다 나타났다 하는 깜빡임(무한 루프)으로 이어졌다 —
+// 관리자 화면이 사라지면 그 화면 안의 DeviceLinkAdminCard 등도 함께 사라지고, 다시 나타날 때
+// 또 init()을 불러 같은 일이 반복된다. 그래서 실제 Firebase 구독은 앱 전체에서 딱 하나만
+// 만들고(참조 카운트로 관리), 여러 화면은 이 하나의 구독을 공유한다.
+let sharedUnsubscribe: (() => void) | null = null
+let listenerCount = 0
+
 export const useAdminAuthStore = create<AdminAuthState>()((set) => ({
   status: 'loading',
   uid: null,
@@ -70,16 +82,27 @@ export const useAdminAuthStore = create<AdminAuthState>()((set) => ({
   },
 
   init: () => {
-    const unsubscribe = subscribeAuthState((user) => {
-      // 익명 사용자(lib/appAuth.ts가 앱 시작 시 확보하는 기기 인증)는 관리자 후보가 아니다.
-      // 이걸 걸러내지 않으면 관리자가 로그인하기도 전에 admins 문서를 찾다 실패해서
-      // "관리자 권한이 없습니다" 오류가 먼저 뜬다 — 로그인 화면을 그대로 보여줘야 한다.
-      if (!user || user.isAnonymous) {
-        set({ status: 'unauthenticated', uid: null, email: null, adminDisplayName: null, errorMessage: null })
-        return
+    listenerCount += 1
+    if (!sharedUnsubscribe) {
+      sharedUnsubscribe = subscribeAuthState((user) => {
+        // 익명 사용자(lib/appAuth.ts가 앱 시작 시 확보하는 기기 인증)는 관리자 후보가 아니다.
+        // 이걸 걸러내지 않으면 관리자가 로그인하기도 전에 admins 문서를 찾다 실패해서
+        // "관리자 권한이 없습니다" 오류가 먼저 뜬다 — 로그인 화면을 그대로 보여줘야 한다.
+        if (!user || user.isAnonymous) {
+          set({ status: 'unauthenticated', uid: null, email: null, adminDisplayName: null, errorMessage: null })
+          return
+        }
+        resolveAdmin(user, set)
+      })
+    }
+    // 마지막으로 남은 호출자가 정리할 때만 실제 구독을 해제한다 — 다른 화면이 아직 쓰고 있는데
+    // 먼저 언마운트된 화면이 구독을 끊어버리면 안 된다.
+    return () => {
+      listenerCount = Math.max(0, listenerCount - 1)
+      if (listenerCount === 0 && sharedUnsubscribe) {
+        sharedUnsubscribe()
+        sharedUnsubscribe = null
       }
-      resolveAdmin(user, set)
-    })
-    return unsubscribe
+    }
   },
 }))

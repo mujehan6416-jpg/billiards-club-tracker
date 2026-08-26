@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // 실제 Firebase 호출부는 전부 모킹 — 실제 계정·네트워크에 접근하지 않는다.
 type AuthCallback = (user: unknown) => void
@@ -15,11 +15,17 @@ vi.mock('../src/lib/adminAuth', () => ({
 
 import { useAdminAuthStore } from '../src/store/adminAuthStore'
 
+// adminAuthStore.init()은 이제 여러 호출자가 실제 Firebase 구독 하나를 공유한다(무한 루프 방지
+// 수정 — adminAuthStore.ts 참고). 그래서 이 테스트 파일의 각 테스트가 "매번 완전히 새로운
+// 구독"을 가정하려면, 이전 테스트에서 만든 구독을 반드시 해제해 참조 카운트를 0으로 되돌려야
+// 다음 테스트의 init() 호출이 실제로 새 구독을 만든다.
+let currentUnsub: (() => void) | null = null
+
 /** init()을 실행하고, Firebase가 알려주는 사용자 상태를 흉내내는 함수를 돌려준다. */
 function startInit(): (user: unknown) => void {
   let notify: AuthCallback = () => {}
   subscribeAuthStateMock.mockImplementation((cb: AuthCallback) => { notify = cb; return () => {} })
-  useAdminAuthStore.getState().init()
+  currentUnsub = useAdminAuthStore.getState().init()
   return (user) => notify(user)
 }
 
@@ -29,6 +35,11 @@ beforeEach(() => {
   useAdminAuthStore.setState({
     status: 'loading', uid: null, email: null, adminDisplayName: null, errorMessage: null,
   })
+})
+
+afterEach(() => {
+  currentUnsub?.()
+  currentUnsub = null
 })
 
 describe('adminAuthStore — 익명 인증과의 충돌 방지', () => {
