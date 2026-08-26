@@ -26,6 +26,26 @@ service cloud.firestore {
         ).data.active == true;
     }
 
+    // ── split write(보안 7단계) 전용 helper ──────────────────────────────
+    // 반드시 hasActiveMemberLink(clubId)가 이미 true로 확인된 뒤에만 부른다(연결 문서가
+    // 있다는 전제 하에 안전하게 get()한다) — 그렇지 않으면 위 hasActiveMemberLink와 같은
+    // 이유로 Null value 평가 오류가 날 수 있다.
+    function linkedMemberId(clubId) {
+      return get(
+        /databases/$(database)/documents/clubs/$(clubId)/memberLinks/$(request.auth.uid)
+      ).data.memberId;
+    }
+
+    // 이 세션이 번개모임인지. 게임 하위 컬렉션 규칙에서 부모 세션 문서를 확인할 때 쓴다.
+    function isFlashSession(clubId, sessionId) {
+      return get(/databases/$(database)/documents/clubs/$(clubId)/sessions/$(sessionId)).data.type == 'flash';
+    }
+
+    // 이 회원이 이 경기의 참가자(A 또는 B) 본인인지.
+    function isGameParticipant(clubId, playerAId, playerBId) {
+      return hasActiveMemberLink(clubId) && linkedMemberId(clubId) in [playerAId, playerBId];
+    }
+
     match /clubs/skkubc {
       allow read, write: if true;
     }
@@ -101,11 +121,90 @@ service cloud.firestore {
 
     match /clubs/{clubId}/sessions/{sessionId} {
       allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
-      allow create, update, delete: if isAdmin();
+
+      // 생성: 관리자는 제한 없음(정기모임 포함). 회원은 번개모임만, 그것도 정해진 필드로만
+      // 만들 수 있다 — 특히 approved는 반드시 false로 강제한다(자기 번개모임을 스스로
+      // "정규 통계 반영" 상태로 만들 수 없게). 실제 앱(MeetingTab)도 회원에게는 번개모임
+      // 생성만 허용하고(flashOnly=!isAdmin), createSession()이 항상 approved:false로 만든다.
+      allow create: if isAdmin() || (
+        hasActiveMemberLink(clubId)
+        && request.resource.data.id == sessionId
+        && request.resource.data.keys().hasOnly(['id', 'date', 'type', 'attendeeIds', 'approved'])
+        && request.resource.data.type == 'flash'
+        && request.resource.data.approved == false
+        && request.resource.data.date is string
+        && request.resource.data.attendeeIds is list
+      );
+
+      // 수정: 관리자는 제한 없음(승인·대진 게시·라운드 참가자 지정·삭제 대체 등 전부 포함).
+      // 회원은 "이미 번개모임인" 세션의 attendeeIds(참석자 명단) 한 필드만 바꿀 수 있다 —
+      // 실제 앱에서 회원이 canEdit(=isFlash)로 직접 바꾸는 값은 참석자 편집(AttendeeEditor)
+      // 뿐이다. 대진표 게시·라운드 참가자 지정은 화면 자체가 정기모임(!isFlash)에서만
+      // 나타나 admin 전용이고, 번개모임 승인(approved)과 모임 삭제도 화면상 admin 전용
+      // 버튼이다. type을 바꿔 정기모임으로 둔갑시키거나 approved를 스스로 켜는 것도
+      // diff().hasOnly(['attendeeIds'])로 막힌다.
+      allow update: if isAdmin() || (
+        hasActiveMemberLink(clubId)
+        && resource.data.type == 'flash'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attendeeIds'])
+        && request.resource.data.attendeeIds is list
+      );
+
+      // 삭제: 관리자 전용. 실제 앱에서 "모임 삭제" 버튼은 번개모임이라도 isAdmin일 때만
+      // 보인다(canEdit만으로는 노출되지 않는다) — 회원에게는 애초에 필요 없는 권한이다.
+      allow delete: if isAdmin();
 
       match /games/{gameId} {
         allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
-        allow create, update, delete: if isAdmin();
+
+        // 생성: 관리자는 제한 없음. 회원은 항상 pending:true로만, 정해진 필드로만 만들 수
+        // 있다(관리자 확인 전 확정 통계에 반영되지 않게, winnerId 같은 관리자 전용 필드는
+        // 아예 끼워 넣을 수 없게) — 정기모임이면 본인이 참가자인 경기만, 번개모임이면
+        // (경기 입력을 대신 해주는 경우가 흔해) 연결된 활성 회원이면 누구나 만들 수 있다.
+        allow create: if isAdmin() || (
+          hasActiveMemberLink(clubId)
+          && request.resource.data.id == gameId
+          && request.resource.data.keys().hasOnly(
+            ['id', 'playerAId', 'playerBId', 'handicapA', 'handicapB', 'scoreA', 'scoreB', 'endType', 'playedAt', 'round', 'pending']
+          )
+          && request.resource.data.playerAId is string
+          && request.resource.data.playerBId is string
+          && request.resource.data.playerAId != request.resource.data.playerBId
+          && request.resource.data.scoreA is number && request.resource.data.scoreA >= 0
+          && request.resource.data.scoreB is number && request.resource.data.scoreB >= 0
+          && request.resource.data.handicapA is number && request.resource.data.handicapA > 0
+          && request.resource.data.handicapB is number && request.resource.data.handicapB > 0
+          && request.resource.data.endType in ['cleared', 'time']
+          && request.resource.data.pending == true
+          && (
+            isFlashSession(clubId, sessionId)
+            || isGameParticipant(clubId, request.resource.data.playerAId, request.resource.data.playerBId)
+          )
+        );
+
+        // 수정: 관리자는 제한 없음(확인 완료·수정 요청 처리 포함, winnerId 삭제 등). 회원은
+        // 본인이 참가자이면서 그 경기가 "아직 관리자 확인 전(pending)"일 때만, 점수 재제출과
+        // 정확히 같은 필드만 바꿀 수 있다 — resource.data.pending == true를 반드시 확인해야
+        // 한다, 그렇지 않으면 이미 관리자가 확인 완료(pending:false)한 경기까지 참가자가
+        // 다시 "제출 대기" 상태로 되돌리고 점수를 바꿔치기할 수 있다(관리자 확정 기록 보호
+        // 무력화). 재제출은 항상 다시 pending 확인 대기 상태로 돌아가야 한다.
+        allow update: if isAdmin() || (
+          isGameParticipant(clubId, resource.data.playerAId, resource.data.playerBId)
+          && resource.data.pending == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['scoreA', 'scoreB', 'endType', 'pending', 'revisionRequested'])
+          && request.resource.data.pending == true
+          && request.resource.data.revisionRequested == false
+        );
+
+        // 삭제: 관리자는 제한 없음. 회원은 "본인이 참가자"이면서 "아직 관리자 확인 전
+        // (pending)"인 경기만 지울 수 있다 — 실제 앱은 번개모임에서 canEdit(=isFlash)이면
+        // 참가자가 아니어도, 이미 확정된 기록도 지울 수 있지만, 최소 권한 원칙에 따라
+        // 여기서는 "본인 참가 + 미확정" 경기의 자가 정정만 허용하고 관리자가 이미 확인한
+        // 기록과 남의 기록은 보호한다.
+        allow delete: if isAdmin() || (
+          isGameParticipant(clubId, resource.data.playerAId, resource.data.playerBId)
+          && resource.data.pending == true
+        );
       }
     }
 

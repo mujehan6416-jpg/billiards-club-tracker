@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, writeBatch } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, writeBatch } from 'firebase/firestore'
 import { db } from './firebase'
 import type { AppState, Game, LedgerRecord } from '../types'
 import type {
@@ -126,8 +126,75 @@ export async function writeGame(sessionId: string, game: Game, clubId = DEFAULT_
   await setDoc(gameDoc(clubId, sessionId, game.id), game)
 }
 
+/**
+ * 세션 문서와 그 밑의 games 하위컬렉션 전체를 함께 지운다.
+ *
+ * Firestore는 문서를 지워도 그 하위컬렉션을 자동으로 지우지 않는다 — 세션 문서만 지우면
+ * 그 세션의 경기 문서들이 고아로 남는다(다음 목록 조회에는 안 보이지만 저장소에는 계속
+ * 남는다). 이 함수는 두 컬렉션 지우기를 하나의 배치로 묶어서, 이미 지워진 세션에 다시
+ * 호출해도(games가 비어 있으면 삭제할 문서가 없을 뿐) 안전하게 재실행할 수 있다.
+ */
+export async function deleteSplitSession(sessionId: string, clubId = DEFAULT_CLUB_ID): Promise<void> {
+  const gamesSnap = await getDocs(gamesCol(clubId, sessionId))
+  const batch = writeBatch(db)
+  for (const gameSnap of gamesSnap.docs) batch.delete(gameSnap.ref)
+  batch.delete(sessionDoc(clubId, sessionId))
+  await batch.commit()
+}
+
+export async function deleteSplitGame(sessionId: string, gameId: string, clubId = DEFAULT_CLUB_ID): Promise<void> {
+  await deleteDoc(gameDoc(clubId, sessionId, gameId))
+}
+
 export async function writeLedgerRecord(record: LedgerRecord, clubId = DEFAULT_CLUB_ID): Promise<void> {
   await setDoc(ledgerDoc(clubId, record.id), record)
+}
+
+// ── 회원 전용 쓰기 (보안 7단계) ────────────────────────────────────────
+// 관리자 없이도 Rules가 허용하는 범위(연결된 활성 회원)에서 쓰는 함수들.
+// 아직 앱 UI 어디에서도 호출하지 않는다 — write 정책이 확정·검증된 뒤 연결한다.
+
+/**
+ * 회원이 자기 참가 경기 결과를 처음 제출한다.
+ * pending을 항상 true로 강제한다 — 관리자가 확인하기 전에는 확정 통계에 반영되지 않는다.
+ * (Rules에서도 같은 조건을 검증하므로 이건 방어적 이중 확인이다.)
+ *
+ * 넘겨받은 game 객체를 그대로 펼쳐 쓰지 않고 허용된 필드만 하나씩 골라 담는다 — 호출하는
+ * 쪽이 winnerId·revisionRequested처럼 회원 create Rules가 막는 필드가 든 Game 객체를
+ * 실수로 넘기더라도, 여기서 걸러지므로 Firestore 요청 자체가 그 필드를 포함하지 않는다.
+ */
+export async function submitMemberGameResult(sessionId: string, game: Game, clubId = DEFAULT_CLUB_ID): Promise<void> {
+  const payload: Omit<Game, 'winnerId' | 'revisionRequested'> & { pending: true } = {
+    id: game.id,
+    playerAId: game.playerAId,
+    playerBId: game.playerBId,
+    handicapA: game.handicapA,
+    handicapB: game.handicapB,
+    scoreA: game.scoreA,
+    scoreB: game.scoreB,
+    endType: game.endType,
+    playedAt: game.playedAt,
+    pending: true,
+    ...(game.round !== undefined ? { round: game.round } : {}),
+  }
+  await setDoc(gameDoc(clubId, sessionId, game.id), payload)
+}
+
+/**
+ * 회원이 자기 참가 경기 결과를 다시 제출한다(관리자가 "수정 요청"한 뒤).
+ * 점수·종료유형만 바꾸고 pending을 true로, revisionRequested를 false로 되돌린다 —
+ * Rules의 update 규칙이 허용하는 필드 범위와 정확히 같다.
+ */
+export async function resubmitMemberGameResult(
+  sessionId: string,
+  game: Pick<Game, 'id' | 'scoreA' | 'scoreB' | 'endType'>,
+  clubId = DEFAULT_CLUB_ID,
+): Promise<void> {
+  await setDoc(
+    gameDoc(clubId, sessionId, game.id),
+    { scoreA: game.scoreA, scoreB: game.scoreB, endType: game.endType, pending: true, revisionRequested: false },
+    { merge: true },
+  )
 }
 
 /**
