@@ -106,18 +106,17 @@ describe('App 부팅 순서 — 인증 후에만 서버 데이터를 내려받�
     await waitFor(() => expect(keepAppAuthAliveMock).toHaveBeenCalled())
   })
 
-  it('인증이 정상이면 기존 회원 로그인 화면이 그대로 나온다', async () => {
+  it('인증이 정상이면 기존 회원 로그인 화면이 그대로 나온다(비밀번호 없이 이름 선택만)', async () => {
     render(<App />)
-    await waitFor(() => expect(screen.getByText('로그인')).toBeInTheDocument())
-    // 기존 방식 유지 — 이름 선택 + 비밀번호
+    await waitFor(() => expect(screen.getByText('시작하기')).toBeInTheDocument())
     expect(screen.getByRole('option', { name: '테스트회원A' })).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('비밀번호')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('비밀번호')).not.toBeInTheDocument()
   })
 
   it('서버 다운로드가 실패해도(인증은 성공) 기존처럼 앱을 계속 쓸 수 있다', async () => {
     downloadFromCloudMock.mockRejectedValue(new Error('offline'))
     render(<App />)
-    await waitFor(() => expect(screen.getByText('로그인')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('시작하기')).toBeInTheDocument())
     expect(screen.queryByText(/서버 연결을 준비하지 못했습니다/)).not.toBeInTheDocument()
   })
 })

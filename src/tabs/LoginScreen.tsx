@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Member } from '../types'
 import { buildMemberLabels } from '../logic/memberLabel'
+import { AdminPinButton } from '../components/AdminPinButton'
 
 interface Props {
   members: Member[]
@@ -13,6 +14,18 @@ interface Props {
 const LAST_LOGIN_KEY = 'billiards-last-login-id'
 const LAST_LOGIN_NAME_KEY = 'billiards-last-login-name'
 
+/**
+ * 회원 화면 접근용 로그인 화면.
+ *
+ * 이 기기가 이미 회원-기기 연결(memberLinks)로 확인된 경우에는 App.tsx가 이 화면을 아예
+ * 보여주지 않고 자동으로 로그인한다 — 실제 신뢰 경계는 그 연결(관리자 승인)에 있지,
+ * 여기서 이름을 고르는 것 자체는 아니기 때문이다(비밀번호로 "본인 확인"을 흉내 내지 않는다).
+ *
+ * 그래서 이 화면은 두 경우에만 보인다: ① 이 기기가 아직 회원과 연결되지 않았지만 전체
+ * 회원 목록을 읽을 수 있는 경우(예: 진짜 Firebase 관리자 기기인데 개인 연결이 없는 경우),
+ * ② GUEST로 둘러보고 싶은 경우. 이름을 고르는 것은 순전히 "이 화면에 무엇을 표시할지"를
+ * 정하는 것이고, 실제 쓰기 권한은 언제나 Firestore 규칙(연결된 활성 회원인지)이 정한다.
+ */
 export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
   const sorted = [...members.filter((m) => m.active)].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   // 마지막 로그인 회원이 활성 회원이면 리스트 맨 위로 (없으면 기존 정렬 그대로)
@@ -24,13 +37,9 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
   const active = lastMember
     ? [lastMember, ...sorted.filter((m) => m.id !== lastMember.id)]
     : sorted
-  // 선택값은 이름이 아니라 회원 고유 ID다 — 동명이인이 있어도 각자 본인으로 로그인된다.
+  // 선택값은 이름이 아니라 회원 고유 ID다 — 동명이인이 있어도 각자 본인으로 표시된다.
   const [selectedId, setSelectedId] = useState(lastMember?.id ?? '')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [showAdminModal, setShowAdminModal] = useState(false)
-  const [adminPin, setAdminPin] = useState('')
-  const [adminError, setAdminError] = useState(false)
 
   const logoSrc = (import.meta as unknown as { env: { BASE_URL: string } }).env.BASE_URL + 'ICON-SKKU.jpg'
 
@@ -38,24 +47,13 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
   // 동명이인이 있을 때만 구분정보를 덧붙인 이름표 (없으면 기존처럼 이름만)
   const labels = useMemo(() => buildMemberLabels(active), [active])
 
-  const tryLogin = () => {
+  const tryContinue = () => {
     if (isGuest) { onLogin('__guest__', 'GUEST'); return }
     const member = active.find((m) => m.id === selectedId)
     if (!member) { setError('이름을 선택해 주세요.'); return }
-    const pw = member.password ?? '0000'
-    if (password !== pw) { setError('비밀번호가 틀렸습니다.'); return }
     localStorage.setItem(LAST_LOGIN_KEY, member.id)
     localStorage.setItem(LAST_LOGIN_NAME_KEY, member.name)
     onLogin(member.id, member.name)
-  }
-
-  const tryAdminLogin = () => {
-    if (onAdminLogin?.(adminPin)) {
-      setShowAdminModal(false)
-    } else {
-      setAdminError(true)
-      setAdminPin('')
-    }
   }
 
   return (
@@ -65,19 +63,7 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
       background: '#fff', padding: '4px 20px',
       position: 'relative', gap: 4,
     }}>
-      {/* 관리자 아이콘 — 우상단 */}
-      <button
-        onClick={() => { setShowAdminModal(true); setAdminPin(''); setAdminError(false) }}
-        style={{
-          position: 'absolute', top: 16, right: 16,
-          background: 'none', border: 'none', cursor: 'pointer',
-          fontSize: 22, padding: 6, color: '#aaa',
-          lineHeight: 1,
-        }}
-        title="관리자 로그인"
-      >
-        ⚙️
-      </button>
+      <AdminPinButton onAdminLogin={onAdminLogin} />
 
       {/* 로고 */}
       <img src={logoSrc} alt="로고" style={{ width: '150%', maxWidth: 720, height: 'auto', objectFit: 'contain', marginBottom: '-21vw' }} />
@@ -93,8 +79,7 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
             fontSize: 15, lineHeight: 1.5, color: '#072B61', background: '#eef3fb',
             borderRadius: 8, padding: '10px 12px',
           }}>
-            👤 최근 로그인: <b>{labels.get(lastMember.id) ?? lastMember.name}</b>
-            {selectedId === lastMember.id && ' — 비밀번호만 입력하세요'}
+            👤 최근: <b>{labels.get(lastMember.id) ?? lastMember.name}</b>
           </div>
         )}
         <select
@@ -105,65 +90,20 @@ export function LoginScreen({ members, onLogin, onAdminLogin }: Props) {
           <option value="">이름 선택</option>
           {active.map((m) => (
             <option key={m.id} value={m.id}>
-              {labels.get(m.id) ?? m.name}{lastMember && m.id === lastMember.id ? ' (최근 로그인)' : ''}
+              {labels.get(m.id) ?? m.name}{lastMember && m.id === lastMember.id ? ' (최근)' : ''}
             </option>
           ))}
           <option value="__guest__">GUEST</option>
         </select>
 
-        {!isGuest && (
-          <input
-            type="password"
-            placeholder="비밀번호"
-            value={password}
-            onChange={(e) => { setPassword(e.target.value); setError('') }}
-            onKeyDown={(e) => e.key === 'Enter' && tryLogin()}
-            style={{ width: '100%' }}
-          />
-        )}
-
         {error && <span style={{ fontSize: 13, color: '#c0392b' }}>{error}</span>}
 
-        <button className="primary block" onClick={tryLogin}>로그인</button>
+        <button className="primary block" onClick={tryContinue}>시작하기</button>
       </div>
 
       {/* 클럽명 */}
       <div style={{ fontSize: 26, color: '#555' }}>성균관대학교 부산동문</div>
       <div style={{ fontSize: 36, fontWeight: 700, color: '#072B61' }}>당신회</div>
-
-      {/* 관리자 PIN 모달 */}
-      {showAdminModal && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000,
-          }}
-          onClick={() => setShowAdminModal(false)}
-        >
-          <div
-            style={{
-              background: '#fff', borderRadius: 16, padding: '28px 24px',
-              width: 280, display: 'flex', flexDirection: 'column', gap: 12,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span style={{ fontWeight: 700, fontSize: 16, textAlign: 'center' }}>🔑 관리자 로그인</span>
-            <input
-              type="password"
-              placeholder="PIN 입력"
-              value={adminPin}
-              autoFocus
-              onChange={(e) => { setAdminPin(e.target.value); setAdminError(false) }}
-              onKeyDown={(e) => e.key === 'Enter' && tryAdminLogin()}
-              style={{ width: '100%' }}
-            />
-            {adminError && <span style={{ fontSize: 13, color: '#c0392b' }}>PIN이 틀렸습니다.</span>}
-            <button className="primary block" onClick={tryAdminLogin}>로그인</button>
-            <button className="block" onClick={() => setShowAdminModal(false)}>취소</button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

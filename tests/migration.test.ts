@@ -129,8 +129,8 @@ describe('executeMigration — 기본은 미리보기(dry-run)', () => {
 
     expect(result.written).toBe(true)
     expect(batchCommitMock).toHaveBeenCalled()
-    // 계획한 문서 수만큼 배치에 담긴다
-    expect(batchSetMock).toHaveBeenCalledTimes(1 + 24 + 24 + 18 + legacyGameCount(state) + 32)
+    // 계획한 문서 수만큼 배치에 담긴다 (config, members, memberPrivate, memberIndex, sessions, games, ledger)
+    expect(batchSetMock).toHaveBeenCalledTimes(1 + 24 + 24 + 24 + 18 + legacyGameCount(state) + 32)
   })
 
   it('저장할 때 경로가 새 구조 규칙대로 만들어진다', async () => {
@@ -140,6 +140,7 @@ describe('executeMigration — 기본은 미리보기(dry-run)', () => {
     expect(paths).toContain('clubs/skkubc/config/main')
     expect(paths).toContain('clubs/skkubc/members/member-1')
     expect(paths).toContain('clubs/skkubc/memberPrivate/member-1')
+    expect(paths).toContain('clubs/skkubc/memberIndex/member-1')
     expect(paths).toContain('clubs/skkubc/sessions/session-1')
     expect(paths).toContain('clubs/skkubc/sessions/session-1/games/game-s1-0')
     expect(paths).toContain('clubs/skkubc/ledger/ledger-1')
@@ -147,15 +148,24 @@ describe('executeMigration — 기본은 미리보기(dry-run)', () => {
     expect(paths).not.toContain('clubs/skkubc')
   })
 
-  it('저장되는 회원 문서에 비밀번호가 들어가지 않는다', async () => {
+  it('저장되는 회원 문서·이름 찾기 목록에 비밀번호가 들어가지 않는다', async () => {
     await executeMigration(legacy(), { dryRun: false, confirmPhrase: MIGRATION_CONFIRM_PHRASE })
 
     const memberWrites = batchSetMock.mock.calls
       .filter((c) => (c[0] as { path: string }).path.startsWith('clubs/skkubc/members/'))
       .map((c) => c[1] as Record<string, unknown>)
-
     expect(memberWrites.length).toBe(24)
     for (const w of memberWrites) expect(w).not.toHaveProperty('password')
+
+    const indexWrites = batchSetMock.mock.calls
+      .filter((c) => (c[0] as { path: string }).path.startsWith('clubs/skkubc/memberIndex/'))
+      .map((c) => c[1] as Record<string, unknown>)
+    expect(indexWrites.length).toBe(24)
+    for (const w of indexWrites) {
+      expect(w).not.toHaveProperty('password')
+      expect(w).not.toHaveProperty('handicap')
+      expect(w).not.toHaveProperty('handicapHistory')
+    }
   })
 
   it('큰 데이터도 배치 제한에 걸리지 않게 나눠 저장한다', async () => {

@@ -62,43 +62,39 @@ describe('buildMemberLabels — 동명이인 표시', () => {
   })
 })
 
-describe('LoginScreen — 회원 ID 기준 로그인', () => {
+// 최종 보안 마감: 이 화면은 더 이상 비밀번호로 "본인 확인"을 하지 않는다(그 확인은 애초에
+// 클라이언트 로컬 체크일 뿐이었다 — 실제 신뢰 경계는 memberLinks 승인이다). 이제 이 화면은
+// "이미 연결된 기기가 아닌데도 전체 회원 목록을 읽을 수 있는" 드문 경우(예: 개인 회원 연결이
+// 없는 진짜 Firebase 관리자 기기)와 GUEST 전용이다 — 이름을 고르면 비밀번호 없이 바로 시작한다.
+describe('LoginScreen — ID 기준 선택(비밀번호 없음)', () => {
   const dupes: Member[] = [
-    member({ id: 'id-first', name: '홍길동', displayTag: '90학번', password: 'pw1111' }),
-    member({ id: 'id-second', name: '홍길동', displayTag: '02학번', password: 'pw2222' }),
+    member({ id: 'id-first', name: '홍길동', displayTag: '90학번' }),
+    member({ id: 'id-second', name: '홍길동', displayTag: '02학번' }),
   ]
 
-  it('동명이인 두 명이 각자 자기 ID로 로그인된다', () => {
+  it('동명이인 두 명이 각자 자기 ID로 시작된다', () => {
     const onLogin = vi.fn()
     render(<LoginScreen members={dupes} onLogin={onLogin} />)
 
     // 두 번째 사람 선택 — 이름이 같아도 value가 회원 ID라 정확히 구분된다
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'id-second' } })
-    fireEvent.change(screen.getByPlaceholderText('비밀번호'), { target: { value: 'pw2222' } })
-    fireEvent.click(screen.getByText('로그인'))
+    fireEvent.click(screen.getByText('시작하기'))
 
     expect(onLogin).toHaveBeenCalledWith('id-second', '홍길동')
   })
 
-  it('첫 번째 동명이인도 자기 비밀번호로 로그인된다', () => {
+  it('첫 번째 동명이인도 자기 ID로 시작된다', () => {
     const onLogin = vi.fn()
     render(<LoginScreen members={dupes} onLogin={onLogin} />)
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'id-first' } })
-    fireEvent.change(screen.getByPlaceholderText('비밀번호'), { target: { value: 'pw1111' } })
-    fireEvent.click(screen.getByText('로그인'))
+    fireEvent.click(screen.getByText('시작하기'))
 
     expect(onLogin).toHaveBeenCalledWith('id-first', '홍길동')
   })
 
-  it('다른 동명이인의 비밀번호로는 로그인되지 않는다', () => {
-    const onLogin = vi.fn()
-    render(<LoginScreen members={dupes} onLogin={onLogin} />)
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'id-second' } })
-    fireEvent.change(screen.getByPlaceholderText('비밀번호'), { target: { value: 'pw1111' } })
-    fireEvent.click(screen.getByText('로그인'))
-
-    expect(onLogin).not.toHaveBeenCalled()
-    expect(screen.getByText('비밀번호가 틀렸습니다.')).toBeInTheDocument()
+  it('비밀번호 입력칸이 더 이상 없다', () => {
+    render(<LoginScreen members={dupes} onLogin={vi.fn()} />)
+    expect(screen.queryByPlaceholderText('비밀번호')).not.toBeInTheDocument()
   })
 
   it('동명이인 선택 목록에 구분정보가 함께 보인다', () => {
@@ -107,34 +103,42 @@ describe('LoginScreen — 회원 ID 기준 로그인', () => {
     expect(screen.getByRole('option', { name: '홍길동 (02학번)' })).toBeInTheDocument()
   })
 
-  it('동명이인이 없는 기존 회원은 이름만 보이고 로그인도 그대로 동작한다', () => {
+  it('동명이인이 없는 기존 회원은 이름만 보이고 시작도 그대로 동작한다', () => {
     const onLogin = vi.fn()
     const plain = [
-      member({ id: 'm1', name: '테스트회원A' }), // password 미설정 → 기본 '0000'
+      member({ id: 'm1', name: '테스트회원A' }),
       member({ id: 'm2', name: '테스트회원B' }),
     ]
     render(<LoginScreen members={plain} onLogin={onLogin} />)
 
     expect(screen.getByRole('option', { name: '테스트회원A' })).toBeInTheDocument()
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'm1' } })
-    fireEvent.change(screen.getByPlaceholderText('비밀번호'), { target: { value: '0000' } })
-    fireEvent.click(screen.getByText('로그인'))
+    fireEvent.click(screen.getByText('시작하기'))
 
     expect(onLogin).toHaveBeenCalledWith('m1', '테스트회원A')
+  })
+
+  it('이름을 고르지 않고 시작하면 안내만 하고 onLogin을 부르지 않는다', () => {
+    const onLogin = vi.fn()
+    render(<LoginScreen members={[member({ id: 'm1', name: '테스트회원A' })]} onLogin={onLogin} />)
+    fireEvent.click(screen.getByText('시작하기'))
+
+    expect(onLogin).not.toHaveBeenCalled()
+    expect(screen.getByText('이름을 선택해 주세요.')).toBeInTheDocument()
   })
 
   it('displayTag가 없는 기존 데이터로도 화면이 정상 동작한다', () => {
     const plain = [member({ id: 'm1', name: '테스트회원A' })]
     render(<LoginScreen members={plain} onLogin={vi.fn()} />)
     expect(screen.getByRole('option', { name: '테스트회원A' })).toBeInTheDocument()
-    expect(screen.getByText('로그인')).toBeInTheDocument()
+    expect(screen.getByText('시작하기')).toBeInTheDocument()
   })
 
   it('GUEST 선택은 기존대로 동작한다', () => {
     const onLogin = vi.fn()
     render(<LoginScreen members={[member({ id: 'm1', name: '테스트회원A' })]} onLogin={onLogin} />)
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '__guest__' } })
-    fireEvent.click(screen.getByText('로그인'))
+    fireEvent.click(screen.getByText('시작하기'))
 
     expect(onLogin).toHaveBeenCalledWith('__guest__', 'GUEST')
   })

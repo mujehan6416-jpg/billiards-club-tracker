@@ -36,7 +36,7 @@ vi.mock('firebase/firestore', () => ({
 }))
 vi.mock('../src/lib/firebase', () => ({ db: {} }))
 
-import { syncSplitChanges, toPublicMember, toSessionDoc, updateFlashSessionAttendees } from '../src/lib/splitFirestore'
+import { syncSplitChanges, toPublicMember, toSessionDoc, toMemberIndexEntry, updateFlashSessionAttendees } from '../src/lib/splitFirestore'
 import type { AppState, Member, Session } from '../src/types'
 
 const member = (over: Partial<Member> = {}): Member => ({
@@ -87,12 +87,16 @@ describe('toPublicMember / toSessionDoc — 필드 화이트리스트', () => {
   })
 })
 
-describe('syncSplitChanges — 회원', () => {
-  it('새 회원은 create(set)한다', async () => {
+describe('syncSplitChanges — 회원 (+ 미연결 기기용 이름 찾기 목록)', () => {
+  it('새 회원은 members·memberIndex 둘 다 create(set)한다', async () => {
     const previous = emptyState()
     const next = { ...emptyState(), members: [member()] }
     await syncSplitChanges(previous, next)
-    expect(opsFlat()).toEqual([{ kind: 'set', path: 'clubs/skkubc/members/member-1', data: toPublicMember(member()) }])
+    expect(opsFlat()).toEqual(expect.arrayContaining([
+      { kind: 'set', path: 'clubs/skkubc/members/member-1', data: toPublicMember(member()) },
+      { kind: 'set', path: 'clubs/skkubc/memberIndex/member-1', data: toMemberIndexEntry(member()) },
+    ]))
+    expect(opsFlat()).toHaveLength(2)
   })
 
   it('공개정보(이름·핸디 등)가 바뀐 회원만 set한다 — 안 바뀐 회원은 건드리지 않는다', async () => {
@@ -100,12 +104,25 @@ describe('syncSplitChanges — 회원', () => {
     const previous = { ...emptyState(), members: [member(), untouched] }
     const next = { ...emptyState(), members: [member({ handicap: 22 }), untouched] }
     await syncSplitChanges(previous, next)
+    // handicap만 바뀌었으므로 members는 다시 쓰지만, memberIndex(이름·활성·구분정보만 담음)는
+    // 실제로 안 바뀌었으니 쓰지 않는다 — 무관한 컬렉션까지 매번 다시 쓰지 않는다는 원칙 그대로.
     expect(opsFlat()).toEqual([
       { kind: 'set', path: 'clubs/skkubc/members/member-1', data: toPublicMember(member({ handicap: 22 })) },
     ])
   })
 
-  it('password만 바뀌면 아무것도 쓰지 않는다(split members에는 password가 없어 차이가 안 생김)', async () => {
+  it('이름이 바뀌면 members와 memberIndex 둘 다 다시 쓴다', async () => {
+    const previous = { ...emptyState(), members: [member()] }
+    const next = { ...emptyState(), members: [member({ name: '이름바뀜' })] }
+    await syncSplitChanges(previous, next)
+    expect(opsFlat()).toEqual(expect.arrayContaining([
+      { kind: 'set', path: 'clubs/skkubc/members/member-1', data: toPublicMember(member({ name: '이름바뀜' })) },
+      { kind: 'set', path: 'clubs/skkubc/memberIndex/member-1', data: toMemberIndexEntry(member({ name: '이름바뀜' })) },
+    ]))
+    expect(opsFlat()).toHaveLength(2)
+  })
+
+  it('password만 바뀌면 아무것도 쓰지 않는다(members·memberIndex 둘 다 password가 없어 차이가 안 생김)', async () => {
     const previous = { ...emptyState(), members: [member({ password: 'old-pw' })] }
     const next = { ...emptyState(), members: [member({ password: 'new-pw' })] }
     await syncSplitChanges(previous, next)
@@ -113,11 +130,15 @@ describe('syncSplitChanges — 회원', () => {
     expect(commitMocks.length).toBe(0)
   })
 
-  it('없어진 회원은 delete한다', async () => {
+  it('없어진 회원은 members·memberIndex 둘 다 delete한다', async () => {
     const previous = { ...emptyState(), members: [member()] }
     const next = emptyState()
     await syncSplitChanges(previous, next)
-    expect(opsFlat()).toEqual([{ kind: 'delete', path: 'clubs/skkubc/members/member-1' }])
+    expect(opsFlat()).toEqual(expect.arrayContaining([
+      { kind: 'delete', path: 'clubs/skkubc/members/member-1' },
+      { kind: 'delete', path: 'clubs/skkubc/memberIndex/member-1' },
+    ]))
+    expect(opsFlat()).toHaveLength(2)
   })
 
   it('아무것도 안 바뀌면 batch.commit을 한 번도 호출하지 않는다', async () => {
@@ -212,11 +233,12 @@ describe('syncSplitChanges — 회계·설정', () => {
 
 describe('syncSplitChanges — 배치 나누기(500개 제한)', () => {
   it('연산이 450개를 넘으면 배치를 나눠 여러 번 commit한다', async () => {
+    // 회원 한 명당 members·memberIndex 2개씩 생기므로 500명 = 1000개 연산
     const many = Array.from({ length: 500 }, (_, i) => member({ id: `member-${i}` }))
     const previous = emptyState()
     const next = { ...emptyState(), members: many }
     await syncSplitChanges(previous, next)
-    expect(opsFlat()).toHaveLength(500)
+    expect(opsFlat()).toHaveLength(1000)
     expect(commitMocks.length).toBeGreaterThan(1)
     for (const c of commitMocks) expect(c).toHaveBeenCalledTimes(1)
   })

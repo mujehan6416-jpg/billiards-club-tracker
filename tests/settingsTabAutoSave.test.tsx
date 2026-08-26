@@ -103,46 +103,34 @@ describe('SettingsTab — 파일 불러오기 후 자동 서버 저장', () => {
     expect(uploadToCloudMock).not.toHaveBeenCalled()
   })
 
-  it('JSON 전체 복원은 자동으로 서버에 올리지 않고, 직접 올리도록 안내한다', async () => {
+  it('JSON 전체 복원은 로컬에만 반영되고, split 모드에서는 서버 반영이 막혀 있음을 안내한다', async () => {
     const { container } = render(<SettingsTab />)
     const restored: AppState = { members: [], sessions: [], settings: { lastBackupAt: null }, ledger: [] }
     dropFile(container, 'backupJson', 'backup.json', JSON.stringify(restored))
 
-    await waitFor(() => expect(screen.getByText(/보관한 파일로 되돌렸습니다/)).toBeInTheDocument())
-    // 안내 문구가 수동 올리기 버튼을 정확히 가리켜야 한다(버튼 자체는 그대로 남아 있다)
-    expect(screen.getByRole('button', { name: '이 기기 내용을 서버에 올리기' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText(/이 기기 내용만 되돌렸습니다/)).toBeInTheDocument())
+    // split 모드에서는 수동 올리기 버튼 자체가 없다(안내 문구가 없는 버튼을 가리키지 않는다).
+    expect(screen.queryByRole('button', { name: '이 기기 내용을 서버에 올리기' })).not.toBeInTheDocument()
     expect(uploadToCloudMock).not.toHaveBeenCalled()
     expect(syncSplitChangesMock).not.toHaveBeenCalled()
   })
 })
 
-describe('SettingsTab — 데이터 관리 메뉴', () => {
-  it('자동 저장 안내와 함께 받기·올리기 버튼이 모두 남아 있다', () => {
+// 최종 보안 마감: split 모드(운영 기본값)에서는 수동 "서버 내용 받기/올리기"가 여러 기기의
+// 최신 기록을 한쪽으로 덮어쓸 위험이 있어 막아 두었다 — legacy 전용 코드 경로 자체는 rollback을
+// 위해 남겨 두지만(코드에서 지우지 않음), 화면에는 노출하지 않는다.
+describe('SettingsTab — 데이터 관리 메뉴 (split 모드에서는 수동 받기/올리기를 막아둔다)', () => {
+  it('자동 저장 안내만 보이고, 수동 받기·올리기 버튼은 보이지 않는다', () => {
     render(<SettingsTab />)
     expect(screen.getByText(/자동으로 서버에 저장됩니다/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '서버 내용을 이 기기로 받기' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '이 기기 내용을 서버에 올리기' })).toBeInTheDocument()
+    expect(screen.getByText(/수동 받기\/올리기 버튼은 막아 두었습니다/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '서버 내용을 이 기기로 받기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '이 기기 내용을 서버에 올리기' })).not.toBeInTheDocument()
   })
 
-  it('"서버 내용을 이 기기로 받기"는 기존 동작(받아서 교체 + 동기화 시각 기록)을 유지한다', async () => {
-    const cloud: AppState = {
-      members: [{ id: 'm9', name: '서버회원', handicap: 15, handicapHistory: [], active: true }],
-      sessions: [], settings: { lastBackupAt: null }, ledger: [],
-    }
-    downloadFromCloudMock.mockResolvedValue({ state: cloud, updatedAt: '2026-08-23T00:00:00.000Z' })
+  it('legacy 함수 자체는 이 화면 어디에서도 호출되지 않는다', () => {
     render(<SettingsTab />)
-    fireEvent.click(screen.getByRole('button', { name: '서버 내용을 이 기기로 받기' }))
-
-    await waitFor(() => expect(screen.getByText(/서버 내용을 이 기기로 받았습니다/)).toBeInTheDocument())
-    expect(useApp.getState().members.map((m) => m.name)).toEqual(['서버회원'])
-    expect(markSyncedMock).toHaveBeenCalledWith('2026-08-23T00:00:00.000Z')
-  })
-
-  it('수동 "이 기기 내용을 서버에 올리기"는 그대로 동작한다', async () => {
-    render(<SettingsTab />)
-    fireEvent.click(screen.getByRole('button', { name: '이 기기 내용을 서버에 올리기' }))
-
-    await waitFor(() => expect(screen.getByText('서버에 올렸습니다.')).toBeInTheDocument())
-    expect(uploadToCloudMock).toHaveBeenCalledTimes(1)
+    expect(downloadFromCloudMock).not.toHaveBeenCalled()
+    expect(uploadToCloudMock).not.toHaveBeenCalled()
   })
 })

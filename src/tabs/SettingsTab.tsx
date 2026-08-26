@@ -342,104 +342,6 @@ function HandicapEditCard({ members }: { members: Member[] }) {
   )
 }
 
-// 관리자용 회원 비밀번호 변경 카드
-function AdminMemberPwCard({ members }: { members: Member[] }) {
-  const setMemberPassword = useApp((s) => s.setMemberPassword)
-  const PINNED = ['엄재익', '이제한']
-  const sorted = [...members.filter((m) => m.active)].sort((a, b) => {
-    const ai = PINNED.indexOf(a.name), bi = PINNED.indexOf(b.name)
-    if (ai !== -1 || bi !== -1) { if (ai === -1) return 1; if (bi === -1) return -1; return ai - bi }
-    return a.name.localeCompare(b.name, 'ko')
-  })
-  const [memberId, setMemberId] = useState('')
-  const [pw, setPw] = useState('')
-  const [msg, setMsg] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const save = async () => {
-    if (!memberId) { setMsg('회원을 선택하세요.'); return }
-    if (pw.length < 4) { setMsg('비밀번호는 4자리 이상이어야 합니다.'); return }
-    setSaving(true)
-    setMemberPassword(memberId, pw)
-    try {
-      const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
-      const m = members.find((x) => x.id === memberId)
-      setMsg(`${m?.name ?? ''} 비밀번호 변경 완료`)
-      setPw('')
-    } catch {
-      setMsg('변경했으나 서버 저장 실패')
-    } finally { setSaving(false) }
-  }
-
-  return (
-    <div className="card col-card">
-      <span style={{ fontWeight: 600, fontSize: 14 }}>👤 회원 비밀번호 관리 (관리자)</span>
-      <select value={memberId} onChange={(e) => { setMemberId(e.target.value); setMsg('') }} style={{ width: '100%' }}>
-        <option value="">회원 선택</option>
-        {sorted.map((m) => (
-          <option key={m.id} value={m.id}>{m.name}</option>
-        ))}
-      </select>
-      <input type="text" placeholder="새 비밀번호 (4자리 이상)" value={pw}
-        onChange={(e) => { setPw(e.target.value); setMsg('') }}
-        onKeyDown={(e) => e.key === 'Enter' && save()}
-        style={{ width: '100%' }} />
-      {msg && <span style={{ fontSize: 13, color: msg.includes('완료') ? '#1d9e75' : 'var(--danger)' }}>{msg}</span>}
-      <button className="primary block" onClick={save} disabled={saving}>{saving ? '저장 중...' : '변경'}</button>
-    </div>
-  )
-}
-
-// 내 비밀번호 변경 (일반회원)
-function MyPasswordCard({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  const { memberId } = useAuth()
-  const members = useApp((s) => s.members)
-  const setMemberPassword = useApp((s) => s.setMemberPassword)
-  const [cur, setCur] = useState('')
-  const [next, setNext] = useState('')
-  const [next2, setNext2] = useState('')
-  const [msg, setMsg] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  const doChange = async () => {
-    const me = members.find((m) => m.id === memberId)
-    if (!me) return
-    const curPw = me.password ?? '0000'
-    if (cur !== curPw) { setMsg('현재 비밀번호가 틀렸습니다.'); return }
-    if (next.length < 4) { setMsg('비밀번호는 4자리 이상이어야 합니다.'); return }
-    if (next !== next2) { setMsg('새 비밀번호가 일치하지 않습니다.'); return }
-    setMemberPassword(memberId!, next)
-    setSaving(true); setMsg('저장 중...')
-    try {
-      const s = useApp.getState()
-      await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
-      setMsg('비밀번호가 변경되었습니다.')
-      setCur(''); setNext(''); setNext2('')
-    } catch {
-      setMsg('변경했으나 저장에 실패했습니다. 인터넷 확인 후 다시 시도해 주세요.')
-    } finally { setSaving(false) }
-  }
-
-  return (
-    <div className="card col-card">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>🔒 내 비밀번호 변경</span>
-        <button style={{ fontSize: 12 }} onClick={onToggle}>{open ? '닫기' : '변경하기'}</button>
-      </div>
-      {open && (
-        <>
-          <input type="password" placeholder="현재 비밀번호" value={cur} onChange={(e) => setCur(e.target.value)} style={{ width: '100%' }} />
-          <input type="password" placeholder="새 비밀번호 (4자리 이상)" value={next} onChange={(e) => setNext(e.target.value)} style={{ width: '100%' }} />
-          <input type="password" placeholder="새 비밀번호 확인" value={next2} onChange={(e) => setNext2(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && doChange()} style={{ width: '100%' }} />
-          {msg && <span style={{ fontSize: 13, color: msg.includes('변경') ? '#1d9e75' : msg.includes('저장 중') ? 'var(--muted)' : 'var(--danger)' }}>{msg}</span>}
-          <button className="primary block" onClick={doChange} disabled={saving}>{saving ? '저장 중...' : '변경'}</button>
-        </>
-      )}
-    </div>
-  )
-}
 
 export function SettingsTab() {
   const members = useApp((s) => s.members)
@@ -461,7 +363,6 @@ export function SettingsTab() {
   const [msg, setMsg] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
-  const [myPwOpen, setMyPwOpen] = useState(false)
 
   const onExportJson = () => {
     exportJson({ members, sessions, settings, ledger }, todayStr())
@@ -487,7 +388,11 @@ export function SettingsTab() {
       replaceAll(state)
       // 전체 복원은 일부러 서버에 자동 저장하지 않는다 — 서버의 기존 내용을 되돌리기 어렵게
       // 덮어쓸 수 있으므로, 사용자가 이 기기에서 내용을 확인한 뒤 직접 올리도록 안내한다.
-      setMsg('보관한 파일로 되돌렸습니다. 내용을 확인한 뒤, 서버에도 반영하려면 아래 "이 기기 내용을 서버에 올리기"를 눌러 주세요.')
+      // split 모드에서는 "이 기기 내용을 서버에 올리기" 자체를 막아 두었으므로(전체 재동기화가
+      // 필요한 위험한 작업이라 안전하게 다시 만들기 전까지는 비활성화) 안내 문구도 다르게 준다.
+      setMsg(USE_SPLIT_FIRESTORE
+        ? '보관한 파일로 이 기기 내용만 되돌렸습니다. 서버에는 반영되지 않았습니다(현재 서버 반영 기능은 막혀 있습니다) — 서버 내용도 되돌려야 하면 관리자에게 문의해 주세요.'
+        : '보관한 파일로 되돌렸습니다. 내용을 확인한 뒤, 서버에도 반영하려면 아래 "이 기기 내용을 서버에 올리기"를 눌러 주세요.')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '파일을 불러오지 못했습니다.')
     }
@@ -577,10 +482,9 @@ export function SettingsTab() {
 
       {!isGuest && !isAdmin && showLogin && <AdminLogin onSuccess={() => setShowLogin(false)} />}
 
-      {/* 내 비밀번호 변경 (일반회원 항상 표시, GUEST 제외) */}
-      {!isGuest && <MyPasswordCard open={myPwOpen} onToggle={() => setMyPwOpen((v) => !v)} />}
-
-      {/* 이 기기 연결 (일반회원) — 아직 부가 기능이라, 연결하지 않아도 앱은 그대로 쓸 수 있다 */}
+      {/* 이 기기 연결 (일반회원) — 관리자 승인이 실제 로그인 기준이 된 뒤로는 부가 기능이
+          아니라 핵심 기능이다. 아직 연결 안 됐으면 앱 부팅 화면(DeviceConnectScreen)에서
+          이미 요청했을 가능성이 높지만, 연결 상태 확인·해제 후 재요청은 여기서도 가능하다. */}
       {!isGuest && <DeviceLinkCard />}
 
       {!isGuest && isAdmin && (
@@ -594,10 +498,7 @@ export function SettingsTab() {
           {/* 3. 회원 관리 — 에버리지 직접 수정 */}
           <HandicapEditCard members={members} />
 
-          {/* 4. 회원 관리 — 회원 비밀번호 (관리자) */}
-          <AdminMemberPwCard members={members} />
-
-          {/* 4-1. 회원 관리 — 기기 연결 승인 (Firebase 관리자 인증 필요) */}
+          {/* 3-1. 회원 관리 — 기기 연결 승인 (Firebase 관리자 인증 필요) */}
           <DeviceLinkAdminCard />
 
           {/* 4-2. 새 저장 구조로 데이터 복사 (Firebase 관리자 인증 필요).
@@ -611,21 +512,33 @@ export function SettingsTab() {
             <span style={{ fontWeight: 600, fontSize: 14 }}>💾 데이터 관리</span>
             <span className="muted" style={{ lineHeight: 1.5 }}>
               회원·모임·경기·회계 변경 내용은 자동으로 서버에 저장됩니다.
-              PC와 휴대폰에서 같은 내용을 보려면 아래에서 서버 내용을 받아오세요.
             </span>
-            <button className="primary block" disabled={syncing} onClick={onDownloadCloud}>
-              {syncing ? '처리 중...' : '서버 내용을 이 기기로 받기'}
-            </button>
-            <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
-              서버에 저장된 내용으로 이 기기의 현재 내용을 바꿉니다.
-            </span>
-            <button className="block" disabled={syncing} onClick={onUploadCloud}>
-              {syncing ? '처리 중...' : '이 기기 내용을 서버에 올리기'}
-            </button>
-            <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
-              평소에는 누르지 않아도 됩니다. 아래에서 "보관한 파일로 되돌리기"를 했거나,
-              저장하지 못했다는 안내를 봤을 때만 사용하세요.
-            </span>
+            {USE_SPLIT_FIRESTORE ? (
+              <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+                지금은 앱을 새로고침하면 항상 서버의 최신 내용을 자동으로 받아오므로, 아래
+                수동 받기/올리기 버튼은 막아 두었습니다(잘못 누르면 여러 기기의 최신 기록이
+                한쪽으로 덮어써질 위험이 있어, 안전한 방식을 다시 만들기 전까지 비활성화).
+              </span>
+            ) : (
+              <>
+                <span className="muted" style={{ lineHeight: 1.5 }}>
+                  PC와 휴대폰에서 같은 내용을 보려면 아래에서 서버 내용을 받아오세요.
+                </span>
+                <button className="primary block" disabled={syncing} onClick={onDownloadCloud}>
+                  {syncing ? '처리 중...' : '서버 내용을 이 기기로 받기'}
+                </button>
+                <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+                  서버에 저장된 내용으로 이 기기의 현재 내용을 바꿉니다.
+                </span>
+                <button className="block" disabled={syncing} onClick={onUploadCloud}>
+                  {syncing ? '처리 중...' : '이 기기 내용을 서버에 올리기'}
+                </button>
+                <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+                  평소에는 누르지 않아도 됩니다. 아래에서 "보관한 파일로 되돌리기"를 했거나,
+                  저장하지 못했다는 안내를 봤을 때만 사용하세요.
+                </span>
+              </>
+            )}
           </div>
 
           {/* 6. 파일로 보관/불러오기 — 핸디 이력 CSV */}

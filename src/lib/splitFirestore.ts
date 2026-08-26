@@ -2,7 +2,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc, writeBa
 import { db } from './firebase'
 import type { AppState, Game, LedgerRecord, Member, Session } from '../types'
 import type {
-  ClubConfig, MemberPrivate, PublicMember, SessionDoc, SplitFirestoreData, SplitGame,
+  ClubConfig, MemberIndexEntry, MemberPrivate, PublicMember, SessionDoc, SplitFirestoreData, SplitGame,
 } from '../types/splitFirestore'
 import { mergeSplitToAppState } from '../logic/splitAppState'
 
@@ -32,6 +32,8 @@ const configDoc = (clubId: string) => doc(db, 'clubs', clubId, 'config', 'main')
 const membersCol = (clubId: string) => collection(db, 'clubs', clubId, 'members')
 const memberDoc = (clubId: string, memberId: string) => doc(db, 'clubs', clubId, 'members', memberId)
 const memberPrivateDoc = (clubId: string, memberId: string) => doc(db, 'clubs', clubId, 'memberPrivate', memberId)
+const memberIndexCol = (clubId: string) => collection(db, 'clubs', clubId, 'memberIndex')
+const memberIndexDoc = (clubId: string, memberId: string) => doc(db, 'clubs', clubId, 'memberIndex', memberId)
 const sessionsCol = (clubId: string) => collection(db, 'clubs', clubId, 'sessions')
 const sessionDoc = (clubId: string, sessionId: string) => doc(db, 'clubs', clubId, 'sessions', sessionId)
 const gamesCol = (clubId: string, sessionId: string) =>
@@ -65,6 +67,19 @@ export function toSessionDoc(session: Session): SessionDoc {
   return JSON.parse(JSON.stringify(rest)) as SessionDoc
 }
 
+/**
+ * Member → MemberIndexEntry. 연결 안 된 새 기기도 읽을 수 있는 "이름 찾기" 전용 문서라
+ * handicap·handicapHistory·password는 절대 넣지 않는다(types/splitFirestore.ts 참고).
+ */
+export function toMemberIndexEntry(member: Member): MemberIndexEntry {
+  return {
+    id: member.id,
+    name: member.name,
+    active: member.active,
+    ...(member.displayTag ? { displayTag: member.displayTag } : {}),
+  }
+}
+
 // ── 읽기 ────────────────────────────────────────────────────────────
 
 export async function fetchConfig(clubId = DEFAULT_CLUB_ID): Promise<ClubConfig | null> {
@@ -90,6 +105,15 @@ export async function fetchGames(sessionId: string, clubId = DEFAULT_CLUB_ID): P
 export async function fetchLedger(clubId = DEFAULT_CLUB_ID): Promise<LedgerRecord[]> {
   const snap = await getDocs(ledgerCol(clubId))
   return snap.docs.map((d) => d.data() as LedgerRecord)
+}
+
+/**
+ * "이름 찾기" 목록을 읽는다. 연결되지 않은 새 기기(로그인 전, 서명만 된 상태)도 부를 수 있다 —
+ * Rules가 `request.auth != null`(연결·관리자 여부와 무관하게 로그인만 됐으면)만 요구한다.
+ */
+export async function fetchMemberIndex(clubId = DEFAULT_CLUB_ID): Promise<MemberIndexEntry[]> {
+  const snap = await getDocs(memberIndexCol(clubId))
+  return snap.docs.map((d) => d.data() as MemberIndexEntry)
 }
 
 /**
@@ -124,6 +148,7 @@ export async function loadSplitAppState(clubId = DEFAULT_CLUB_ID): Promise<AppSt
     config: config ?? { lastBackupAt: null },
     members,
     memberPrivate: [], // mergeSplitToAppState는 memberPrivate를 쓰지 않는다
+    memberIndex: [], // mergeSplitToAppState는 memberIndex도 쓰지 않는다(회원 목록은 members에서 온다)
     sessions,
     games: gamesBySession.flat(),
     ledger,
@@ -143,6 +168,14 @@ export async function writeMember(member: PublicMember, clubId = DEFAULT_CLUB_ID
 
 export async function writeMemberPrivate(record: MemberPrivate, clubId = DEFAULT_CLUB_ID): Promise<void> {
   await setDoc(memberPrivateDoc(clubId, record.memberId), record)
+}
+
+export async function writeMemberIndexEntry(entry: MemberIndexEntry, clubId = DEFAULT_CLUB_ID): Promise<void> {
+  await setDoc(memberIndexDoc(clubId, entry.id), entry)
+}
+
+export async function deleteSplitMemberIndexEntry(memberId: string, clubId = DEFAULT_CLUB_ID): Promise<void> {
+  await deleteDoc(memberIndexDoc(clubId, memberId))
 }
 
 export async function writeSession(session: SessionDoc, clubId = DEFAULT_CLUB_ID): Promise<void> {
@@ -258,6 +291,7 @@ export async function writeAllSplitData(split: SplitFirestoreData, clubId = DEFA
     { ref: configDoc(clubId), data: split.config },
     ...split.members.map((m) => ({ ref: memberDoc(clubId, m.id), data: m })),
     ...split.memberPrivate.map((p) => ({ ref: memberPrivateDoc(clubId, p.memberId), data: p })),
+    ...split.memberIndex.map((m) => ({ ref: memberIndexDoc(clubId, m.id), data: m })),
     ...split.sessions.map((s) => ({ ref: sessionDoc(clubId, s.id), data: s })),
     ...split.games.map((g) => ({ ref: gameDoc(clubId, g.sessionId, g.game.id), data: g.game })),
     ...split.ledger.map((r) => ({ ref: ledgerDoc(clubId, r.id), data: r })),
@@ -296,7 +330,7 @@ export async function syncSplitChanges(
   // toSessionDoc이 항상 같은 순서로 필드를 만들어 내므로 문자열 비교로 충분하다.
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
-  // ── 회원 ──
+  // ── 회원 (+ 미연결 기기용 이름 찾기 목록도 같이 유지) ──
   const prevMembers = new Map(previous.members.map((m) => [m.id, m]))
   const nextMembers = new Map(next.members.map((m) => [m.id, m]))
   for (const [id, m] of nextMembers) {
@@ -305,9 +339,16 @@ export async function syncSplitChanges(
     if (!before || !same(toPublicMember(before), pub)) {
       ops.push({ kind: 'set', ref: memberDoc(clubId, id), data: pub })
     }
+    const idx = toMemberIndexEntry(m)
+    if (!before || !same(toMemberIndexEntry(before), idx)) {
+      ops.push({ kind: 'set', ref: memberIndexDoc(clubId, id), data: idx })
+    }
   }
   for (const id of prevMembers.keys()) {
-    if (!nextMembers.has(id)) ops.push({ kind: 'delete', ref: memberDoc(clubId, id) })
+    if (!nextMembers.has(id)) {
+      ops.push({ kind: 'delete', ref: memberDoc(clubId, id) })
+      ops.push({ kind: 'delete', ref: memberIndexDoc(clubId, id) })
+    }
   }
 
   // ── 세션 + 경기(하위컬렉션) ──

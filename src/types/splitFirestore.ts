@@ -45,6 +45,25 @@ export interface MemberPrivate {
   memberId: string
 }
 
+/**
+ * clubs/{clubId}/memberIndex/{memberId} — 아직 이 클럽에 연결되지 않은 기기도 볼 수 있는
+ * 최소한의 "이름 찾기" 목록(최종 보안 마감 단계).
+ *
+ * 새 기기가 처음 이 앱을 열면(관리자도 아니고 아직 연결도 안 됐으면) split의 members/sessions/
+ * ledger/config는 전부 Rules상 읽을 수 없다 — 그래서 "내가 어느 회원인지" 골라 연결 요청을
+ * 보낼 방법이 없어진다. 이 문서는 딱 그 용도로만 쓰는, 의도적으로 아주 좁힌 정보다.
+ *
+ * PublicMember보다도 더 적은 정보만 담는다 — handicap·handicapHistory(실적 데이터)는
+ * 절대 넣지 않는다. "회원 명단/개인정보를 미연결 사용자에게 과도하게 공개하지 않는다"는
+ * 원칙에 따라, 동명이인을 구분하는 데 필요한 이름·구분정보·활성 여부만 담는다.
+ */
+export interface MemberIndexEntry {
+  id: string
+  name: string
+  active: boolean
+  displayTag?: string
+}
+
 /** clubs/{clubId}/sessions/{sessionId} — 경기 배열을 뺀 모임 정보. */
 export type SessionDoc = Omit<Session, 'games'>
 
@@ -59,6 +78,7 @@ export interface SplitFirestoreData {
   config: ClubConfig
   members: PublicMember[]
   memberPrivate: MemberPrivate[]
+  memberIndex: MemberIndexEntry[]
   sessions: SessionDoc[]
   games: SplitGame[]
   ledger: LedgerRecord[]
@@ -69,6 +89,7 @@ export interface SplitValidation {
   ok: boolean
   counts: {
     members: { legacy: number; split: number }
+    memberIndex: { legacy: number; split: number }
     sessions: { legacy: number; split: number }
     games: { legacy: number; split: number }
     ledger: { legacy: number; split: number }

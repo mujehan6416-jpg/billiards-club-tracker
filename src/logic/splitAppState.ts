@@ -1,6 +1,6 @@
 import type { AppState } from '../types'
 import type {
-  MemberPrivate, PublicMember, SessionDoc, SplitFirestoreData, SplitGame, SplitValidation,
+  MemberIndexEntry, MemberPrivate, PublicMember, SessionDoc, SplitFirestoreData, SplitGame, SplitValidation,
 } from '../types/splitFirestore'
 
 /**
@@ -27,6 +27,15 @@ export function splitLegacyAppState(state: AppState): SplitFirestoreData {
   // 지금은 옮길 관리자 전용 개인정보가 없다. 자리만 회원 수만큼 만들어 둔다.
   const memberPrivate: MemberPrivate[] = state.members.map((m) => ({ memberId: m.id }))
 
+  // 연결되지 않은 새 기기도 "내가 누구인지" 고를 수 있어야 하므로, handicap 등 실적 데이터는
+  // 빼고 이름 찾기에 꼭 필요한 최소 정보만 따로 만든다(types/splitFirestore.ts의 MemberIndexEntry 참고).
+  const memberIndex: MemberIndexEntry[] = state.members.map((m) => ({
+    id: m.id,
+    name: m.name,
+    active: m.active,
+    ...(m.displayTag ? { displayTag: m.displayTag } : {}),
+  }))
+
   const sessions: SessionDoc[] = []
   const games: SplitGame[] = []
   for (const session of state.sessions) {
@@ -44,6 +53,7 @@ export function splitLegacyAppState(state: AppState): SplitFirestoreData {
     config: { lastBackupAt: state.settings.lastBackupAt },
     members,
     memberPrivate,
+    memberIndex,
     sessions,
     games,
     ledger: state.ledger.map((r) => ({ ...r })),
@@ -79,6 +89,7 @@ export function validateSplit(state: AppState, split: SplitFirestoreData): Split
 
   const counts = {
     members: { legacy: state.members.length, split: split.members.length },
+    memberIndex: { legacy: state.members.length, split: split.memberIndex.length },
     sessions: { legacy: state.sessions.length, split: split.sessions.length },
     games: { legacy: legacyGameCount, split: split.games.length },
     ledger: { legacy: state.ledger.length, split: split.ledger.length },
@@ -91,6 +102,8 @@ export function validateSplit(state: AppState, split: SplitFirestoreData): Split
   // ID 중복 — Firestore 문서 ID로 쓰이므로 겹치면 데이터가 덮어써진다.
   const memberDupes = duplicateIds(split.members.map((m) => m.id))
   if (memberDupes.length) issues.push(`회원 ID가 중복됩니다: ${memberDupes.length}건`)
+  const memberIndexDupes = duplicateIds(split.memberIndex.map((m) => m.id))
+  if (memberIndexDupes.length) issues.push(`이름 찾기 목록 ID가 중복됩니다: ${memberIndexDupes.length}건`)
   const sessionDupes = duplicateIds(split.sessions.map((s) => s.id))
   if (sessionDupes.length) issues.push(`모임 ID가 중복됩니다: ${sessionDupes.length}건`)
   const ledgerDupes = duplicateIds(split.ledger.map((r) => r.id))
@@ -116,6 +129,13 @@ export function validateSplit(state: AppState, split: SplitFirestoreData): Split
   // 비밀번호가 새 구조로 새어 들어갔는지 — 절대 있으면 안 된다.
   if (split.members.some((m) => 'password' in m)) {
     issues.push('회원 공개정보에 비밀번호가 들어 있습니다.')
+  }
+  if (split.memberIndex.some((m) => 'password' in m)) {
+    issues.push('이름 찾기 목록에 비밀번호가 들어 있습니다.')
+  }
+  // handicap 같은 실적 데이터가 새어 들어갔는지 — 이 목록은 미연결 기기도 볼 수 있으므로 특히 중요하다.
+  if (split.memberIndex.some((m) => 'handicap' in m || 'handicapHistory' in m)) {
+    issues.push('이름 찾기 목록에 실적(핸디) 데이터가 들어 있습니다.')
   }
 
   return { ok: issues.length === 0, counts, issues }
@@ -151,28 +171,5 @@ export function mergeSplitToAppState(split: SplitFirestoreData): AppState {
     })),
     settings: { lastBackupAt: split.config.lastBackupAt },
     ledger: split.ledger.map((r) => ({ ...r })),
-  }
-}
-
-/**
- * split에서 읽은 AppState(비밀번호 없음)에 legacy 문서의 비밀번호만 회원 ID 기준으로 채워 넣는다.
- *
- * 비밀번호는 설계상 split members에 절대 들어가지 않는다(splitLegacyAppState 주석 참고).
- * 그런데 로그인 화면(LoginScreen)은 회원이 직접 정한 비밀번호(Member.password)로 본인 확인을
- * 하므로, split을 앱의 기본 read 경로로 쓰기 시작하면 이 필드를 legacy 문서에서 따로 가져와
- * 합쳐 주지 않으면 모든 회원의 비밀번호가 조용히 사라진 것처럼 보인다(기본값 '0000'으로 되돌아감).
- *
- * legacyState가 없으면(legacy 문서가 아직 없거나 조회 실패) 비밀번호 없이 그대로 돌려준다 —
- * 이 경우도 로그인 자체는 기본값 '0000'으로 계속 동작한다.
- */
-export function mergeLegacyPasswords(splitState: AppState, legacyState: AppState | null): AppState {
-  if (!legacyState) return splitState
-  const legacyPasswordById = new Map(legacyState.members.map((m) => [m.id, m.password]))
-  return {
-    ...splitState,
-    members: splitState.members.map((m) => {
-      const password = legacyPasswordById.get(m.id)
-      return password !== undefined ? { ...m, password } : m
-    }),
   }
 }
