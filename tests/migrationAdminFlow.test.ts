@@ -251,8 +251,11 @@ describe('verifyMigration — 복사 후 확인', () => {
   })
 })
 
-describe('전환 스위치는 그대로', () => {
-  it('이번 작업으로 새 구조를 켜지 않는다', () => {
-    expect(USE_SPLIT_FIRESTORE).toBe(false)
+describe('전환 스위치', () => {
+  // Split Firestore 최종 전환(보안 8단계 다음 단계)으로 이제 켜져 있다. 이 파일이 다루는
+  // migration 도구(runAdminMigration 등) 자체는 이 값과 무관하게 항상 같은 방식으로
+  // 동작해야 하므로, 다른 테스트에는 영향이 없다.
+  it('새 구조가 켜져 있다', () => {
+    expect(USE_SPLIT_FIRESTORE).toBe(true)
   })
 })

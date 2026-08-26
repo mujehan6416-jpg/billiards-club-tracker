@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 // 실제 Firebase에는 절대 접근하지 않는다 — 인증·동기화 모두 모킹한다.
+//
+// Split Firestore 최종 전환 이후 USE_SPLIT_FIRESTORE는 실제로 true이지만, 이 파일은 일부러
+// false로 고정해서(rollback용) legacy read 경로가 여전히 정상 동작하는지 계속 확인한다 —
+// 문제가 생겼을 때 이 값을 다시 false로 되돌리는 것이 rollback 방법이므로, 이 경로가 항상
+// 살아있어야 한다. split=true 경로는 tests/appBootOrderSplit.test.tsx에서 확인한다.
 const callOrder: string[] = []
 const ensureAppAuthMock = vi.fn()
 const keepAppAuthAliveMock = vi.fn()
@@ -17,6 +22,10 @@ vi.mock('../src/lib/cloudSync', () => ({
   uploadToCloud: vi.fn(),
   markSynced: (...args: unknown[]) => markSyncedMock(...args),
   UploadCancelledError: class UploadCancelledError extends Error {},
+}))
+vi.mock('../src/lib/splitFirestore', () => ({
+  USE_SPLIT_FIRESTORE: false,
+  loadSplitAppState: vi.fn(),
 }))
 vi.mock('../src/lib/firebase', () => ({ db: {} }))
 vi.mock('firebase/auth', () => ({

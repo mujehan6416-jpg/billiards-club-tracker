@@ -1,15 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-// cloudSync(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// cloudSync·splitFirestore(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// CSV 반영(회원명부·핸디이력·경기기록)은 saveToServer(previous)를 거치므로
+// USE_SPLIT_FIRESTORE=true(운영 기본값)에서는 syncSplitChanges를 쓴다. 반면 "이 기기 내용을
+// 서버에 올리기/받기"는 설계상 항상 legacy(uploadToCloud/downloadFromCloud)만 쓴다 — 그래서
+// 그 두 버튼을 확인하는 테스트는 그대로 둔다.
 const uploadToCloudMock = vi.fn()
 const downloadFromCloudMock = vi.fn()
 const markSyncedMock = vi.fn()
+const syncSplitChangesMock = vi.fn()
 vi.mock('../src/lib/cloudSync', () => ({
   uploadToCloud: (...args: unknown[]) => uploadToCloudMock(...args),
   downloadFromCloud: (...args: unknown[]) => downloadFromCloudMock(...args),
   markSynced: (...args: unknown[]) => markSyncedMock(...args),
   UploadCancelledError: class UploadCancelledError extends Error {},
+}))
+vi.mock('../src/lib/splitFirestore', () => ({
+  USE_SPLIT_FIRESTORE: true,
+  syncSplitChanges: (...args: unknown[]) => syncSplitChangesMock(...args),
 }))
 
 import { SettingsTab } from '../src/tabs/SettingsTab'
@@ -25,7 +34,8 @@ const members: Member[] = [
   { id: 'm2', name: '테스트회원B', handicap: 25, handicapHistory: [{ value: 25, changedAt: '2026-01-01T00:00:00.000Z' }], active: true },
 ]
 
-const lastUploaded = () => uploadToCloudMock.mock.calls[uploadToCloudMock.mock.calls.length - 1][0] as AppState
+/** syncSplitChanges(previous, next)에 넘어간 "바뀐 뒤" 상태(next, 두 번째 인자) — CSV 반영용 */
+const lastSynced = () => syncSplitChangesMock.mock.calls[syncSplitChangesMock.mock.calls.length - 1][1] as AppState
 
 /**
  * 숨겨진 file input에 파일을 흘려 넣는다(버튼은 input.click()만 하므로 input을 직접 찾는다).
@@ -50,33 +60,38 @@ beforeEach(() => {
   uploadToCloudMock.mockResolvedValue(undefined)
   downloadFromCloudMock.mockReset()
   markSyncedMock.mockReset()
+  syncSplitChangesMock.mockReset()
+  syncSplitChangesMock.mockResolvedValue(undefined)
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 
 describe('SettingsTab — 파일 불러오기 후 자동 서버 저장', () => {
-  it('회원명부 CSV를 반영하면 서버에 올라간다', async () => {
+  it('회원명부 CSV를 반영하면 서버(split)에 올라간다', async () => {
     const { container } = render(<SettingsTab />)
     dropFile(container, 'memberCsv', '회원명부.csv', '이름,에버리지\n테스트회원C,18\n')
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
-    expect(lastUploaded().members.map((m) => m.name)).toContain('테스트회원C')
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
+    expect(uploadToCloudMock).not.toHaveBeenCalled()
+    expect(lastSynced().members.map((m) => m.name)).toContain('테스트회원C')
   })
 
-  it('핸디이력 CSV를 반영하면 서버에 올라간다', async () => {
+  it('핸디이력 CSV를 반영하면 서버(split)에 올라간다', async () => {
     const { container } = render(<SettingsTab />)
     dropFile(container, 'handicapCsv', '핸디.csv', '이름,날짜,핸디\n테스트회원A,2026-03-01,23\n')
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
-    expect(lastUploaded().members.find((m) => m.id === 'm1')!.handicap).toBe(23)
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
+    expect(uploadToCloudMock).not.toHaveBeenCalled()
+    expect(lastSynced().members.find((m) => m.id === 'm1')!.handicap).toBe(23)
   })
 
-  it('경기기록 CSV를 반영하면 서버에 올라간다', async () => {
+  it('경기기록 CSV를 반영하면 서버(split)에 올라간다', async () => {
     const { container } = render(<SettingsTab />)
     dropFile(container, 'gameCsv', '경기.csv',
       '날짜,선수1,선수2,승자,패자,승자점수,패자점수\n2026-03-05,테스트회원A,테스트회원B,테스트회원A,테스트회원B,20,15\n')
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
-    expect(lastUploaded().sessions).toHaveLength(1)
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
+    expect(uploadToCloudMock).not.toHaveBeenCalled()
+    expect(lastSynced().sessions).toHaveLength(1)
   })
 
   it('CSV 형식이 잘못돼 반영에 실패하면 서버에 올리지 않는다', async () => {
@@ -84,6 +99,7 @@ describe('SettingsTab — 파일 불러오기 후 자동 서버 저장', () => {
     dropFile(container, 'memberCsv', '엉뚱한파일.csv', '알수없는열\n값\n')
 
     await waitFor(() => expect(screen.getByText(/찾을 수 없습니다|데이터가 없습니다/)).toBeInTheDocument())
+    expect(syncSplitChangesMock).not.toHaveBeenCalled()
     expect(uploadToCloudMock).not.toHaveBeenCalled()
   })
 
@@ -96,6 +112,7 @@ describe('SettingsTab — 파일 불러오기 후 자동 서버 저장', () => {
     // 안내 문구가 수동 올리기 버튼을 정확히 가리켜야 한다(버튼 자체는 그대로 남아 있다)
     expect(screen.getByRole('button', { name: '이 기기 내용을 서버에 올리기' })).toBeInTheDocument()
     expect(uploadToCloudMock).not.toHaveBeenCalled()
+    expect(syncSplitChangesMock).not.toHaveBeenCalled()
   })
 })
 

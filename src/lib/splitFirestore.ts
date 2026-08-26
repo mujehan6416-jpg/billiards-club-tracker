@@ -16,12 +16,15 @@ import { mergeSplitToAppState } from '../logic/splitAppState'
  */
 
 /**
- * 새 구조를 실제로 쓰기 시작할 때 켜는 스위치.
+ * 새 구조를 실제로 쓰기 시작하는 스위치.
  *
- * false = 기존 clubs/{clubId} 단일 문서만 사용(현재 상태).
- * 이 값을 true로 바꾸는 것은 별도 작업이며, 그 전에 데이터 이전과 Rules 준비가 끝나 있어야 한다.
+ * true = split(clubs/{clubId}/members·sessions·sessions/{id}/games·ledger·config) 구조를
+ * 기본 read/write 경로로 쓴다. legacy clubs/{clubId} 단일 문서는 지우지 않고 그대로 둔다 —
+ * 비밀번호(회원 로그인)와 일부 수동 백업 버튼(설정 탭의 "이 기기 내용을 서버에 올리기/받기",
+ * "보관한 파일로 되돌리기")은 설계상 계속 legacy만 쓴다. 문제가 생기면 이 값을 다시 false로
+ * 되돌리는 배포가 rollback이다(legacy 데이터가 그대로 있어 즉시 복귀 가능).
  */
-export const USE_SPLIT_FIRESTORE = false
+export const USE_SPLIT_FIRESTORE = true
 
 export const DEFAULT_CLUB_ID = 'skkubc'
 

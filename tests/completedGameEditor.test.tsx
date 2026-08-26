@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-// cloudSync(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// cloudSync·splitFirestore(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// 이 화면은 항상 관리자 전용이라 USE_SPLIT_FIRESTORE=true(운영 기본값)에서는 writeGame()을 쓴다.
 const uploadToCloudMock = vi.fn()
+const writeGameMock = vi.fn()
 vi.mock('../src/lib/cloudSync', () => ({
   uploadToCloud: (...args: unknown[]) => uploadToCloudMock(...args),
   UploadCancelledError: class UploadCancelledError extends Error {},
+}))
+vi.mock('../src/lib/splitFirestore', () => ({
+  USE_SPLIT_FIRESTORE: true,
+  writeGame: (...args: unknown[]) => writeGameMock(...args),
 }))
 
 import { CompletedGameEditor } from '../src/components/meeting/CompletedGameEditor'
@@ -45,6 +51,8 @@ beforeEach(() => {
   useApp.setState({ members, sessions: [session([makeGame()])], settings: { lastBackupAt: null }, ledger: [] })
   uploadToCloudMock.mockReset()
   uploadToCloudMock.mockResolvedValue(undefined)
+  writeGameMock.mockReset()
+  writeGameMock.mockResolvedValue(undefined)
 })
 
 function renderEditor(game: Game = makeGame(), onDone = vi.fn()) {
@@ -123,12 +131,13 @@ describe('CompletedGameEditor — 2단계: 변경 전/후 비교', () => {
     expect(uploadToCloudMock).not.toHaveBeenCalled()
   })
 
-  it('"변경 확정"을 눌러야 저장되고 서버에 올라간다', async () => {
+  it('"변경 확정"을 눌러야 저장되고 서버(split)에 올라간다', async () => {
     const { onDone } = renderEditor()
     editAndGoConfirm({ '테스트회원A 적용 핸디': '22', '테스트회원A 득점': '21' })
     fireEvent.click(screen.getByRole('button', { name: '변경 확정' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(writeGameMock).toHaveBeenCalledTimes(1))
+    expect(uploadToCloudMock).not.toHaveBeenCalled()
     expect(storedGame().handicapA).toBe(22)
     expect(storedGame().scoreA).toBe(21)
     expect(onDone).toHaveBeenCalled()
@@ -163,7 +172,7 @@ describe('CompletedGameEditor — 승자 재계산(달성률 기준 유지)', ()
     editAndGoConfirm({ '테스트회원A 득점': '19' }) // A 19/20(95%) vs B 20/25(80%) → A 승
     fireEvent.click(screen.getByRole('button', { name: '변경 확정' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalled())
+    await waitFor(() => expect(writeGameMock).toHaveBeenCalled())
     expect(winnerId(storedGame())).toBe('m1')
   })
 
@@ -173,7 +182,7 @@ describe('CompletedGameEditor — 승자 재계산(달성률 기준 유지)', ()
     editAndGoConfirm({ '테스트회원A 득점': '18', '테스트회원B 득점': '19' })
     fireEvent.click(screen.getByRole('button', { name: '변경 확정' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalled())
+    await waitFor(() => expect(writeGameMock).toHaveBeenCalled())
     expect(storedGame().scoreA).toBe(18)
     expect(storedGame().scoreB).toBe(19)
     expect(winnerId(storedGame())).toBe('m1')
@@ -185,7 +194,7 @@ describe('CompletedGameEditor — 승자 재계산(달성률 기준 유지)', ()
     editAndGoConfirm({ '테스트회원B 적용 핸디': '24', '테스트회원B 득점': '12' })
     fireEvent.click(screen.getByRole('button', { name: '변경 확정' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalled())
+    await waitFor(() => expect(writeGameMock).toHaveBeenCalled())
     expect(winnerId(storedGame())).toBeNull()
   })
 
@@ -198,7 +207,7 @@ describe('CompletedGameEditor — 승자 재계산(달성률 기준 유지)', ()
     editAndGoConfirm({ '테스트회원A 득점': '20', '테스트회원B 득점': '10' })
     fireEvent.click(screen.getByRole('button', { name: '변경 확정' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalled())
+    await waitFor(() => expect(writeGameMock).toHaveBeenCalled())
     expect(storedGame().winnerId).toBeUndefined()
     expect(winnerId(storedGame())).toBe('m1')
   })
@@ -231,7 +240,7 @@ describe('CompletedGameEditor — 회원 핸디 보존', () => {
     editAndGoConfirm({ '테스트회원A 적용 핸디': '22' })
     fireEvent.click(screen.getByRole('button', { name: '변경 확정' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalled())
+    await waitFor(() => expect(writeGameMock).toHaveBeenCalled())
     const m1 = useApp.getState().members.find((m) => m.id === 'm1')!
     expect(m1.handicap).toBe(20)
     expect(m1.handicapHistory).toHaveLength(1)

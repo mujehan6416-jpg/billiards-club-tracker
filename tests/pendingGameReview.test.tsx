@@ -1,14 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-// cloudSync(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// cloudSync·splitFirestore(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// 이 화면은 항상 관리자 전용이라 USE_SPLIT_FIRESTORE=true(운영 기본값)에서는 syncSplitChanges를 쓴다.
 const uploadToCloudMock = vi.fn()
+const syncSplitChangesMock = vi.fn()
 vi.mock('../src/lib/cloudSync', () => ({
   uploadToCloud: (...args: unknown[]) => uploadToCloudMock(...args),
   UploadCancelledError: class UploadCancelledError extends Error {},
   markSynced: vi.fn(),
   getLastSyncedAt: () => null,
   downloadFromCloud: vi.fn(),
+}))
+vi.mock('../src/lib/splitFirestore', () => ({
+  USE_SPLIT_FIRESTORE: true,
+  syncSplitChanges: (...args: unknown[]) => syncSplitChangesMock(...args),
 }))
 
 import { PendingGameRow } from '../src/tabs/SettingsTab'
@@ -22,6 +28,8 @@ beforeEach(() => {
   useApp.setState({ members: [], sessions: [], settings: { lastBackupAt: null }, ledger: [] })
   uploadToCloudMock.mockReset()
   uploadToCloudMock.mockResolvedValue(undefined)
+  syncSplitChangesMock.mockReset()
+  syncSplitChangesMock.mockResolvedValue(undefined)
 })
 
 function seedPendingGame() {
@@ -45,7 +53,7 @@ describe('PendingGameRow — 관리자 확인 완료 / 수정 요청', () => {
     const { sessionId, game } = seedPendingGame()
     render(<PendingGameRow game={game} sessionId={sessionId} sessionDate="2026-07-10" name={name} />)
     fireEvent.click(screen.getByText('확인 완료'))
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
     const saved = useApp.getState().sessions.find((s) => s.id === sessionId)!.games[0]
     expect(saved.pending).toBe(false)
   })
@@ -54,7 +62,7 @@ describe('PendingGameRow — 관리자 확인 완료 / 수정 요청', () => {
     const { sessionId, game } = seedPendingGame()
     render(<PendingGameRow game={game} sessionId={sessionId} sessionDate="2026-07-10" name={name} />)
     fireEvent.click(screen.getByText('수정 요청'))
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
     const saved = useApp.getState().sessions.find((s) => s.id === sessionId)!.games[0]
     expect(saved.pending).toBe(true)
     expect(saved.revisionRequested).toBe(true)
@@ -66,7 +74,7 @@ describe('PendingGameRow — 관리자 확인 완료 / 수정 요청', () => {
     const { sessionId, game } = seedPendingGame()
     const { rerender } = render(<PendingGameRow game={game} sessionId={sessionId} sessionDate="2026-07-10" name={name} />)
     fireEvent.click(screen.getByText('수정 요청'))
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
 
     const updatedGame = useApp.getState().sessions.find((s) => s.id === sessionId)!.games[0]
     rerender(<PendingGameRow game={updatedGame} sessionId={sessionId} sessionDate="2026-07-10" name={name} />)

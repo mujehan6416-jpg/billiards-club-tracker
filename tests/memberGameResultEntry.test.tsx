@@ -1,11 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-// cloudSync(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// cloudSync·splitFirestore(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// 이 화면은 항상 회원 전용이라 USE_SPLIT_FIRESTORE=true(운영 기본값)에서는 회원용 좁은
+// 함수(submitMemberGameResult/resubmitMemberGameResult)만 쓴다.
 const uploadToCloudMock = vi.fn()
+const submitMemberGameResultMock = vi.fn()
+const resubmitMemberGameResultMock = vi.fn()
 vi.mock('../src/lib/cloudSync', () => ({
   uploadToCloud: (...args: unknown[]) => uploadToCloudMock(...args),
   UploadCancelledError: class UploadCancelledError extends Error {},
+}))
+vi.mock('../src/lib/splitFirestore', () => ({
+  USE_SPLIT_FIRESTORE: true,
+  submitMemberGameResult: (...args: unknown[]) => submitMemberGameResultMock(...args),
+  resubmitMemberGameResult: (...args: unknown[]) => resubmitMemberGameResultMock(...args),
 }))
 
 import { MemberGameResultEntry } from '../src/components/meeting/MemberGameResultEntry'
@@ -34,6 +43,10 @@ beforeEach(() => {
   useApp.setState({ members: [], sessions: [fakeSession()], settings: { lastBackupAt: null }, ledger: [] })
   uploadToCloudMock.mockReset()
   uploadToCloudMock.mockResolvedValue(undefined)
+  submitMemberGameResultMock.mockReset()
+  submitMemberGameResultMock.mockResolvedValue(undefined)
+  resubmitMemberGameResultMock.mockReset()
+  resubmitMemberGameResultMock.mockResolvedValue(undefined)
 })
 
 describe('MemberGameResultEntry — 경기 참가자 본인 결과 입력', () => {
@@ -48,14 +61,15 @@ describe('MemberGameResultEntry — 경기 참가자 본인 결과 입력', () =
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('결과를 제출하면 pending:true인 게임이 store에 저장되고 Firestore 업로드가 호출된다', async () => {
+  it('결과를 제출하면 pending:true인 게임이 store에 저장되고 split에 반영된다', async () => {
     const session = fakeSession()
     render(<MemberGameResultEntry session={session} members={members} memberId="m1" />)
     fireEvent.change(screen.getByPlaceholderText('내 득점'), { target: { value: '18' } })
     fireEvent.change(screen.getByPlaceholderText('상대 득점'), { target: { value: '12' } })
     fireEvent.click(screen.getByText('결과 제출'))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(submitMemberGameResultMock).toHaveBeenCalledTimes(1))
+    expect(uploadToCloudMock).not.toHaveBeenCalled()
     const saved = useApp.getState().sessions.find((s) => s.id === 'session-1')!.games[0]
     expect(saved.pending).toBe(true)
     expect(saved.scoreA).toBe(18)
@@ -96,7 +110,8 @@ describe('MemberGameResultEntry — 경기 참가자 본인 결과 입력', () =
     fireEvent.change(screen.getByPlaceholderText('상대 득점'), { target: { value: '16' } })
     fireEvent.click(screen.getByText('결과 다시 제출'))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(resubmitMemberGameResultMock).toHaveBeenCalledTimes(1))
+    expect(uploadToCloudMock).not.toHaveBeenCalled()
     const saved = useApp.getState().sessions.find((s) => s.id === 'session-1')!.games[0]
     expect(saved.scoreA).toBe(20)
     expect(saved.pending).toBe(true)

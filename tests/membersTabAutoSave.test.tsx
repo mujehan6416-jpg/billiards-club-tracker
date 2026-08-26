@@ -1,11 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-// cloudSync(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// cloudSync·splitFirestore(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// MembersTab은 항상 관리자 전용이라 USE_SPLIT_FIRESTORE=true(운영 기본값)에서는
+// saveToServer(previous)가 syncSplitChanges를 쓴다(legacy uploadToCloud는 안 쓴다).
 const uploadToCloudMock = vi.fn()
+const syncSplitChangesMock = vi.fn()
 vi.mock('../src/lib/cloudSync', () => ({
   uploadToCloud: (...args: unknown[]) => uploadToCloudMock(...args),
   UploadCancelledError: class UploadCancelledError extends Error {},
+}))
+vi.mock('../src/lib/splitFirestore', () => ({
+  USE_SPLIT_FIRESTORE: true,
+  syncSplitChanges: (...args: unknown[]) => syncSplitChangesMock(...args),
 }))
 
 // 모킹된 모듈에서 되받아 온 클래스라야 컴포넌트 쪽 instanceof 검사와 일치한다
@@ -24,8 +31,8 @@ const members: Member[] = [
 ]
 
 const memberOf = (id: string) => useApp.getState().members.find((m) => m.id === id)!
-/** 마지막으로 서버에 올라간 상태 (uploadToCloud에 넘어간 인자) */
-const lastUploaded = () => uploadToCloudMock.mock.calls[uploadToCloudMock.mock.calls.length - 1][0] as { members: Member[] }
+/** syncSplitChanges(previous, next)에 넘어간 "바뀐 뒤" 상태(next, 두 번째 인자) */
+const lastSynced = () => syncSplitChangesMock.mock.calls[syncSplitChangesMock.mock.calls.length - 1][1] as { members: Member[] }
 
 beforeEach(() => {
   useApp.setState({ members, sessions: [], settings: { lastBackupAt: null }, ledger: [] })
@@ -34,6 +41,8 @@ beforeEach(() => {
   useAdmin.setState({ isAdmin: true })
   uploadToCloudMock.mockReset()
   uploadToCloudMock.mockResolvedValue(undefined)
+  syncSplitChangesMock.mockReset()
+  syncSplitChangesMock.mockResolvedValue(undefined)
 })
 
 describe('MembersTab — 회원 변경 시 자동 서버 저장', () => {
@@ -42,9 +51,9 @@ describe('MembersTab — 회원 변경 시 자동 서버 저장', () => {
     fireEvent.change(screen.getByPlaceholderText('이름'), { target: { value: '테스트회원C' } })
     fireEvent.click(screen.getByRole('button', { name: '추가' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
     // 변경 "전" 상태가 아니라 변경 후 최신 상태가 올라가야 한다
-    expect(lastUploaded().members.map((m) => m.name)).toContain('테스트회원C')
+    expect(lastSynced().members.map((m) => m.name)).toContain('테스트회원C')
   })
 
   it('이름 입력칸에서 Enter로 추가해도 서버에 올라간다', async () => {
@@ -53,8 +62,8 @@ describe('MembersTab — 회원 변경 시 자동 서버 저장', () => {
     fireEvent.change(input, { target: { value: '테스트회원D' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
-    expect(lastUploaded().members.map((m) => m.name)).toContain('테스트회원D')
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
+    expect(lastSynced().members.map((m) => m.name)).toContain('테스트회원D')
   })
 
   it('회원 이름을 수정하면 서버에 올라간다', async () => {
@@ -64,9 +73,9 @@ describe('MembersTab — 회원 변경 시 자동 서버 저장', () => {
     fireEvent.change(nameInput, { target: { value: '이름바꿈' } })
     fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
     expect(memberOf('m2').name).toBe('이름바꿈')
-    expect(lastUploaded().members.find((m) => m.id === 'm2')!.name).toBe('이름바꿈')
+    expect(lastSynced().members.find((m) => m.id === 'm2')!.name).toBe('이름바꿈')
   })
 
   it('회원 핸디를 수정하면 서버에 올라간다', async () => {
@@ -75,9 +84,9 @@ describe('MembersTab — 회원 변경 시 자동 서버 저장', () => {
     fireEvent.change(screen.getByDisplayValue('25'), { target: { value: '28' } })
     fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
     expect(memberOf('m2').handicap).toBe(28)
-    expect(lastUploaded().members.find((m) => m.id === 'm2')!.handicap).toBe(28)
+    expect(lastSynced().members.find((m) => m.id === 'm2')!.handicap).toBe(28)
   })
 
   it('이름과 핸디를 함께 고쳐도 서버 저장은 한 번만 호출된다(중복 업로드 없음)', async () => {
@@ -87,8 +96,8 @@ describe('MembersTab — 회원 변경 시 자동 서버 저장', () => {
     fireEvent.change(screen.getByDisplayValue('25'), { target: { value: '30' } })
     fireEvent.click(screen.getByRole('button', { name: '저장' }))
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
-    const saved = lastUploaded().members.find((m) => m.id === 'm2')!
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
+    const saved = lastSynced().members.find((m) => m.id === 'm2')!
     expect(saved.name).toBe('둘다바꿈')
     expect(saved.handicap).toBe(30)
   })
@@ -97,13 +106,13 @@ describe('MembersTab — 회원 변경 시 자동 서버 저장', () => {
     render(<MembersTab />)
     fireEvent.click(screen.getAllByRole('button', { name: '비활성' })[0])
 
-    await waitFor(() => expect(uploadToCloudMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(syncSplitChangesMock).toHaveBeenCalledTimes(1))
     expect(memberOf('m2').active).toBe(false)
-    expect(lastUploaded().members.find((m) => m.id === 'm2')!.active).toBe(false)
+    expect(lastSynced().members.find((m) => m.id === 'm2')!.active).toBe(false)
   })
 
   it('서버 저장에 실패하면 쉬운 말로 안내하고, 변경 자체는 이 기기에 남는다', async () => {
-    uploadToCloudMock.mockRejectedValue(new Error('network down'))
+    syncSplitChangesMock.mockRejectedValue(new Error('network down'))
     render(<MembersTab />)
     fireEvent.change(screen.getByPlaceholderText('이름'), { target: { value: '테스트회원E' } })
     fireEvent.click(screen.getByRole('button', { name: '추가' }))
@@ -119,7 +128,7 @@ describe('MembersTab — 회원 변경 시 자동 서버 저장', () => {
   })
 
   it('다른 기기 충돌로 업로드가 취소되면 그 사실을 안내한다', async () => {
-    uploadToCloudMock.mockRejectedValue(new UploadCancelledError())
+    syncSplitChangesMock.mockRejectedValue(new UploadCancelledError())
     render(<MembersTab />)
     fireEvent.change(screen.getByPlaceholderText('이름'), { target: { value: '테스트회원F' } })
     fireEvent.click(screen.getByRole('button', { name: '추가' }))
@@ -134,6 +143,7 @@ describe('MembersTab — 회원 변경 시 자동 서버 저장', () => {
     render(<MembersTab />)
     expect(screen.queryByRole('button', { name: '추가' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '수정' })).not.toBeInTheDocument()
+    expect(syncSplitChangesMock).not.toHaveBeenCalled()
     expect(uploadToCloudMock).not.toHaveBeenCalled()
   })
 })

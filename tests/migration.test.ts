@@ -35,8 +35,11 @@ beforeEach(() => {
 })
 
 describe('전환 스위치', () => {
-  it('새 구조는 아직 꺼져 있다 — 앱은 기존 경로만 쓴다', () => {
-    expect(USE_SPLIT_FIRESTORE).toBe(false)
+  // Split Firestore 최종 전환(보안 8단계 다음 단계)으로 이제 켜져 있다. 이 테스트는 원래
+  // "의도치 않게 조기 전환되지 않았는지" 지키는 tripwire였는데, 이제는 반대로 "전환 뒤에도
+  // 실수로 다시 꺼지지 않았는지" 지키는 역할로 남겨 둔다.
+  it('새 구조가 켜져 있다 — 앱은 split 경로를 기본으로 쓴다', () => {
+    expect(USE_SPLIT_FIRESTORE).toBe(true)
   })
 })
 
