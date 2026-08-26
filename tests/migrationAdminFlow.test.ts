@@ -164,6 +164,12 @@ function mockSplitReads(state: AppState, opts: { dropMembers?: number; withPassw
     if (ref.path === 'clubs/skkubc/members') {
       return Promise.resolve({ docs: members.map((m) => ({ data: () => m })) })
     }
+    // 이름 찾기 목록도 회원과 같은 범위로 복사돼 있다고 본다(회원을 일부러 뺀 경우 함께 빠진다).
+    if (ref.path === 'clubs/skkubc/memberIndex') {
+      return Promise.resolve({
+        docs: members.map((m) => ({ data: () => ({ id: m.id, name: m.name, active: m.active }) })),
+      })
+    }
     if (ref.path === 'clubs/skkubc/sessions') {
       return Promise.resolve({
         docs: state.sessions.map((s) => ({ data: () => ({ id: s.id, date: s.date }) })),

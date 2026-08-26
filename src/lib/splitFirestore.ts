@@ -178,6 +178,37 @@ export async function deleteSplitMemberIndexEntry(memberId: string, clubId = DEF
   await deleteDoc(memberIndexDoc(clubId, memberId))
 }
 
+/**
+ * "이름 찾기 목록"(memberIndex) 문서만 만든다 — 다른 컬렉션은 절대 건드리지 않는다.
+ *
+ * 왜 따로 있나: 운영 데이터를 처음 새 구조로 복사한 시점에는 memberIndex 개념이 아직 없었다.
+ * 그래서 members/sessions/games는 다 있는데 memberIndex만 비어 있고, 그 결과 아직 연결되지
+ * 않은 새 기기가 "내가 누구인지" 고를 목록을 받지 못한다(DeviceConnectScreen이 빈 목록이 된다).
+ * 이걸 메우려고 writeAllSplitData()로 전체를 다시 쓰면 회원·모임·경기·회계까지 그 기기의
+ * 로컬 스냅샷으로 통째로 덮어써져서, 그 사이 다른 사람이 올린 최신 기록이 사라질 수 있다.
+ * 그래서 memberIndex "만" 쓰는 이 함수를 따로 둔다.
+ *
+ * ⚠ 이 함수가 만드는 문서 참조는 memberIndexDoc() 하나뿐이다 — 이 규칙을 깨지 않도록 주의.
+ *
+ * 같은 회원 목록으로 몇 번을 다시 실행해도 결과가 같다(idempotent): 문서 ID가 회원 ID이고
+ * set()이 덮어쓰기라, 이미 있으면 같은 값으로 다시 쓰일 뿐 중복 문서가 생기지 않는다.
+ * 기존 memberIndex 문서를 지우지도 않는다 — 회원 삭제 반영은 평소의 syncSplitChanges가 한다.
+ */
+export async function writeMemberIndexOnly(
+  entries: MemberIndexEntry[],
+  clubId = DEFAULT_CLUB_ID,
+): Promise<number> {
+  const BATCH_LIMIT = 450 // 500 제한보다 여유를 둔다
+  for (let i = 0; i < entries.length; i += BATCH_LIMIT) {
+    const batch = writeBatch(db)
+    for (const entry of entries.slice(i, i + BATCH_LIMIT)) {
+      batch.set(memberIndexDoc(clubId, entry.id), entry)
+    }
+    await batch.commit()
+  }
+  return entries.length
+}
+
 export async function writeSession(session: SessionDoc, clubId = DEFAULT_CLUB_ID): Promise<void> {
   await setDoc(sessionDoc(clubId, session.id), session)
 }

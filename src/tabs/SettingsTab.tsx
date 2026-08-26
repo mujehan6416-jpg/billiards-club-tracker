@@ -9,6 +9,7 @@ import { USE_SPLIT_FIRESTORE, syncSplitChanges } from '../lib/splitFirestore'
 import { DeviceLinkCard } from '../components/memberLink/DeviceLinkCard'
 import { DeviceLinkAdminCard } from '../components/memberLink/DeviceLinkAdminCard'
 import { SplitMigrationCard } from '../components/admin/SplitMigrationCard'
+import { MemberIndexBackfillCard } from '../components/admin/MemberIndexBackfillCard'
 import { todayStr } from '../lib/date'
 import { winnerId } from '../logic/game'
 import { fmtScore } from '../lib/format'
@@ -500,6 +501,10 @@ export function SettingsTab() {
 
           {/* 3-1. 회원 관리 — 기기 연결 승인 (Firebase 관리자 인증 필요) */}
           <DeviceLinkAdminCard />
+
+          {/* 3-2. 새 기기가 이름을 고를 수 있게 하는 이름 목록 만들기 (Firebase 관리자 인증 필요).
+              바로 아래 "전체 복사"와 달리 이름 목록만 만든다 — 회원·모임·경기·회계는 안 건드린다. */}
+          <MemberIndexBackfillCard />
 
           {/* 4-2. 새 저장 구조로 데이터 복사 (Firebase 관리자 인증 필요).
               기존 데이터는 그대로 두고 같은 내용을 한 벌 더 복사만 한다. */}

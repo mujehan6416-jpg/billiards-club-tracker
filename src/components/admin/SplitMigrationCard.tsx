@@ -121,6 +121,7 @@ export function SplitMigrationCard() {
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>미리보기 결과</div>
           <CountRow label="회원" legacy={plan.validation.counts.members.legacy} split={plan.validation.counts.members.split} />
+          <CountRow label="이름 찾기 목록" legacy={plan.validation.counts.memberIndex.legacy} split={plan.validation.counts.memberIndex.split} />
           <CountRow label="모임" legacy={plan.validation.counts.sessions.legacy} split={plan.validation.counts.sessions.split} />
           <CountRow label="경기" legacy={plan.validation.counts.games.legacy} split={plan.validation.counts.games.split} />
           <CountRow label="회계" legacy={plan.validation.counts.ledger.legacy} split={plan.validation.counts.ledger.split} />
@@ -171,6 +172,7 @@ export function SplitMigrationCard() {
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>확인 결과</div>
           <CountRow label="회원" legacy={verification.counts.members.legacy} split={verification.counts.members.split} />
+          <CountRow label="이름 찾기 목록" legacy={verification.counts.memberIndex.legacy} split={verification.counts.memberIndex.split} />
           <CountRow label="모임" legacy={verification.counts.sessions.legacy} split={verification.counts.sessions.split} />
           <CountRow label="경기" legacy={verification.counts.games.legacy} split={verification.counts.games.split} />
           <CountRow label="회계" legacy={verification.counts.ledger.legacy} split={verification.counts.ledger.split} />

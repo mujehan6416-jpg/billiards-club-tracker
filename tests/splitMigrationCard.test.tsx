@@ -252,6 +252,7 @@ describe('SplitMigrationCard — 복사 후 확인', () => {
       counts: {
         config: { legacy: 1, split: 1 },
         members: { legacy: 24, split: 24 },
+        memberIndex: { legacy: 24, split: 24 },
         sessions: { legacy: 18, split: 18 },
         games: { legacy: 108, split: 108 },
         ledger: { legacy: 32, split: 32 },
@@ -269,10 +270,11 @@ describe('SplitMigrationCard — 복사 후 확인', () => {
   it('확인 결과에 문제가 있으면 정상으로 표시하지 않는다', async () => {
     asAuthorizedAdmin()
     verifyMigrationMock.mockResolvedValue({
-      ok: false, missing: 3, mismatched: 0, issues: ['members: 24건 중 21건만 확인됩니다.'],
+      ok: false, missing: 3, mismatched: 0, issues: ['회원: 24건 중 21건만 확인됩니다.'],
       counts: {
         config: { legacy: 1, split: 1 },
         members: { legacy: 24, split: 21 },
+        memberIndex: { legacy: 24, split: 21 },
         sessions: { legacy: 18, split: 18 },
         games: { legacy: 108, split: 108 },
         ledger: { legacy: 32, split: 32 },

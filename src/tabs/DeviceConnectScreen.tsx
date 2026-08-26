@@ -118,7 +118,20 @@ export function DeviceConnectScreen({ onAdminLogin, onRetry }: {
           </>
         )}
 
-        {status.kind === 'picking' && (
+        {/* 목록을 받아오긴 했는데 고를 이름이 하나도 없는 경우 — 서버에 이름 목록이 아직
+            만들어지지 않았을 때 생긴다(관리자가 설정 탭에서 한 번 만들어 주면 해결된다).
+            이때 빈 선택칸만 보여주면 사용자는 "왜 이름이 없지?" 하고 막히므로 이유를 알려준다. */}
+        {status.kind === 'picking' && active.length === 0 && (
+          <>
+            <span className="muted" style={{ lineHeight: 1.5 }}>
+              회원 이름 목록이 아직 준비되지 않았습니다.<br />
+              관리자에게 <b>이름 목록 만들기</b>를 요청해 주세요.
+            </span>
+            <button className="primary block" onClick={() => void load()}>다시 확인</button>
+          </>
+        )}
+
+        {status.kind === 'picking' && active.length > 0 && (
           <>
             <span className="muted" style={{ lineHeight: 1.5 }}>
               본인의 이름을 선택하고 연결을 요청하면, 관리자가 승인한 뒤 이 기기로 이용할 수 있습니다.

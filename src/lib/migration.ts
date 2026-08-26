@@ -1,8 +1,9 @@
 import type { AppState } from '../types'
-import type { SplitFirestoreData, SplitValidation } from '../types/splitFirestore'
+import type { MemberIndexEntry, SplitFirestoreData, SplitValidation } from '../types/splitFirestore'
 import { splitLegacyAppState, validateSplit } from '../logic/splitAppState'
 import {
-  writeAllSplitData, DEFAULT_CLUB_ID, fetchConfig, fetchMembers, fetchSessions, fetchGames, fetchLedger,
+  writeAllSplitData, writeMemberIndexOnly, DEFAULT_CLUB_ID,
+  fetchConfig, fetchMembers, fetchMemberIndex, fetchSessions, fetchGames, fetchLedger,
 } from './splitFirestore'
 
 /**
@@ -27,6 +28,7 @@ export interface MigrationPlan {
     config: number
     members: number
     memberPrivate: number
+    memberIndex: number
     sessions: number
     games: number
     ledger: number
@@ -46,6 +48,9 @@ export function prepareMigration(state: AppState): MigrationPlan {
     config: 1,
     members: split.members.length,
     memberPrivate: split.memberPrivate.length,
+    // memberIndex도 writeAllSplitData()가 실제로 쓰는 문서다 — 예전에는 이 줄이 빠져 있어서
+    // 화면에 표시되는 "새로 만들어질 문서" 수가 실제보다 회원 수만큼 적게 나왔다.
+    memberIndex: split.memberIndex.length,
     sessions: split.sessions.length,
     games: split.games.length,
     ledger: split.ledger.length,
@@ -53,7 +58,7 @@ export function prepareMigration(state: AppState): MigrationPlan {
   }
   documentCounts.total =
     documentCounts.config + documentCounts.members + documentCounts.memberPrivate +
-    documentCounts.sessions + documentCounts.games + documentCounts.ledger
+    documentCounts.memberIndex + documentCounts.sessions + documentCounts.games + documentCounts.ledger
 
   return { split, validation, documentCounts }
 }
@@ -141,12 +146,147 @@ export async function runAdminMigration(
   return executeMigration(state, { dryRun: false, confirmPhrase, clubId })
 }
 
+// ── 이름 찾기 목록(memberIndex) 전용 초기화 ──────────────────────────────
+// 전체 복사(runAdminMigration)와 완전히 분리된 별개 기능이다. 아래 세 함수는 memberIndex
+// 컬렉션만 다루며, config·members·memberPrivate·sessions·games·ledger는 읽지도 쓰지도 않는다.
+
+/** memberIndex 전용 초기화를 실제로 실행하려면 이 문구를 그대로 넘겨야 한다. */
+export const MEMBER_INDEX_CONFIRM_PHRASE = '이름 목록 만들기'
+
+export interface MemberIndexBackfillPlan {
+  /** 만들어질 이름 찾기 목록 문서들. 이름·활성여부·구분정보만 담긴다(핸디·비밀번호 없음). */
+  entries: MemberIndexEntry[]
+  /** 만들어질 문서 수 = 현재 회원 수. */
+  documentCount: number
+  /** 사람이 읽을 수 있는 문제 목록. 비어 있으면 이상 없음. */
+  issues: string[]
+  ok: boolean
+}
+
+/**
+ * 계획만 세운다 — Firestore를 읽지도 쓰지도 않는다.
+ *
+ * splitLegacyAppState()가 이미 만들어 주는 memberIndex를 그대로 쓴다(같은 변환 규칙을 두 번
+ * 구현하지 않는다). 그중 memberIndex만 꺼내 쓰고 나머지 결과(members·sessions 등)는 버린다.
+ */
+export function prepareMemberIndexBackfill(state: AppState): MemberIndexBackfillPlan {
+  const { memberIndex } = splitLegacyAppState(state)
+  const issues: string[] = []
+
+  if (memberIndex.length === 0) {
+    issues.push('회원이 한 명도 없어 만들 목록이 없습니다.')
+  }
+  if (memberIndex.some((m) => !m.id)) {
+    issues.push('ID가 비어 있는 회원이 있습니다.')
+  }
+  const ids = new Set<string>()
+  const dupes = new Set<string>()
+  for (const m of memberIndex) {
+    if (ids.has(m.id)) dupes.add(m.id)
+    else ids.add(m.id)
+  }
+  if (dupes.size) issues.push(`회원 ID가 중복됩니다: ${dupes.size}건`)
+
+  // 이 목록은 아직 연결되지 않은 기기도 읽을 수 있으므로, 민감한 값이 섞이면 절대 안 된다.
+  if (memberIndex.some((m) => 'password' in m)) {
+    issues.push('이름 찾기 목록에 비밀번호가 들어 있습니다.')
+  }
+  if (memberIndex.some((m) => 'handicap' in m || 'handicapHistory' in m)) {
+    issues.push('이름 찾기 목록에 실적(핸디) 데이터가 들어 있습니다.')
+  }
+
+  return { entries: memberIndex, documentCount: memberIndex.length, issues, ok: issues.length === 0 }
+}
+
+export interface MemberIndexBackfillResult {
+  written: boolean
+  documentCount: number
+  plan: MemberIndexBackfillPlan
+  skippedReason?: string
+}
+
+/**
+ * 관리자 화면에서 "이름 찾기 목록 만들기"를 실행하는 입구.
+ *
+ * 안전장치는 전체 복사와 같은 기준을 따른다:
+ *  1. Firebase 관리자로 인증된 UID가 있어야 한다(기기 PIN은 서버가 믿을 수 없으므로 불가).
+ *  2. 확인 문구가 정확해야 한다.
+ *  3. 계획 검사(prepareMemberIndexBackfill)를 통과해야 한다.
+ * 그리고 실제 쓰기는 writeMemberIndexOnly() — memberIndex 컬렉션 하나만 건드린다.
+ */
+export async function runAdminMemberIndexBackfill(
+  state: AppState,
+  options: { adminUid?: string | null; confirmPhrase?: string; clubId?: string } = {},
+): Promise<MemberIndexBackfillResult> {
+  const { adminUid, confirmPhrase, clubId = DEFAULT_CLUB_ID } = options
+  const plan = prepareMemberIndexBackfill(state)
+
+  if (!adminUid) {
+    return { written: false, documentCount: plan.documentCount, plan, skippedReason: '관리자 로그인이 확인되지 않아 실행하지 않았습니다.' }
+  }
+  if (!plan.ok) {
+    return { written: false, documentCount: plan.documentCount, plan, skippedReason: '검사를 통과하지 못했습니다. 문제를 해결한 뒤 다시 시도해 주세요.' }
+  }
+  if (confirmPhrase !== MEMBER_INDEX_CONFIRM_PHRASE) {
+    return { written: false, documentCount: plan.documentCount, plan, skippedReason: '확인 문구가 맞지 않아 저장하지 않았습니다.' }
+  }
+
+  const count = await writeMemberIndexOnly(plan.entries, clubId)
+  return { written: true, documentCount: count, plan }
+}
+
+/** 이름 찾기 목록이 실제로 서버에 잘 만들어졌는지 확인한 결과. */
+export interface MemberIndexVerification {
+  ok: boolean
+  /** 앱이 알고 있는 회원 수 vs 서버 memberIndex 문서 수. */
+  counts: { expected: number; actual: number }
+  /** 회원인데 서버 목록에 없는 수. */
+  missing: number
+  /** 서버 목록에 있는데 지금 회원이 아닌 수(탈퇴 회원 잔여 등). */
+  extra: number
+  issues: string[]
+}
+
+/**
+ * memberIndex만 다시 읽어 앱의 회원 목록과 맞는지 확인한다.
+ * 읽기만 한다 — 어떤 문서도 쓰거나 지우지 않는다. 회원 이름 같은 실제 값은 결과에 담지 않는다.
+ */
+export async function verifyMemberIndex(
+  state: AppState,
+  clubId = DEFAULT_CLUB_ID,
+): Promise<MemberIndexVerification> {
+  const actual = await fetchMemberIndex(clubId)
+  const actualIds = new Set(actual.map((m) => m.id))
+  const expectedIds = new Set(state.members.map((m) => m.id))
+
+  const missing = [...expectedIds].filter((id) => !actualIds.has(id)).length
+  const extra = [...actualIds].filter((id) => !expectedIds.has(id)).length
+
+  const issues: string[] = []
+  if (missing > 0) issues.push(`회원 ${missing}명이 이름 찾기 목록에 없습니다.`)
+  if (extra > 0) issues.push(`지금 회원이 아닌 항목이 목록에 ${extra}건 남아 있습니다.`)
+  // 민감한 값이 목록에 섞여 있는지 — 미연결 기기도 읽을 수 있는 목록이라 반드시 확인한다.
+  if (actual.some((m) => 'password' in m)) issues.push('이름 찾기 목록에 비밀번호가 들어 있습니다.')
+  if (actual.some((m) => 'handicap' in m || 'handicapHistory' in m)) {
+    issues.push('이름 찾기 목록에 실적(핸디) 데이터가 들어 있습니다.')
+  }
+
+  return {
+    ok: issues.length === 0,
+    counts: { expected: expectedIds.size, actual: actual.length },
+    missing,
+    extra,
+    issues,
+  }
+}
+
 /** 복사가 끝난 뒤, 새 구조에서 다시 읽어 legacy와 개수·ID가 맞는지 확인한 결과. */
 export interface MigrationVerification {
   ok: boolean
   counts: {
     config: { legacy: number; split: number }
     members: { legacy: number; split: number }
+    memberIndex: { legacy: number; split: number }
     sessions: { legacy: number; split: number }
     games: { legacy: number; split: number }
     ledger: { legacy: number; split: number }
@@ -169,9 +309,10 @@ export async function verifyMigration(
   state: AppState,
   clubId = DEFAULT_CLUB_ID,
 ): Promise<MigrationVerification> {
-  const [config, members, sessions, ledger] = await Promise.all([
+  const [config, members, memberIndex, sessions, ledger] = await Promise.all([
     fetchConfig(clubId),
     fetchMembers(clubId),
+    fetchMemberIndex(clubId),
     fetchSessions(clubId),
     fetchLedger(clubId),
   ])
@@ -186,6 +327,9 @@ export async function verifyMigration(
   const counts = {
     config: { legacy: 1, split: config ? 1 : 0 },
     members: { legacy: state.members.length, split: members.length },
+    // 이름 찾기 목록도 회원 수만큼 있어야 한다 — 이게 비어 있으면 아직 연결되지 않은 새 기기가
+    // 이름을 고르지 못한다(DeviceConnectScreen의 목록이 빈 상태가 된다).
+    memberIndex: { legacy: state.members.length, split: memberIndex.length },
     sessions: { legacy: state.sessions.length, split: sessions.length },
     games: { legacy: legacyGameCount, split: splitGameCount },
     ledger: { legacy: state.ledger.length, split: ledger.length },
@@ -195,13 +339,19 @@ export async function verifyMigration(
   let missing = 0
   let mismatched = 0
 
+  // 이 문구는 관리자 화면에 그대로 보이므로 영어 키 대신 쉬운 한국어 이름으로 바꿔서 적는다.
+  const COUNT_LABELS: Record<string, string> = {
+    config: '설정', members: '회원', memberIndex: '이름 찾기 목록',
+    sessions: '모임', games: '경기', ledger: '회계',
+  }
   for (const [name, c] of Object.entries(counts)) {
+    const label = COUNT_LABELS[name] ?? name
     if (c.split < c.legacy) {
       missing += c.legacy - c.split
-      issues.push(`${name}: ${c.legacy}건 중 ${c.split}건만 확인됩니다.`)
+      issues.push(`${label}: ${c.legacy}건 중 ${c.split}건만 확인됩니다.`)
     } else if (c.split > c.legacy) {
       mismatched += c.split - c.legacy
-      issues.push(`${name}: 새 구조에 ${c.split - c.legacy}건이 더 있습니다.`)
+      issues.push(`${label}: 새 구조에 ${c.split - c.legacy}건이 더 있습니다.`)
     }
   }
 
@@ -211,6 +361,13 @@ export async function verifyMigration(
   if (memberIdMisses > 0) {
     missing += memberIdMisses
     issues.push(`회원 ID ${memberIdMisses}건을 새 구조에서 찾지 못했습니다.`)
+  }
+
+  const splitMemberIndexIds = new Set(memberIndex.map((m) => m.id))
+  const memberIndexIdMisses = state.members.filter((m) => !splitMemberIndexIds.has(m.id)).length
+  if (memberIndexIdMisses > 0) {
+    missing += memberIndexIdMisses
+    issues.push(`회원 ${memberIndexIdMisses}명이 이름 찾기 목록에 없습니다.`)
   }
 
   const splitSessionIds = new Set(sessions.map((s) => s.id))
@@ -231,6 +388,15 @@ export async function verifyMigration(
   if (members.some((m) => 'password' in m)) {
     mismatched += 1
     issues.push('새 구조 회원 문서에 비밀번호가 들어 있습니다.')
+  }
+  // 이름 찾기 목록은 아직 연결되지 않은 기기도 읽을 수 있으므로 특히 엄격하게 확인한다.
+  if (memberIndex.some((m) => 'password' in m)) {
+    mismatched += 1
+    issues.push('이름 찾기 목록에 비밀번호가 들어 있습니다.')
+  }
+  if (memberIndex.some((m) => 'handicap' in m || 'handicapHistory' in m)) {
+    mismatched += 1
+    issues.push('이름 찾기 목록에 실적(핸디) 데이터가 들어 있습니다.')
   }
 
   return { ok: issues.length === 0, counts, missing, mismatched, issues }

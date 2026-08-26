@@ -59,12 +59,23 @@ describe('prepareMigration — 계획만 세운다', () => {
     expect(plan.documentCounts.config).toBe(1)
     expect(plan.documentCounts.members).toBe(24)
     expect(plan.documentCounts.memberPrivate).toBe(24)
+    // 이름 찾기 목록(memberIndex)도 실제로 쓰이는 문서다 — 예전에는 이 항목이 합계에서
+    // 빠져 있어서 화면의 "새로 만들어질 문서" 수가 실제보다 회원 수만큼 적게 나왔다.
+    expect(plan.documentCounts.memberIndex).toBe(24)
     expect(plan.documentCounts.sessions).toBe(18)
     expect(plan.documentCounts.games).toBe(legacyGameCount(state))
     expect(plan.documentCounts.ledger).toBe(32)
     expect(plan.documentCounts.total).toBe(
-      1 + 24 + 24 + 18 + legacyGameCount(state) + 32,
+      1 + 24 + 24 + 24 + 18 + legacyGameCount(state) + 32,
     )
+  })
+
+  it('합계가 실제로 저장되는 문서 수와 일치한다', async () => {
+    const state = legacy()
+    const plan = prepareMigration(state)
+    await executeMigration(state, { dryRun: false, confirmPhrase: MIGRATION_CONFIRM_PHRASE })
+
+    expect(batchSetMock).toHaveBeenCalledTimes(plan.documentCounts.total)
   })
 
   it('정상 데이터면 검증을 통과한다', () => {
@@ -89,7 +100,7 @@ describe('executeMigration — 기본은 미리보기(dry-run)', () => {
     const state = legacy()
     const result = await executeMigration(state)
 
-    expect(result.documentCount).toBe(1 + 24 + 24 + 18 + legacyGameCount(state) + 32)
+    expect(result.documentCount).toBe(1 + 24 + 24 + 24 + 18 + legacyGameCount(state) + 32)
     expect(result.validation.ok).toBe(true)
   })
 
@@ -170,7 +181,7 @@ describe('executeMigration — 기본은 미리보기(dry-run)', () => {
 
   it('큰 데이터도 배치 제한에 걸리지 않게 나눠 저장한다', async () => {
     const state = legacy()
-    const total = 1 + 24 + 24 + 18 + legacyGameCount(state) + 32
+    const total = 1 + 24 + 24 + 24 + 18 + legacyGameCount(state) + 32
     await executeMigration(state, { dryRun: false, confirmPhrase: MIGRATION_CONFIRM_PHRASE })
 
     // 450개씩 끊어서 커밋한다
