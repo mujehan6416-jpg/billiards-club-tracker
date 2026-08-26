@@ -40,7 +40,11 @@ vi.mock('firebase/auth', () => ({
     }
     authState.forceNewAnonUid = false
     authState.anonCounter += 1
-    authState.currentUser = { uid: `anon-uid-${authState.anonCounter}`, isAnonymous: true, email: null }
+    // 실제 Firebase 익명 UID처럼 앞자리부터 서로 다른 값을 쓴다 — 앞 8자리만 보여주는
+    // "기기 코드"가 기기마다 다르게 나오는지 확인하려면 이 fixture도 실제와 같아야 한다.
+    authState.currentUser = {
+      uid: `dev${authState.anonCounter}Kp9mQ2rS5tV8wY1zA4bC7dE`, isAnonymous: true, email: null,
+    }
     authState.listeners.forEach((cb) => cb(authState.currentUser))
     return { user: authState.currentUser }
   },
@@ -134,6 +138,7 @@ import { useAuth } from '../src/store/authStore'
 import { useAdmin } from '../src/store/adminStore'
 import { useAdminAuthStore } from '../src/store/adminAuthStore'
 import { approveLinkRequest } from '../src/lib/memberLink'
+import { deviceCode } from '../src/lib/deviceCode'
 import type { Member } from '../src/types'
 
 // 아래 이름·ID는 전부 테스트용 가상 데이터이며 실제 회원 정보가 아니다.
@@ -301,5 +306,57 @@ describe('신규 기기 연결 승인 — 기기 UID가 바뀐 경우', () => {
     expect(newUid).not.toBe(requestUid)
     expect(store.docs.has(`clubs/${CLUB}/memberLinks/${newUid}`)).toBe(false)
     expect(useAuth.getState().memberId).toBeNull()
+  })
+})
+
+describe('기기 코드 표시 — 요청한 기기와 승인한 요청이 같은지 눈으로 확인', () => {
+  it('요청 완료 화면에 이 기기의 코드(UID 앞 8자리)를 보여준다', async () => {
+    const uid = await requestConnectionAsNewDevice()
+
+    expect(screen.getByText(/이 기기 코드/)).toBeInTheDocument()
+    expect(screen.getByText(deviceCode(uid))).toBeInTheDocument()
+    // 전체 UID는 절대 화면에 나오지 않는다
+    expect(screen.queryByText(uid)).not.toBeInTheDocument()
+    expect(document.body.textContent).not.toContain(uid)
+  })
+
+  it('진단용 표시라는 안내를 함께 보여준다', async () => {
+    await requestConnectionAsNewDevice()
+    expect(screen.getByText(/연결 확인용 표시입니다/)).toBeInTheDocument()
+  })
+
+  it('UID가 바뀌면 화면의 기기 코드도 함께 바뀐다 — 기기가 달라졌음을 눈으로 알 수 있다', async () => {
+    const firstUid = await requestConnectionAsNewDevice()
+    const firstCode = deviceCode(firstUid)
+    expect(screen.getByText(firstCode)).toBeInTheDocument()
+
+    // 저장소가 비워져 다음 실행에서 새 UID가 발급되는 상황
+    authState.currentUser = null
+    authState.forceNewAnonUid = true
+    fireEvent.click(screen.getByRole('button', { name: '승인됐는지 다시 확인' }))
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument())
+
+    // 다시 요청하면 새 기기 코드가 보인다
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: MEMBER_ID } })
+    fireEvent.click(screen.getByRole('button', { name: '이 기기 연결 요청' }))
+    await waitFor(() => expect(screen.getByText(/이 기기 코드/)).toBeInTheDocument())
+
+    const secondUid = authState.currentUser!.uid
+    expect(secondUid).not.toBe(firstUid)
+    expect(screen.getByText(deviceCode(secondUid))).toBeInTheDocument()
+    expect(screen.queryByText(firstCode)).not.toBeInTheDocument()
+  })
+
+  it('같은 세션에서는 요청할 때와 재확인할 때 기기 코드가 그대로 유지된다', async () => {
+    const uid = await requestConnectionAsNewDevice()
+    const code = deviceCode(uid)
+    expect(screen.getByText(code)).toBeInTheDocument()
+
+    // 승인 전 재확인 — 화면이 다시 그려져도 같은 기기 코드여야 한다
+    fireEvent.click(screen.getByRole('button', { name: '승인됐는지 다시 확인' }))
+    await waitFor(() => expect(screen.getByText(/아직 이 기기는 승인되지 않았습니다/)).toBeInTheDocument())
+
+    expect(authState.currentUser!.uid).toBe(uid)
+    expect(screen.getByText(code)).toBeInTheDocument()
   })
 })

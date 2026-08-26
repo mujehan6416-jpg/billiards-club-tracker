@@ -3,6 +3,7 @@ import { AdminPinButton } from '../components/AdminPinButton'
 import { fetchMemberIndex } from '../lib/splitFirestore'
 import { cancelMyRequest, createLinkRequest, fetchMyLink, fetchMyRequest } from '../lib/memberLink'
 import { currentAuthUid } from '../lib/appAuth'
+import { deviceCode } from '../lib/deviceCode'
 import { buildMemberLabels } from '../logic/memberLabel'
 import type { MemberIndexEntry } from '../types/splitFirestore'
 
@@ -195,6 +196,18 @@ export function DeviceConnectScreen({ onAdminLogin, onRetry }: {
             <span className="muted" style={{ lineHeight: 1.5 }}>
               ⏳ <b>{status.memberName}</b> 님으로 연결을 요청했습니다.<br />
               관리자 승인을 기다려 주세요.
+            </span>
+            {/* 진단용 기기 코드 — 관리자 화면의 요청 목록에 뜨는 코드와 같은지 맞춰보는 용도다.
+                연결이 잘 되면 없어도 되는 표시라, 문제 해결 뒤에는 지워도 된다. */}
+            <span style={{
+              fontSize: 14, lineHeight: 1.5, color: '#37474f',
+              background: '#eceff1', borderRadius: 8, padding: '10px 12px',
+            }}>
+              이 기기 코드: <b style={{ fontFamily: 'monospace', fontSize: 16 }}>{deviceCode(currentAuthUid())}</b>
+              <br />
+              <span className="muted" style={{ fontSize: 12 }}>
+                연결 확인용 표시입니다. 관리자 화면에 보이는 코드와 같은지 확인해 주세요.
+              </span>
             </span>
             {notApprovedYet && (
               <span style={{

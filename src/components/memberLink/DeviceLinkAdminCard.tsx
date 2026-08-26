@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useApp } from '../../store/appStore'
 import { useAdminAuthStore } from '../../store/adminAuthStore'
 import { buildMemberLabels } from '../../logic/memberLabel'
+import { deviceCode } from '../../lib/deviceCode'
 import { AdminAuthLogin } from '../admin/AdminAuthLogin'
 import {
   approveLinkRequest, fetchMemberLinks, fetchPendingRequests, rejectLinkRequest, setLinkActive,
@@ -81,6 +82,8 @@ export function DeviceLinkAdminCard() {
       <span style={{ fontWeight: 600, fontSize: 14 }}>📱 기기 연결 승인 ({requests.length}건 대기)</span>
       <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
         회원이 보낸 기기 연결 요청을 확인하고 승인합니다. 승인해도 관리자 권한은 부여되지 않습니다.
+        <br />
+        <b>기기 코드</b>는 연결 확인용 표시입니다. 회원 기기 화면에 보이는 코드와 같은 요청을 승인해 주세요.
       </span>
 
       {loading && <span className="muted">불러오는 중...</span>}
@@ -94,6 +97,11 @@ export function DeviceLinkAdminCard() {
           <div style={{ fontSize: 15, fontWeight: 600 }}>{labelOf(request.memberId)}</div>
           <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
             요청 시각 {new Date(request.requestedAt).toLocaleString('ko-KR')}
+          </div>
+          {/* 진단용 기기 코드 — 회원 기기 화면에 뜨는 코드와 같은 건지 맞춰보는 용도다.
+              같은 회원이 여러 기기에서 요청했을 때 어느 기기인지 구분하는 데도 쓴다. */}
+          <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
+            기기 코드: <b style={{ fontFamily: 'monospace', fontSize: 14, color: '#37474f' }}>{deviceCode(firebaseUid)}</b>
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <button
@@ -127,6 +135,7 @@ export function DeviceLinkAdminCard() {
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{labelOf(link.memberId)}</div>
                 <div className="muted" style={{ fontSize: 12 }}>
                   {new Date(link.linkedAt).toLocaleDateString('ko-KR')} 연결
+                  {' · '}기기 코드 <b style={{ fontFamily: 'monospace', color: '#37474f' }}>{deviceCode(firebaseUid)}</b>
                 </div>
               </div>
               <button

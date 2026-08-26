@@ -24,6 +24,7 @@ vi.mock('../src/lib/adminAuth', () => ({
 import { DeviceLinkAdminCard } from '../src/components/memberLink/DeviceLinkAdminCard'
 import { useAdminAuthStore } from '../src/store/adminAuthStore'
 import { useApp } from '../src/store/appStore'
+import { deviceCode } from '../src/lib/deviceCode'
 import type { Member } from '../src/types'
 
 // 아래 이름·ID는 전부 테스트용 가상 데이터이며 실제 회원 정보가 아니다.
@@ -145,5 +146,57 @@ describe('DeviceLinkAdminCard — 연결 해제 / 여러 기기', () => {
     await waitFor(() => expect(screen.getByText('연결된 기기 (2)')).toBeInTheDocument())
     expect(screen.getAllByText('테스트회원A')).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: '연결 해제' })).toHaveLength(2)
+  })
+})
+
+describe('DeviceLinkAdminCard — 기기 코드 표시(연결 진단용)', () => {
+  // 아래 UID는 전부 테스트용 가상 값이며 실제 기기 인증 정보가 아니다.
+  const LONG_UID = 'ABcd1234efgh5678ijkl'
+
+  it('대기 중인 요청 옆에 그 기기의 코드(UID 앞 8자리)를 보여준다', async () => {
+    asAuthorizedAdmin()
+    fetchPendingRequestsMock.mockResolvedValue([
+      { firebaseUid: LONG_UID, request: { memberId: 'm1', requestedAt: '2026-08-24T01:00:00.000Z' } },
+    ])
+    render(<DeviceLinkAdminCard />)
+
+    await waitFor(() => expect(screen.getByText(/기기 코드:/)).toBeInTheDocument())
+    expect(screen.getByText(deviceCode(LONG_UID))).toBeInTheDocument()
+    // 전체 UID는 절대 화면에 나오지 않는다
+    expect(document.body.textContent).not.toContain(LONG_UID)
+  })
+
+  it('연결된 기기 목록에도 같은 방식으로 기기 코드를 보여준다', async () => {
+    asAuthorizedAdmin()
+    fetchMemberLinksMock.mockResolvedValue([
+      { firebaseUid: LONG_UID, link: { memberId: 'm1', role: 'member', active: true, linkedAt: '2026-08-24T00:00:00.000Z' } },
+    ])
+    render(<DeviceLinkAdminCard />)
+
+    await waitFor(() => expect(screen.getByText('연결된 기기 (1)')).toBeInTheDocument())
+    expect(screen.getByText(deviceCode(LONG_UID))).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain(LONG_UID)
+  })
+
+  it('같은 회원이 여러 기기에서 요청해도 기기 코드로 서로 구분된다', async () => {
+    asAuthorizedAdmin()
+    const uidA = 'aaaa1111bbbb2222'
+    const uidB = 'cccc3333dddd4444'
+    fetchPendingRequestsMock.mockResolvedValue([
+      { firebaseUid: uidA, request: { memberId: 'm1', requestedAt: '2026-08-24T01:00:00.000Z' } },
+      { firebaseUid: uidB, request: { memberId: 'm1', requestedAt: '2026-08-24T02:00:00.000Z' } },
+    ])
+    render(<DeviceLinkAdminCard />)
+
+    await waitFor(() => expect(screen.getAllByText(/기기 코드:/)).toHaveLength(2))
+    expect(screen.getByText(deviceCode(uidA))).toBeInTheDocument()
+    expect(screen.getByText(deviceCode(uidB))).toBeInTheDocument()
+    expect(deviceCode(uidA)).not.toBe(deviceCode(uidB))
+  })
+
+  it('기기 코드가 연결 확인용 표시라는 안내를 보여준다', async () => {
+    asAuthorizedAdmin()
+    render(<DeviceLinkAdminCard />)
+    await waitFor(() => expect(screen.getByText(/연결 확인용 표시입니다/)).toBeInTheDocument())
   })
 })
