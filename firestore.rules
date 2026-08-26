@@ -95,8 +95,7 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // ── split Firestore 구조 (보안 4단계) ──────────────────────────────
-    // 아직 앱은 이 경로를 쓰지 않는다(USE_SPLIT_FIRESTORE=false, 실제 데이터 없음).
+    // ── split Firestore 구조 (보안 4단계, 운영 전환 완료) ────────────────
     // legacy clubs/{clubId} 공개 문서와 완전히 별개로, 새 구조는 처음부터
     // "연결된 활성 회원 = 조회만, 관리자 = 전체" 최소 권한으로 설계한다.
     //
@@ -111,6 +110,18 @@ service cloud.firestore {
 
     match /clubs/{clubId}/members/{memberId} {
       allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── 이름 찾기 목록 (최종 보안 마감 단계) ───────────────────────────
+    // 아직 이 클럽 어디에도 연결되지 않은 새 기기는 위 members를 전혀 읽을 수 없다
+    // (hasActiveMemberLink도, isAdmin도 아니므로) — 그러면 "내가 누구인지" 고를 방법이
+    // 없어 연결 요청(linkRequests) 자체를 못 만든다. 그래서 이 컬렉션만 "로그인만 됐으면
+    // (연결·관리자 여부와 무관하게) 누구나 read 가능"으로 살짝 더 열어 둔다 — 대신 담는
+    // 내용을 이름·활성 여부·구분정보로만 최소화한다(handicap 등 실적 데이터, password는
+    // 절대 넣지 않는다 — src/types/splitFirestore.ts의 MemberIndexEntry 참고).
+    match /clubs/{clubId}/memberIndex/{memberId} {
+      allow get, list: if isSignedIn();
       allow create, update, delete: if isAdmin();
     }
 
