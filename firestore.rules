@@ -46,8 +46,20 @@ service cloud.firestore {
       return hasActiveMemberLink(clubId) && linkedMemberId(clubId) in [playerAId, playerBId];
     }
 
+    // ── legacy 단일 문서 (공개 접근 폐쇄) ──────────────────────────────
+    // 예전에는 앱 데이터 전체가 이 문서 하나(clubs/skkubc)에 JSON으로 들어 있었고, 규칙도
+    // `if true`라 인증 없이 누구나 읽고 쓸 수 있었다. split 구조로 완전히 전환하고(회원·모임·
+    // 경기·회계·설정 모두 하위 컬렉션으로 이전) 정상 운영 경로에서 이 문서를 쓰는 곳이 전부
+    // 없어져서, 이제 공개 접근을 닫는다.
+    //
+    // 문서 자체는 지우지 않는다 — USE_SPLIT_FIRESTORE를 false로 되돌리는 rollback 배포를
+    // 하게 되면 그때 이 문서의 내용이 다시 필요하다. 그 경우에는 이 규칙도 함께 되돌려야 한다.
+    //
+    // 이 match는 clubs/skkubc "문서 하나"만 가리킨다. Firestore 규칙은 문서 match가 하위
+    // 컬렉션으로 전파되지 않으므로, 아래의 settlements·linkRequests·memberLinks·members·
+    // memberIndex·sessions·games·ledger·config 규칙은 이 변경에 전혀 영향을 받지 않는다.
     match /clubs/skkubc {
-      allow read, write: if true;
+      allow read, write: if false;
     }
 
     match /admins/{uid} {
