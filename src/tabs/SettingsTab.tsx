@@ -5,7 +5,7 @@ import { useAuth } from '../store/authStore'
 import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv, importGameCsv } from '../lib/backup'
 import { uploadToCloud, downloadFromCloud, markSynced, UploadCancelledError } from '../lib/cloudSync'
 import { saveToServer } from '../lib/autoSave'
-import { USE_SPLIT_FIRESTORE, syncSplitChanges } from '../lib/splitFirestore'
+import { USE_SPLIT_FIRESTORE, syncSplitChanges, deleteSplitSession } from '../lib/splitFirestore'
 import { DeviceLinkCard } from '../components/memberLink/DeviceLinkCard'
 import { DeviceLinkAdminCard } from '../components/memberLink/DeviceLinkAdminCard'
 import { SplitMigrationCard } from '../components/admin/SplitMigrationCard'
@@ -219,12 +219,58 @@ function PendingGamesCard({ sessions, members }: { sessions: Session[]; members:
 // 번개모임 승인 카드 (관리자 전용, 맨 위)
 function PendingFlashCard({ sessions, members }: { sessions: Session[]; members: Member[] }) {
   const approveSession = useApp((s) => s.approveSession)
+  const deleteSession = useApp((s) => s.deleteSession)
   const [expanding, setExpanding] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState('')
 
   const pending = sessions.filter((s) => s.type === 'flash' && s.approved === false)
   if (pending.length === 0) return null
 
   const name = (id: string) => members.find((m) => m.id === id)?.name ?? id
+
+  /**
+   * 승인 대기 중인 번개모임을 기록째 삭제한다.
+   *
+   * 안전장치:
+   *  1. 누르는 순간의 최신 상태를 다시 읽어 "아직 승인 대기 중인 번개모임"인지 재확인한다 —
+   *     다른 기기에서 그 사이 승인됐다면 여기서 멈춘다(이미 승인된 정상 모임 오삭제 방지).
+   *  2. 날짜·참석 인원·경기 수를 보여주고 확인받는다.
+   *  3. 서버를 먼저 지우고 성공했을 때만 이 기기 목록에서 지운다 — 권한 문제 등으로 서버 삭제가
+   *     실패하면 아무것도 지워지지 않은 상태로 남는다.
+   *  4. 서버 삭제는 deleteSplitSession()을 그대로 쓴다 — 이 함수가 하위 games를 먼저 배치로
+   *     지운 뒤 session 문서를 지우므로 경기 기록이 고아로 남지 않는다. 지우는 대상은 이
+   *     세션과 그 하위 경기뿐이고 다른 날짜·다른 모임은 건드리지 않는다.
+   */
+  const removePendingFlash = async (sessionId: string) => {
+    setError('')
+    const current = useApp.getState().sessions.find((x) => x.id === sessionId)
+    if (!current || current.type !== 'flash' || current.approved !== false) {
+      setError('이미 승인되었거나 목록에서 사라진 모임입니다. 화면을 새로 고친 뒤 다시 확인해 주세요.')
+      return
+    }
+    if (!window.confirm(
+      `이 번개모임 기록을 완전히 삭제할까요?\n\n`
+      + `날짜: ${current.date}\n참석: ${current.attendeeIds.length}명\n경기: ${current.games.length}건\n\n`
+      + `이 모임의 경기 기록도 함께 삭제되며 되돌릴 수 없습니다.`,
+    )) return
+
+    setBusyId(sessionId)
+    try {
+      if (USE_SPLIT_FIRESTORE) {
+        await deleteSplitSession(current.id)
+        deleteSession(current.id)
+      } else {
+        deleteSession(current.id)
+        const st = useApp.getState()
+        await uploadToCloud({ members: st.members, sessions: st.sessions, settings: st.settings, ledger: st.ledger })
+      }
+    } catch {
+      setError('삭제하지 못했습니다. 인터넷 연결과 관리자 로그인을 확인한 뒤 다시 시도해 주세요.')
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   return (
     <div className="card col-card">
@@ -239,10 +285,18 @@ function PendingFlashCard({ sessions, members }: { sessions: Session[]; members:
               </span>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-              <button style={{ fontSize: 12 }} onClick={() => setExpanding(expanding === s.id ? null : s.id)}>
+              <button style={{ fontSize: 12 }} disabled={busyId === s.id} onClick={() => setExpanding(expanding === s.id ? null : s.id)}>
                 {expanding === s.id ? '닫기' : '내용 보기'}
               </button>
-              <button className="primary" style={{ fontSize: 12 }} onClick={async () => {
+              {/* 삭제는 되돌릴 수 없는 위험 동작이라 승인 버튼과 색으로 구분한다. */}
+              <button
+                style={{ fontSize: 12, color: '#c0392b', borderColor: '#e0a0a0' }}
+                disabled={busyId === s.id}
+                onClick={() => void removePendingFlash(s.id)}
+              >
+                {busyId === s.id ? '삭제 중...' : '삭제'}
+              </button>
+              <button className="primary" style={{ fontSize: 12 }} disabled={busyId === s.id} onClick={async () => {
                 if (!window.confirm(`${s.date} 번개모임 기록을 승인할까요?\n정규 통계에 반영됩니다.`)) return
                 const previous = useApp.getState()
                 approveSession(s.id)
@@ -273,6 +327,7 @@ function PendingFlashCard({ sessions, members }: { sessions: Session[]; members:
           )}
         </div>
       ))}
+      {error && <span style={{ fontSize: 13, color: '#c0392b', lineHeight: 1.5 }}>{error}</span>}
     </div>
   )
 }

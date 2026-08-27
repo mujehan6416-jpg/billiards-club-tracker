@@ -5,7 +5,7 @@ import { buildMemberLabels } from '../../logic/memberLabel'
 import { deviceCode } from '../../lib/deviceCode'
 import { AdminAuthLogin } from '../admin/AdminAuthLogin'
 import {
-  approveLinkRequest, fetchMemberLinks, fetchPendingRequests, rejectLinkRequest, setLinkActive,
+  approveLinkRequest, deleteMemberLink, fetchMemberLinks, fetchPendingRequests, rejectLinkRequest,
 } from '../../lib/memberLink'
 import type { LinkRequestEntry, MemberLinkEntry } from '../../types/memberLink'
 
@@ -74,9 +74,6 @@ export function DeviceLinkAdminCard() {
     } finally { setBusyUid(null) }
   }
 
-  const activeLinks = links.filter((l) => l.link.active)
-  const inactiveLinks = links.filter((l) => !l.link.active)
-
   return (
     <div className="card col-card">
       <span style={{ fontWeight: 600, fontSize: 14 }}>📱 기기 연결 승인 ({requests.length}건 대기)</span>
@@ -126,46 +123,37 @@ export function DeviceLinkAdminCard() {
         </div>
       ))}
 
-      {activeLinks.length > 0 && (
+      {links.length > 0 && (
         <>
-          <span style={{ fontWeight: 600, fontSize: 13, marginTop: 8 }}>연결된 기기 ({activeLinks.length})</span>
-          {activeLinks.map(({ firebaseUid, link }) => (
+          <span style={{ fontWeight: 600, fontSize: 13, marginTop: 8 }}>연결된 기기 ({links.length})</span>
+          <span className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+            연결을 해제하면 그 기기의 연결 기록이 삭제됩니다. 해당 기기가 다시 쓰려면
+            처음 쓰는 기기처럼 이름을 고르고 연결 요청을 다시 보내야 합니다.
+          </span>
+          {links.map(({ firebaseUid, link }) => (
             <div key={firebaseUid} style={{ display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{labelOf(link.memberId)}</div>
                 <div className="muted" style={{ fontSize: 12 }}>
                   {new Date(link.linkedAt).toLocaleDateString('ko-KR')} 연결
                   {' · '}기기 코드 <b style={{ fontFamily: 'monospace', color: '#37474f' }}>{deviceCode(firebaseUid)}</b>
+                  {/* 예전 방식(active:false)으로 해제된 채 남아 있던 기록도 이 목록에서 지울 수 있게 함께 보여준다. */}
+                  {link.active !== true && ' · 이전 방식으로 해제된 기록'}
                 </div>
               </div>
               <button
                 style={{ fontSize: 12, color: '#c0392b', borderColor: '#e0a0a0' }}
                 disabled={busyUid === firebaseUid}
                 onClick={() => {
-                  if (!window.confirm(`${labelOf(link.memberId)} 님의 이 기기 연결을 해제할까요?`)) return
-                  void run(firebaseUid, () => setLinkActive(firebaseUid, false), '기기 연결을 해제했습니다.')
+                  if (!window.confirm(
+                    `이 기기의 연결을 해제할까요?\n\n`
+                    + `회원: ${labelOf(link.memberId)}\n기기 코드: ${deviceCode(firebaseUid)}\n\n`
+                    + `연결 기록이 삭제되며, 이 기기가 다시 쓰려면 새로 연결 요청을 보내고 승인받아야 합니다.`,
+                  )) return
+                  void run(firebaseUid, () => deleteMemberLink(firebaseUid), '기기 연결을 해제했습니다.')
                 }}
               >
-                연결 해제
-              </button>
-            </div>
-          ))}
-        </>
-      )}
-
-      {inactiveLinks.length > 0 && (
-        <>
-          <span className="muted" style={{ fontSize: 13, marginTop: 8 }}>해제된 기기 ({inactiveLinks.length})</span>
-          {inactiveLinks.map(({ firebaseUid, link }) => (
-            <div key={firebaseUid} style={{ display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-              <div style={{ flex: 1, minWidth: 0, opacity: 0.7 }}>
-                <div style={{ fontSize: 14 }}>{labelOf(link.memberId)}</div>
-              </div>
-              <button
-                style={{ fontSize: 12 }} disabled={busyUid === firebaseUid}
-                onClick={() => void run(firebaseUid, () => setLinkActive(firebaseUid, true), '기기 연결을 다시 사용하도록 했습니다.')}
-              >
-                다시 연결
+                {busyUid === firebaseUid ? '처리 중...' : '연결 해제'}
               </button>
             </div>
           ))}

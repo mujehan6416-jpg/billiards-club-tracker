@@ -84,9 +84,27 @@ export async function rejectLinkRequest(firebaseUid: string, clubId = DEFAULT_CL
 
 /**
  * 연결을 해제/재활성한다(Firebase 관리자 전용).
- * 문서를 지우지 않고 active만 바꾼다 — 분실 기기를 언제 끊었는지 기록이 남아야 하고,
- * 같은 기기가 다시 붙었을 때 이전 연결이 있었다는 사실을 알 수 있어야 한다.
+ * 문서를 지우지 않고 active만 바꾼다.
+ *
+ * ⚠ 운영 방식이 "해제 = 문서 완전 삭제"(deleteMemberLink)로 바뀌어 관리자 화면에서는 더 이상
+ * 쓰지 않는다. active:false 상태를 새로 만들지 않기 위해서다. 이 함수는 예전 방식으로 남은
+ * 문서를 다루거나 향후 다른 용도가 생길 때를 위해 남겨 두었을 뿐이니, 기기 연결 해제에는
+ * deleteMemberLink()를 쓴다.
  */
 export async function setLinkActive(firebaseUid: string, active: boolean, clubId = DEFAULT_CLUB_ID): Promise<void> {
   await updateDoc(memberLinkDoc(clubId, firebaseUid), { active })
+}
+
+/**
+ * 기기 연결을 완전히 끊는다 — memberLinks/{firebaseUid} 문서 1건만 지운다(Firebase 관리자 전용).
+ *
+ * active:false로 남겨 두지 않고 지우는 이유: 해제된 기기 목록을 따로 관리하지 않기로 했고,
+ * 남은 문서가 "연결된 것도 아니고 안 된 것도 아닌" 애매한 상태를 만들기 때문이다. 지워진 기기가
+ * 다시 접속하면 연결 기록이 없으므로 신규 기기와 똑같이 이름 선택 → 새 연결 요청 → 관리자 승인
+ * 흐름을 그대로 타게 된다(그때 기기 코드도 새로 발급된다).
+ *
+ * 지우는 대상은 인자로 받은 uid의 문서 하나뿐이다 — 다른 회원·다른 기기의 연결은 건드리지 않는다.
+ */
+export async function deleteMemberLink(firebaseUid: string, clubId = DEFAULT_CLUB_ID): Promise<void> {
+  await deleteDoc(memberLinkDoc(clubId, firebaseUid))
 }

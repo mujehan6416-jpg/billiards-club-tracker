@@ -7,6 +7,7 @@ const fetchMemberLinksMock = vi.fn()
 const approveLinkRequestMock = vi.fn()
 const rejectLinkRequestMock = vi.fn()
 const setLinkActiveMock = vi.fn()
+const deleteMemberLinkMock = vi.fn()
 
 vi.mock('../src/lib/memberLink', () => ({
   fetchPendingRequests: (...a: unknown[]) => fetchPendingRequestsMock(...a),
@@ -14,6 +15,7 @@ vi.mock('../src/lib/memberLink', () => ({
   approveLinkRequest: (...a: unknown[]) => approveLinkRequestMock(...a),
   rejectLinkRequest: (...a: unknown[]) => rejectLinkRequestMock(...a),
   setLinkActive: (...a: unknown[]) => setLinkActiveMock(...a),
+  deleteMemberLink: (...a: unknown[]) => deleteMemberLinkMock(...a),
 }))
 vi.mock('../src/lib/adminAuth', () => ({
   adminSignIn: vi.fn(), adminSignOut: vi.fn(),
@@ -44,6 +46,7 @@ beforeEach(() => {
   approveLinkRequestMock.mockReset(); approveLinkRequestMock.mockResolvedValue(undefined)
   rejectLinkRequestMock.mockReset(); rejectLinkRequestMock.mockResolvedValue(undefined)
   setLinkActiveMock.mockReset(); setLinkActiveMock.mockResolvedValue(undefined)
+  deleteMemberLinkMock.mockReset(); deleteMemberLinkMock.mockResolvedValue(undefined)
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 
@@ -111,7 +114,7 @@ describe('DeviceLinkAdminCard — 승인 / 거절', () => {
 })
 
 describe('DeviceLinkAdminCard — 연결 해제 / 여러 기기', () => {
-  it('연결된 기기를 확인 후 해제하면 지우지 않고 사용만 중지한다', async () => {
+  it('연결 해제를 누르면 그 기기의 memberLinks 문서를 완전히 삭제한다', async () => {
     asAuthorizedAdmin()
     fetchMemberLinksMock.mockResolvedValue([
       { firebaseUid: 'uid-phone', link: { memberId: 'm1', role: 'member', active: true, linkedAt: '2026-08-24T00:00:00.000Z' } },
@@ -120,19 +123,82 @@ describe('DeviceLinkAdminCard — 연결 해제 / 여러 기기', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '연결 해제' })).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: '연결 해제' }))
-    await waitFor(() => expect(setLinkActiveMock).toHaveBeenCalledWith('uid-phone', false))
+
+    await waitFor(() => expect(deleteMemberLinkMock).toHaveBeenCalledWith('uid-phone'))
+    expect(deleteMemberLinkMock).toHaveBeenCalledTimes(1)
+    // active:false 상태를 새로 만들지 않는다 — 해제 이력을 남기지 않는 운영 방식
+    expect(setLinkActiveMock).not.toHaveBeenCalled()
   })
 
-  it('해제된 기기는 따로 보여주고 다시 연결할 수 있다', async () => {
+  it('해제 확인창에 회원명과 기기 코드를 보여준다', async () => {
+    asAuthorizedAdmin()
+    const uid = 'aBcD1234efgh5678'
+    fetchMemberLinksMock.mockResolvedValue([
+      { firebaseUid: uid, link: { memberId: 'm1', role: 'member', active: true, linkedAt: '2026-08-24T00:00:00.000Z' } },
+    ])
+    render(<DeviceLinkAdminCard />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '연결 해제' })).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '연결 해제' }))
+
+    const message = String((window.confirm as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0])
+    expect(message).toContain('테스트회원A')
+    expect(message).toContain(deviceCode(uid))
+    expect(message).not.toContain(uid) // 전체 UID는 노출하지 않는다
+  })
+
+  it('확인창에서 취소하면 아무것도 삭제하지 않는다', async () => {
+    asAuthorizedAdmin()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    fetchMemberLinksMock.mockResolvedValue([
+      { firebaseUid: 'uid-phone', link: { memberId: 'm1', role: 'member', active: true, linkedAt: '2026-08-24T00:00:00.000Z' } },
+    ])
+    render(<DeviceLinkAdminCard />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '연결 해제' })).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '연결 해제' }))
+
+    expect(deleteMemberLinkMock).not.toHaveBeenCalled()
+  })
+
+  it('여러 기기 중 누른 기기 1건만 삭제하고 다른 기기는 건드리지 않는다', async () => {
+    asAuthorizedAdmin()
+    fetchMemberLinksMock.mockResolvedValue([
+      { firebaseUid: 'uid-keep-me-1111', link: { memberId: 'm1', role: 'member', active: true, linkedAt: '2026-08-24T00:00:00.000Z' } },
+      { firebaseUid: 'uid-drop-me-2222', link: { memberId: 'm2', role: 'member', active: true, linkedAt: '2026-08-24T00:00:00.000Z' } },
+    ])
+    render(<DeviceLinkAdminCard />)
+    await waitFor(() => expect(screen.getAllByRole('button', { name: '연결 해제' })).toHaveLength(2))
+
+    fireEvent.click(screen.getAllByRole('button', { name: '연결 해제' })[1])
+
+    await waitFor(() => expect(deleteMemberLinkMock).toHaveBeenCalledWith('uid-drop-me-2222'))
+    expect(deleteMemberLinkMock).toHaveBeenCalledTimes(1)
+    expect(deleteMemberLinkMock).not.toHaveBeenCalledWith('uid-keep-me-1111')
+  })
+
+  it('"해제된 기기" 목록과 "다시 연결" 버튼이 더 이상 없다', async () => {
     asAuthorizedAdmin()
     fetchMemberLinksMock.mockResolvedValue([
       { firebaseUid: 'uid-old', link: { memberId: 'm2', role: 'member', active: false, linkedAt: '2026-08-01T00:00:00.000Z' } },
     ])
     render(<DeviceLinkAdminCard />)
-    await waitFor(() => expect(screen.getByText(/해제된 기기/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/연결된 기기/)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: '다시 연결' }))
-    await waitFor(() => expect(setLinkActiveMock).toHaveBeenCalledWith('uid-old', true))
+    expect(screen.queryByText(/해제된 기기/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '다시 연결' })).not.toBeInTheDocument()
+  })
+
+  it('예전 방식으로 active:false로 남아 있던 기록도 목록에서 지울 수 있다', async () => {
+    asAuthorizedAdmin()
+    fetchMemberLinksMock.mockResolvedValue([
+      { firebaseUid: 'uid-old', link: { memberId: 'm2', role: 'member', active: false, linkedAt: '2026-08-01T00:00:00.000Z' } },
+    ])
+    render(<DeviceLinkAdminCard />)
+    await waitFor(() => expect(screen.getByText(/이전 방식으로 해제된 기록/)).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: '연결 해제' }))
+    await waitFor(() => expect(deleteMemberLinkMock).toHaveBeenCalledWith('uid-old'))
   })
 
   it('한 회원의 기기 여러 대를 모두 보여준다', async () => {
