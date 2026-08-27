@@ -14,6 +14,17 @@ import {
 
 const testEnv: RulesTestEnvironment | null = await createRulesTestEnv()
 
+// 이 파일에는 describe가 두 개 있다. cleanup()은 테스트 환경 자체를 없애므로 describe마다
+// afterAll에서 부르면, 첫 번째 describe가 끝나는 순간 환경이 사라져 두 번째 describe의
+// 테스트가 전부 실패한다. 그래서 정리는 파일 전체에서 딱 한 번만 한다.
+afterAll(async () => {
+  if (testEnv) await testEnv.cleanup()
+})
+
+beforeEach(async () => {
+  if (testEnv) await testEnv.clearFirestore()
+})
+
 /**
  * clubs/skkubc (legacy 단일 문서) — 공개 접근 폐쇄 확인.
  *
@@ -26,14 +37,6 @@ const testEnv: RulesTestEnvironment | null = await createRulesTestEnv()
  * 실수로 여기에 쓰면 split 데이터와 내용이 갈라지기 때문이다.
  */
 describe.skipIf(!testEnv)('firestore.rules — clubs/skkubc (legacy 공개 접근 폐쇄)', () => {
-  afterAll(async () => {
-    await testEnv!.cleanup()
-  })
-
-  beforeEach(async () => {
-    await testEnv!.clearFirestore()
-  })
-
   const legacyPath = 'clubs/skkubc'
   const payload = { probedBy: 'rules-test', at: '2026-08-27T00:00:00+09:00' }
 
@@ -95,14 +98,6 @@ describe.skipIf(!testEnv)('firestore.rules — clubs/skkubc (legacy 공개 접�
  * `clubs/skkubc/settlements/{id}`로 legacy 문서 바로 아래에 있어 착각하기 쉽다.
  */
 describe.skipIf(!testEnv)('firestore.rules — legacy 폐쇄가 하위 컬렉션에 영향을 주지 않는다', () => {
-  afterAll(async () => {
-    await testEnv!.cleanup()
-  })
-
-  beforeEach(async () => {
-    await testEnv!.clearFirestore()
-  })
-
   it('settlements는 기존대로 관리자만 read/write할 수 있다', async () => {
     await seedAdmin(testEnv!, UID_ADMIN_ACTIVE, true)
     const admin = testEnv!.authenticatedContext(UID_ADMIN_ACTIVE).firestore()
