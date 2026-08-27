@@ -1,6 +1,7 @@
 import { collection, deleteField, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { db } from './firebase'
-import { validateDrawEntries } from '../logic/tournamentDraw'
+import { createTournamentParticipant, validateDrawEntries } from '../logic/tournamentDraw'
+import type { Member } from '../types'
 import {
   approveTournamentMatch as applyApproval,
   adminVerifyTournamentMatchResult as applyAdminVerification,
@@ -230,6 +231,46 @@ export async function fetchTournamentParticipants(
   try {
     const snap = await getDocs(participantsCol(clubId, tournamentId))
     return snap.docs.map((d) => d.data() as TournamentParticipant)
+  } catch (e) {
+    throw toSyncError(e)
+  }
+}
+
+/**
+ * 활성 회원 중 아직 이 대회의 participant 문서가 없는 사람에게만 문서를 만들어 준다
+ * (entryStatus는 'noResponse'로 시작). 문서 id는 회원 id를 그대로 쓴다 — 한 대회 안에서
+ * "이 회원의 참가자 문서가 이미 있는지"를 목록을 다시 훑지 않고 바로 찾을 수 있고,
+ * Firestore 규칙(participants 블록)이 "본인 문서인지"를 memberId 필드로만 판정하는 것과도 맞는다.
+ *
+ * 이미 있는 참가자는 절대 건드리지 않는다 — 회원이 이미 응답했거나 관리자가 제외한 상태를
+ * 덮어쓰면 안 되기 때문이다. 그래서 회원 목록으로 몇 번을 다시 불러도 안전하다(idempotent).
+ *
+ * 회원은 스스로 자기 participant 문서를 만들 수 없다(Rules가 참가자 create를 관리자 전용으로
+ * 막아 둔다) — 그래서 대회를 만든 직후 이 함수로 활성 회원 전원의 문서를 미리 만들어 둬야
+ * 회원이 참가/불참을 누를 대상이 생긴다. 나중에 새로 활성화된 회원이나 관리자가 현장에서
+ * 참가자를 추가할 때도 같은 함수를 다시 불러 빠진 사람만 채울 수 있다.
+ */
+export async function createMissingParticipants(
+  tournamentId: string,
+  activeMembers: Pick<Member, 'id' | 'name' | 'handicap'>[],
+  clubId = DEFAULT_CLUB_ID,
+): Promise<number> {
+  try {
+    const existing = await fetchTournamentParticipants(tournamentId, clubId)
+    const existingMemberIds = new Set(existing.map((p) => p.memberId))
+    const missing = activeMembers.filter((m) => !existingMemberIds.has(m.id))
+    if (missing.length === 0) return 0
+
+    const BATCH_LIMIT = 450
+    for (let i = 0; i < missing.length; i += BATCH_LIMIT) {
+      const batch = writeBatch(db)
+      for (const member of missing.slice(i, i + BATCH_LIMIT)) {
+        const participant = createTournamentParticipant(member, { participantId: member.id })
+        batch.set(participantDoc(clubId, tournamentId, participant.id), toParticipantDoc(participant))
+      }
+      await batch.commit()
+    }
+    return missing.length
   } catch (e) {
     throw toSyncError(e)
   }

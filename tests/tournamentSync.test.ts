@@ -53,8 +53,8 @@ vi.mock('../src/lib/firebase', () => ({ db: {} }))
 
 import {
   createTournament, fetchTournament, updateTournamentInfo, confirmTournamentEntries,
-  writeTournamentParticipant, fetchTournamentParticipants, setParticipantEntryStatus,
-  excludeParticipantByAdmin, setParticipantTournamentHandicap,
+  writeTournamentParticipant, fetchTournamentParticipants, createMissingParticipants,
+  setParticipantEntryStatus, excludeParticipantByAdmin, setParticipantTournamentHandicap,
   saveTournamentDrawMapping, loadTournamentDrawMapping, saveTournamentDrawNumbers,
   confirmTournamentBracket, cancelTournamentBracket, hasOfficialPlayedMatch,
   submitTournamentMatchResult, verifyTournamentMatchResult, requestTournamentMatchCorrection,
@@ -251,6 +251,55 @@ describe('참가자', () => {
   it('적용 핸디가 1 미만이면 쓰기 자체를 하지 않는다', async () => {
     await expect(setParticipantTournamentHandicap(TID, 'participant-a', 0, CLUB)).rejects.toThrow(TournamentSyncError)
     expect(updateDocMock).not.toHaveBeenCalled()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════
+describe('createMissingParticipants — 활성 회원 중 문서가 없는 사람만 채운다', () => {
+  const member = (suffix: 'a' | 'b' | 'c', handicap = 20) =>
+    ({ id: `member-${suffix}`, name: `가상회원${suffix.toUpperCase()}`, handicap })
+
+  it('참가자 문서가 하나도 없으면 활성 회원 전원의 문서를 만든다', async () => {
+    getDocsMock.mockResolvedValueOnce(querySnapOf([]))
+    const created = await createMissingParticipants(TID, [member('a'), member('b')], CLUB)
+
+    expect(created).toBe(2)
+    expect(batches).toHaveLength(1)
+    const ops = lastBatch().ops
+    expect(ops.map((op) => op.path).sort()).toEqual([
+      `${BASE}/participants/member-a`,
+      `${BASE}/participants/member-b`,
+    ])
+  })
+
+  it('이미 문서가 있는 회원은 절대 다시 쓰지 않는다 (응답·제외 상태 보호)', async () => {
+    getDocsMock.mockResolvedValueOnce(querySnapOf([participant('a')])) // memberId: member-a
+    const created = await createMissingParticipants(TID, [member('a'), member('b')], CLUB)
+
+    expect(created).toBe(1)
+    const ops = lastBatch().ops
+    expect(ops).toHaveLength(1)
+    expect(ops[0].path).toBe(`${BASE}/participants/member-b`)
+  })
+
+  it('새로 만드는 문서는 noResponse 상태로, 문서 id는 회원 id를 그대로 쓴다', async () => {
+    getDocsMock.mockResolvedValueOnce(querySnapOf([]))
+    await createMissingParticipants(TID, [member('c', 17)], CLUB)
+
+    const op = lastBatch().ops[0]
+    expect(op.path).toBe(`${BASE}/participants/member-c`)
+    expect(op.data).toEqual({
+      id: 'member-c', memberId: 'member-c', displayNameSnapshot: '가상회원C',
+      baseHandicapSnapshot: 17, tournamentHandicap: 17, entryStatus: 'noResponse',
+    })
+  })
+
+  it('빠진 회원이 없으면 아무것도 쓰지 않는다', async () => {
+    getDocsMock.mockResolvedValueOnce(querySnapOf([participant('a'), participant('b')]))
+    const created = await createMissingParticipants(TID, [member('a'), member('b')], CLUB)
+
+    expect(created).toBe(0)
+    expect(batches).toHaveLength(0)
   })
 })
 

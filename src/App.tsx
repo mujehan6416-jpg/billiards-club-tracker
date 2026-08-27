@@ -8,6 +8,7 @@ import { HomeTab } from './tabs/HomeTab'
 import { LoginScreen } from './tabs/LoginScreen'
 import { DeviceConnectScreen } from './tabs/DeviceConnectScreen'
 import { SettlementAdminTab } from './tabs/SettlementAdminTab'
+import { TournamentTab } from './tabs/TournamentTab'
 import { useAdmin } from './store/adminStore'
 import { useAdminAuthStore } from './store/adminAuthStore'
 import { useAuth } from './store/authStore'
@@ -40,7 +41,7 @@ function isLocalAheadOf(local: AppState, remote: AppState): boolean {
 
 // 'settlement'은 일부러 TABS(하단 탭바) 배열에 넣지 않는다 — 일반 회원 화면에는 전혀 노출되지 않고,
 // 아래 TopBar의 관리자 모드(PIN) 전용 버튼으로만 진입 가능하다.
-type Tab = 'home' | 'members' | 'meeting' | 'dashboard' | 'settings' | 'ledger' | 'settlement'
+type Tab = 'home' | 'members' | 'meeting' | 'dashboard' | 'settings' | 'ledger' | 'settlement' | 'tournament'
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'home',      label: '홈',   icon: '🏠' },
@@ -416,6 +417,7 @@ export function App() {
         {tab === 'settings'  && <SettingsTab />}
         {tab === 'ledger'    && <LedgerTab />}
         {tab === 'settlement' && <SettlementAdminTab onBack={() => setTab('home')} />}
+        {tab === 'tournament' && <TournamentTab />}
       </main>
       <nav className="bottom-nav">
         {TABS.map((t) => (

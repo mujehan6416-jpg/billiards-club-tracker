@@ -751,4 +751,121 @@ describe.skipIf(!testEnv)('firestore.rules — 대회 토너먼트', () => {
       await assertFails(asPlayerA1().doc(matchPath('r1m1', CLUB_OTHER)).update(submitPatch(MEMBER_A)))
     })
   })
+
+  // ══════════════════════════════════════════════════════════════
+  // 4A — 회원 참가/불참 (participants.entryStatus 본인 write)
+  // ══════════════════════════════════════════════════════════════
+  describe('회원 참가/불참 (4A)', () => {
+    const draftTournamentData = (over: object = {}) => ({
+      id: TID, name: '가상 대회', date: '2026-09-01', timeLimitMinutes: 60,
+      status: 'draft', createdAt: AT, ...over,
+    })
+
+    beforeEach(async () => {
+      await linkEveryone()
+      await seedDoc(tournamentPath(), draftTournamentData())
+      await seedDoc(participantPath('participant-a'), participantData('participant-a', MEMBER_A, { entryStatus: 'noResponse' }))
+      await seedDoc(participantPath('participant-b'), participantData('participant-b', MEMBER_B, { entryStatus: 'noResponse' }))
+    })
+
+    it('1. 연결 회원이 자기 참가 상태를 참가로 변경할 수 있다', async () => {
+      await assertSucceeds(asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'entered' }))
+    })
+
+    it('2. 연결 회원이 자기 참가 상태를 불참으로 변경할 수 있다', async () => {
+      await assertSucceeds(asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'declined' }))
+    })
+
+    it('3. 참가 → 불참으로 변경할 수 있다', async () => {
+      await seedDoc(participantPath('participant-a'), participantData('participant-a', MEMBER_A, { entryStatus: 'entered' }))
+      await assertSucceeds(asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'declined' }))
+    })
+
+    it('4. 불참 → 참가로 변경할 수 있다', async () => {
+      await seedDoc(participantPath('participant-a'), participantData('participant-a', MEMBER_A, { entryStatus: 'declined' }))
+      await assertSucceeds(asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'entered' }))
+    })
+
+    it('5. 다른 회원의 participant 문서는 변경할 수 없다', async () => {
+      await assertFails(asPlayerA1().doc(participantPath('participant-b')).update({ entryStatus: 'entered' }))
+    })
+
+    it('6. 비연결 사용자는 변경할 수 없다', async () => {
+      await assertFails(asOutsider().doc(participantPath('participant-a')).update({ entryStatus: 'entered' }))
+    })
+
+    it('7. 다른 모임 회원은 이 모임 participant를 변경할 수 없다', async () => {
+      await assertFails(asOtherClubMember().doc(participantPath('participant-a')).update({ entryStatus: 'entered' }))
+    })
+
+    it('8. entryStatus와 함께 memberId를 바꾸려 하면 차단된다', async () => {
+      await assertFails(
+        asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'entered', memberId: MEMBER_OUTSIDER }),
+      )
+    })
+
+    it('9. entryStatus와 함께 tournamentHandicap을 바꾸려 하면 차단된다', async () => {
+      await assertFails(
+        asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'entered', tournamentHandicap: 5 }),
+      )
+    })
+
+    it('10. entryStatus와 함께 displayNameSnapshot을 바꾸려 하면 차단된다', async () => {
+      await assertFails(
+        asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'entered', displayNameSnapshot: '가짜이름' }),
+      )
+    })
+
+    it('11. entryStatus와 함께 baseHandicapSnapshot을 바꾸려 하면 차단된다', async () => {
+      await assertFails(
+        asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'entered', baseHandicapSnapshot: 99 }),
+      )
+    })
+
+    it('12. 관리자 제외 필드(excludedByAdminUid 등)를 스스로 써 넣을 수 없다', async () => {
+      await assertFails(
+        asPlayerA1().doc(participantPath('participant-a'))
+          .update({ entryStatus: 'entered', excludedByAdminUid: UID_A1, excludedAt: AT }),
+      )
+    })
+
+    it('13. entered/declined 외의 값으로는 바꿀 수 없다', async () => {
+      await assertFails(asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'excluded' }))
+      await assertFails(asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'noResponse' }))
+    })
+
+    it('★ 이미 관리자가 제외한 참가자는 스스로 되돌릴 수 없다', async () => {
+      await seedDoc(participantPath('participant-a'), participantData('participant-a', MEMBER_A, {
+        entryStatus: 'excluded', excludedByAdminUid: UID_ADMIN_ACTIVE, excludedAt: AT,
+      }))
+      await assertFails(asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'entered' }))
+    })
+
+    it('14. 참가자 확정(entryClosed) 이후에는 회원이 변경할 수 없다', async () => {
+      await seedDoc(tournamentPath(), draftTournamentData({ status: 'entryClosed', participantCount: 1 }))
+      await assertFails(asPlayerA1().doc(participantPath('participant-a')).update({ entryStatus: 'entered' }))
+    })
+
+    it('15. 관리자는 참가자 상태를 변경할 수 있다', async () => {
+      await assertSucceeds(asAdmin().doc(participantPath('participant-a')).update({ entryStatus: 'entered' }))
+    })
+
+    it('16. 관리자는 참가자를 제외할 수 있다', async () => {
+      await assertSucceeds(
+        asAdmin().doc(participantPath('participant-a'))
+          .update({ entryStatus: 'excluded', excludedByAdminUid: UID_ADMIN_ACTIVE, excludedAt: AT }),
+      )
+    })
+
+    it('17. 관리자는 tournamentHandicap을 변경할 수 있다', async () => {
+      await assertSucceeds(asAdmin().doc(participantPath('participant-a')).update({ tournamentHandicap: 18 }))
+    })
+
+    it('회원은 여전히 participant 문서를 새로 만들 수 없다(create는 관리자 전용 그대로)', async () => {
+      await assertFails(
+        asPlayerA1().doc(participantPath('participant-new'))
+          .set(participantData('participant-new', MEMBER_A, { entryStatus: 'noResponse' })),
+      )
+    })
+  })
 })

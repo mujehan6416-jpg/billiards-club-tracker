@@ -1,4 +1,4 @@
-type Tab = 'members' | 'meeting' | 'dashboard' | 'settings'
+type Tab = 'members' | 'meeting' | 'dashboard' | 'settings' | 'tournament'
 
 interface Props {
   onNavigate: (tab: Tab) => void
@@ -9,9 +9,10 @@ export function HomeTab({ onNavigate }: Props) {
   const logoSrc = base + 'ICON-SKKU.jpg'
 
   const menus: { tab: Tab; icon: string; label: string; desc: string }[] = [
-    { tab: 'members',   icon: '👥', label: '회원',      desc: '에버리지 및 순위 조회' },
-    { tab: 'meeting',   icon: '🎱', label: '모임',      desc: '경기 기록 및 결과 입력' },
-    { tab: 'dashboard', icon: '📊', label: '대시보드',  desc: '승률 및 통계' },
+    { tab: 'members',    icon: '👥', label: '회원',      desc: '에버리지 및 순위 조회' },
+    { tab: 'meeting',    icon: '🎱', label: '모임',      desc: '경기 기록 및 결과 입력' },
+    { tab: 'dashboard',  icon: '📊', label: '대시보드',  desc: '승률 및 통계' },
+    { tab: 'tournament', icon: '🏆', label: '대회',      desc: '대회 참가 및 관리' },
   ]
 
   return (
@@ -37,13 +38,12 @@ export function HomeTab({ onNavigate }: Props) {
       </div>
 
       <div style={{ flex: 1, padding: '28px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', background: '#fff' }}>
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           {menus.map(({ tab, icon, label, desc }) => (
             <button
               key={tab}
               onClick={() => onNavigate(tab)}
               style={{
-                flex: 1,
                 background: '#fff',
                 border: '0.5px solid #e0e0e0',
                 borderRadius: 14,

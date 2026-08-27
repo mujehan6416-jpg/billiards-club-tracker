@@ -248,12 +248,33 @@ service cloud.firestore {
       allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
       allow create, update, delete: if isAdmin();
 
-      // 참가자 명단. 이번 단계에서는 회원 쓰기를 열지 않는다 — 참가/불참 화면이 아직 없어서,
-      // 미리 열어 두면 실제로 필요한 것보다 넓은 권한이 그대로 굳어진다. 화면이 생길 때
-      // "그 화면이 실제로 바꾸는 필드"만 따로 연다.
+      // 참가자 명단. 문서 생성은 관리자만 한다(4A: 대회 생성 직후 활성 회원 전원의 participant
+      // 문서를 관리자 service가 미리 만들어 둔다 — 회원이 직접 자기 문서를 만들게 하지 않는다.
+      // 그래야 회원 쪽에는 "이미 있는 자기 문서의 entryStatus 한 필드만" 열면 되고, create 권한
+      // 자체를 열 필요가 없어 공격 표면이 늘지 않는다).
       match /participants/{participantId} {
         allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
-        allow create, update, delete: if isAdmin();
+        allow create, delete: if isAdmin();
+
+        // 이 대회가 아직 참가 신청을 받는 중인지 — 참가자 확정(entryClosed) 이후에는 회원이
+        // 스스로 바꿀 수 없다(경기·부전승·확정 문서 보호와 같은 이유: 확정된 값은 관리자만 고친다).
+        function tournamentIsAcceptingEntries() {
+          return get(/databases/$(database)/documents/clubs/$(clubId)/tournaments/$(tournamentId)).data.status == 'draft';
+        }
+
+        // 회원 본인의 참가/불참 — 이미 있는 자기 participant 문서의 entryStatus 한 필드만,
+        // entered 또는 declined로만 바꿀 수 있다. 관리자가 이미 'excluded'로 뺀 참가자는
+        // 이 경로로 스스로 되돌릴 수 없다(그건 관리자만 할 수 있는 결정이다).
+        function memberSetsOwnEntryStatus(me) {
+          return resource.data.memberId == me
+            && resource.data.entryStatus != 'excluded'
+            && tournamentIsAcceptingEntries()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['entryStatus'])
+            && request.resource.data.entryStatus in ['entered', 'declined'];
+        }
+
+        allow update: if isAdmin()
+          || (hasActiveMemberLink(clubId) && memberSetsOwnEntryStatus(linkedMemberId(clubId)));
       }
 
       // ⚠ 추첨번호↔실제 자리 매핑과 부전승 자리. **관리자 외에는 읽을 수도 없다.**
