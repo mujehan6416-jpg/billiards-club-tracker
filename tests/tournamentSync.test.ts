@@ -53,6 +53,7 @@ vi.mock('../src/lib/firebase', () => ({ db: {} }))
 
 import {
   createTournament, fetchTournament, updateTournamentInfo, confirmTournamentEntries,
+  reopenTournamentEntries, prepareTournamentDraw,
   writeTournamentParticipant, fetchTournamentParticipants, createMissingParticipants,
   setParticipantEntryStatus, excludeParticipantByAdmin, setParticipantTournamentHandicap,
   saveTournamentDrawMapping, loadTournamentDrawMapping, saveTournamentDrawNumbers,
@@ -300,6 +301,107 @@ describe('createMissingParticipants — 활성 회원 중 문서가 없는 사�
 
     expect(created).toBe(0)
     expect(batches).toHaveLength(0)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════
+describe('참가자 확정 취소 (4B §6)', () => {
+  it('CASE 1 — entryClosed 직후(추첨 준비 전)에는 즉시 draft로 되돌리고 지울 drawNumber가 없다', async () => {
+    getDocMock.mockResolvedValueOnce(snapOf(tournament({ status: 'entryClosed', participantCount: 2 })))
+    getDocsMock.mockResolvedValueOnce(querySnapOf([participant('a'), participant('b')]))
+
+    await reopenTournamentEntries(TID, CLUB)
+
+    expect(batches).toHaveLength(1)
+    const ops = lastBatch().ops
+    expect(ops.find((op) => op.path === BASE)!.data).toEqual({ status: 'draft', participantCount: DELETED })
+    expect(ops.find((op) => op.path === `${BASE}/private/draw`)!.kind).toBe('delete')
+    // 아무도 drawNumber를 받은 적이 없으므로 participant update는 생기지 않는다.
+    expect(ops.filter((op) => op.path.includes('/participants/'))).toHaveLength(0)
+  })
+
+  it('CASE 2 — 추첨 준비/번호 입력을 시작한 뒤(drawReady)에도 draft로 되돌리고 drawNumber를 지운다', async () => {
+    getDocMock.mockResolvedValueOnce(snapOf(tournament({ status: 'drawReady', participantCount: 2 })))
+    getDocsMock.mockResolvedValueOnce(querySnapOf([
+      participant('a', { drawNumber: 1 }),
+      participant('b', { drawNumber: 2 }),
+    ]))
+
+    await reopenTournamentEntries(TID, CLUB)
+
+    const ops = lastBatch().ops
+    expect(ops.find((op) => op.path === `${BASE}/participants/participant-a`)!.data).toEqual({ drawNumber: DELETED })
+    expect(ops.find((op) => op.path === `${BASE}/participants/participant-b`)!.data).toEqual({ drawNumber: DELETED })
+    expect(ops.find((op) => op.path === `${BASE}/private/draw`)!.kind).toBe('delete')
+    expect(ops.find((op) => op.path === BASE)!.data).toEqual({ status: 'draft', participantCount: DELETED })
+  })
+
+  it('취소 후 회원이 다시 참가/불참을 바꿀 수 있는 상태(draft)로 정확히 돌아간다', async () => {
+    getDocMock.mockResolvedValueOnce(snapOf(tournament({ status: 'entryClosed', participantCount: 2 })))
+    getDocsMock.mockResolvedValueOnce(querySnapOf([]))
+    await reopenTournamentEntries(TID, CLUB)
+    expect(lastBatch().ops.find((op) => op.path === BASE)!.data!.status).toBe('draft')
+  })
+
+  it('대진이 이미 확정(bracketFixed)됐으면 직접 취소할 수 없다 — 먼저 대진 확정 취소가 필요하다', async () => {
+    getDocMock.mockResolvedValueOnce(snapOf(tournament({ status: 'bracketFixed' })))
+    await expect(reopenTournamentEntries(TID, CLUB)).rejects.toThrow(/먼저 대진 확정을 취소/)
+    expect(batches).toHaveLength(0)
+  })
+
+  it('대진 확정 취소로 bracketFixed → entryClosed까지 내려온 뒤에는 다시 참가자 확정 취소를 할 수 있다', async () => {
+    // cancelTournamentBracket()이 이미 공식 경기 유무를 확인해 entryClosed로 돌려놓은 뒤라고 가정.
+    getDocMock.mockResolvedValueOnce(snapOf(tournament({ status: 'entryClosed', participantCount: 2 })))
+    getDocsMock.mockResolvedValueOnce(querySnapOf([]))
+    await expect(reopenTournamentEntries(TID, CLUB)).resolves.toBeUndefined()
+  })
+
+  it('draft 상태에서는(아직 확정 자체가 안 됐으므로) 취소할 것이 없어 거부한다', async () => {
+    getDocMock.mockResolvedValueOnce(snapOf(tournament({ status: 'draft' })))
+    await expect(reopenTournamentEntries(TID, CLUB)).rejects.toThrow(TournamentSyncError)
+    expect(batches).toHaveLength(0)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════
+describe('추첨 준비 (4B §8)', () => {
+  const rng = () => 0.42 // 결정적 — 실제 매핑 값 자체는 draw 단위 테스트에서 이미 검증됨
+
+  it('참가자 확정 시점의 인원 수만으로 매핑을 만들어 private/draw에 저장한다', async () => {
+    await prepareTournamentDraw(TID, 8, CLUB, rng)
+
+    expect(setDocMock).toHaveBeenCalledTimes(1)
+    const [ref, data] = setDocMock.mock.calls[0]
+    expect(ref.path).toBe(`${BASE}/private/draw`)
+    expect(data.bracketSize).toBe(8)
+    expect(Object.keys(data.numberToSlot)).toHaveLength(8)
+  })
+
+  it('11명이면 bracketSize 16을 계산해 저장한다', async () => {
+    await prepareTournamentDraw(TID, 11, CLUB, rng)
+    expect(setDocMock.mock.calls[0][1].bracketSize).toBe(16)
+  })
+
+  it('대회 상태를 drawReady로 바꾼다', async () => {
+    await prepareTournamentDraw(TID, 8, CLUB, rng)
+    expect(updateDocMock).toHaveBeenCalledWith(expect.objectContaining({ path: BASE }), { status: 'drawReady' })
+  })
+
+  it('공개 대회 문서에는 bracketSize를 아직 쓰지 않는다 — 확정 시점에만 공개한다', async () => {
+    await prepareTournamentDraw(TID, 8, CLUB, rng)
+    const tournamentUpdateCall = updateDocMock.mock.calls.find((c) => c[0].path === BASE)!
+    expect(Object.keys(tournamentUpdateCall[1])).toEqual(['status'])
+  })
+
+  it('참가자 정보를 전혀 읽지 않는다 — 인원 수만으로 계산한다', async () => {
+    await prepareTournamentDraw(TID, 8, CLUB, rng)
+    expect(getDocsMock).not.toHaveBeenCalled()
+  })
+
+  it('참가자 수가 2명 미만이면 아무것도 쓰지 않는다', async () => {
+    await expect(prepareTournamentDraw(TID, 1, CLUB, rng)).rejects.toThrow(TournamentSyncError)
+    expect(setDocMock).not.toHaveBeenCalled()
+    expect(updateDocMock).not.toHaveBeenCalled()
   })
 })
 

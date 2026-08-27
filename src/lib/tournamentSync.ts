@@ -1,6 +1,6 @@
 import { collection, deleteField, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { db } from './firebase'
-import { createTournamentParticipant, validateDrawEntries } from '../logic/tournamentDraw'
+import { createDrawMapping, createTournamentParticipant, validateDrawEntries } from '../logic/tournamentDraw'
 import type { Member } from '../types'
 import {
   approveTournamentMatch as applyApproval,
@@ -187,6 +187,52 @@ export async function confirmTournamentEntries(
   }
 }
 
+/**
+ * 참가자 확정을 취소하고 참가 신청 단계(draft)로 되돌린다 — 4B §6의 CASE 1·2.
+ *
+ * 대진이 이미 확정(bracketFixed)된 뒤에는 이 함수로 되돌릴 수 없다. 그 상태에서는 먼저
+ * cancelTournamentBracket()으로 bracketFixed → entryClosed까지 내려온 뒤 다시 불러야 한다.
+ * 그 함수가 이미 "공식 확정된 경기가 있으면 막는다"를 지키므로(hasOfficialPlayedMatch),
+ * 대진 문서 자체가 아직 없는 draft·entryClosed·drawReady 상태에서는 애초에 공식 경기가
+ * 존재할 수 없다 — 그래서 이 함수는 그 확인을 별도로 하지 않는다(상태 자체가 그것을 보장한다).
+ *
+ * 추첨 준비(prepareTournamentDraw)를 이미 눌러 private/draw와 참가자 drawNumber가 남아
+ * 있을 수 있으므로(CASE 2) 함께 지운다 — 남겨 두면 다음 추첨 준비 때 옛 매핑이 섞일 수 있다.
+ */
+export async function reopenTournamentEntries(
+  tournamentId: string,
+  clubId = DEFAULT_CLUB_ID,
+): Promise<void> {
+  try {
+    const tournament = await fetchTournament(tournamentId, clubId)
+    if (!tournament) throw new TournamentSyncError('not-found', '대회를 찾을 수 없습니다.')
+    if (tournament.status !== 'entryClosed' && tournament.status !== 'drawReady') {
+      throw new TournamentSyncError(
+        'blocked',
+        tournament.status === 'bracketFixed' || tournament.status === 'finished'
+          ? '대진이 이미 확정되어 있습니다. 먼저 대진 확정을 취소해 주세요.'
+          : '지금은 참가자 확정을 취소할 수 있는 상태가 아닙니다.',
+      )
+    }
+
+    const participants = await fetchTournamentParticipants(tournamentId, clubId)
+    const batch = writeBatch(db)
+    batch.delete(drawDoc(clubId, tournamentId))
+    for (const participant of participants) {
+      if (participant.drawNumber !== undefined) {
+        batch.update(participantDoc(clubId, tournamentId, participant.id), { drawNumber: deleteField() })
+      }
+    }
+    batch.update(tournamentDoc(clubId, tournamentId), {
+      status: 'draft',
+      participantCount: deleteField(),
+    })
+    await batch.commit()
+  } catch (e) {
+    throw toSyncError(e)
+  }
+}
+
 // ── 참가자 ──────────────────────────────────────────────────────────
 
 function toParticipantDoc(participant: TournamentParticipant): TournamentParticipant {
@@ -361,6 +407,35 @@ export async function loadTournamentDrawMapping(
   try {
     const snap = await getDoc(drawDoc(clubId, tournamentId))
     return snap.exists() ? (snap.data() as TournamentDrawMapping) : null
+  } catch (e) {
+    throw toSyncError(e)
+  }
+}
+
+/**
+ * "추첨 준비" — 참가자 확정(entryClosed) 상태에서, 확정 당시 저장해 둔 참가 인원
+ * (Tournament.participantCount)만으로 대진 규모·부전승 자리·번호↔자리 비공개 매핑을 만들어
+ * private/draw에 저장하고, 대회 상태를 drawReady로 옮긴다.
+ *
+ * 참가자 목록이나 이름·핸디를 전혀 읽지 않는다 — 1단계 createDrawMapping()이 인원 수만
+ * 받는 것과 같은 이유로, 특정 회원에게 유리한 배치가 이 함수 차원에서도 구조적으로
+ * 불가능하다. 만든 매핑은 관리자 전용 문서에만 들어가며, 이 함수는 대회 공개 문서에
+ * bracketSize를 아직 쓰지 않는다 — 그 값은 대진 확정(confirmTournamentBracket) 시점에만
+ * 공개된다(추첨 준비 단계의 관리자 화면에는 "번호 범위 1~N"만 보여주면 되고, 대진 규모까지
+ * 미리 알 필요는 없다).
+ */
+export async function prepareTournamentDraw(
+  tournamentId: string,
+  participantCount: number,
+  clubId = DEFAULT_CLUB_ID,
+  rng: () => number = Math.random,
+): Promise<TournamentDrawMapping> {
+  const mapping = createDrawMapping(participantCount, rng)
+  if (!mapping.ok) throw new TournamentSyncError('validation', mapping.message)
+  try {
+    await saveTournamentDrawMapping(tournamentId, mapping.value, clubId)
+    await updateDoc(tournamentDoc(clubId, tournamentId), { status: 'drawReady' })
+    return mapping.value
   } catch (e) {
     throw toSyncError(e)
   }

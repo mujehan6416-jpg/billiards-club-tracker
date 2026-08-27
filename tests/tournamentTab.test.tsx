@@ -11,6 +11,13 @@ const excludeParticipantByAdminMock = vi.fn()
 const setParticipantTournamentHandicapMock = vi.fn()
 const writeTournamentParticipantMock = vi.fn()
 const confirmTournamentEntriesMock = vi.fn()
+const reopenTournamentEntriesMock = vi.fn()
+const prepareTournamentDrawMock = vi.fn()
+const saveTournamentDrawNumbersMock = vi.fn()
+const loadTournamentDrawMappingMock = vi.fn()
+const confirmTournamentBracketMock = vi.fn()
+const cancelTournamentBracketMock = vi.fn()
+const fetchTournamentMatchesMock = vi.fn()
 
 vi.mock('../src/lib/tournamentSync', () => ({
   createTournament: (...args: unknown[]) => createTournamentMock(...args),
@@ -22,6 +29,13 @@ vi.mock('../src/lib/tournamentSync', () => ({
   setParticipantTournamentHandicap: (...args: unknown[]) => setParticipantTournamentHandicapMock(...args),
   writeTournamentParticipant: (...args: unknown[]) => writeTournamentParticipantMock(...args),
   confirmTournamentEntries: (...args: unknown[]) => confirmTournamentEntriesMock(...args),
+  reopenTournamentEntries: (...args: unknown[]) => reopenTournamentEntriesMock(...args),
+  prepareTournamentDraw: (...args: unknown[]) => prepareTournamentDrawMock(...args),
+  saveTournamentDrawNumbers: (...args: unknown[]) => saveTournamentDrawNumbersMock(...args),
+  loadTournamentDrawMapping: (...args: unknown[]) => loadTournamentDrawMappingMock(...args),
+  confirmTournamentBracket: (...args: unknown[]) => confirmTournamentBracketMock(...args),
+  cancelTournamentBracket: (...args: unknown[]) => cancelTournamentBracketMock(...args),
+  fetchTournamentMatches: (...args: unknown[]) => fetchTournamentMatchesMock(...args),
 }))
 
 import { TournamentTab } from '../src/tabs/TournamentTab'
@@ -238,5 +252,174 @@ describe('관리자 — 참가 현황·참가자 관리', () => {
     fireEvent.click(await screen.findByText('참가자 확정'))
 
     expect(confirmTournamentEntriesMock).not.toHaveBeenCalled()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════
+// 4B — 추첨 준비 → 번호 입력 → 대진표 미리보기 → 대진 확정 → 확정 취소
+// ══════════════════════════════════════════════════════════════════
+
+const entryClosedTournament: Tournament = { ...draftTournament, status: 'entryClosed', participantCount: 2 }
+const enteredParticipants: TournamentParticipant[] = [
+  { ...participants[0], entryStatus: 'entered' },
+  { ...participants[1], entryStatus: 'entered' },
+]
+
+describe('관리자 — 추첨 준비', () => {
+  beforeEach(() => {
+    useAdmin.setState({ isAdmin: true })
+    useAdminAuthStore.setState({ status: 'authorizedAdmin', uid: 'admin-1', email: 'a@test', adminDisplayName: '관리자', errorMessage: null })
+    fetchTournamentsMock.mockResolvedValue([entryClosedTournament])
+    fetchTournamentParticipantsMock.mockResolvedValue(enteredParticipants)
+  })
+
+  it('추첨 준비 버튼을 누르면 확정된 참가 인원으로 prepareTournamentDraw가 호출된다', async () => {
+    prepareTournamentDrawMock.mockResolvedValue(undefined)
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    fireEvent.click(await screen.findByText('추첨 준비'))
+    await waitFor(() => expect(prepareTournamentDrawMock).toHaveBeenCalledWith('t1', 2, 'skkubc'))
+  })
+})
+
+describe('관리자 — 번호 저장 · 미리보기 · 대진 확정', () => {
+  const drawReadyTournament: Tournament = { ...entryClosedTournament, status: 'drawReady' }
+  const savedParticipants = enteredParticipants.map((p, i) => ({ ...p, drawNumber: i + 1 }))
+
+  beforeEach(() => {
+    useAdmin.setState({ isAdmin: true })
+    useAdminAuthStore.setState({ status: 'authorizedAdmin', uid: 'admin-1', email: 'a@test', adminDisplayName: '관리자', errorMessage: null })
+  })
+
+  it('번호를 입력하고 저장하면 saveTournamentDrawNumbers가 참가자 전체 목록으로 호출된다', async () => {
+    fetchTournamentsMock.mockResolvedValue([drawReadyTournament])
+    fetchTournamentParticipantsMock.mockResolvedValue(enteredParticipants)
+    saveTournamentDrawNumbersMock.mockResolvedValue(undefined)
+
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    const inputs = await screen.findAllByRole('spinbutton')
+    fireEvent.change(inputs[0], { target: { value: '2' } })
+    fireEvent.change(inputs[1], { target: { value: '1' } })
+    fireEvent.click(screen.getByText('번호 저장'))
+
+    await waitFor(() => expect(saveTournamentDrawNumbersMock).toHaveBeenCalledTimes(1))
+    const [tid, sentParticipants, entries, clubId] = saveTournamentDrawNumbersMock.mock.calls[0]
+    expect(tid).toBe('t1')
+    expect(sentParticipants).toEqual(enteredParticipants)
+    expect(entries).toHaveLength(2)
+    expect(clubId).toBe('skkubc')
+  })
+
+  it('모든 번호가 저장된 뒤 "대진표 확인"을 누르면 관리자 전용 매핑을 불러와 미리보기를 계산한다(Firestore 쓰기 없음)', async () => {
+    fetchTournamentsMock.mockResolvedValue([drawReadyTournament])
+    fetchTournamentParticipantsMock.mockResolvedValue(savedParticipants)
+    loadTournamentDrawMappingMock.mockResolvedValue({ bracketSize: 2, numberToSlot: { 1: 1, 2: 2 }, byeSlots: [] })
+
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    fireEvent.click(await screen.findByText('대진표 확인'))
+
+    await waitFor(() => expect(loadTournamentDrawMappingMock).toHaveBeenCalledWith('t1', 'skkubc'))
+    expect(await screen.findByText(/아직 확정 전 미리보기/)).toBeInTheDocument()
+    // 미리보기 계산은 로컬일 뿐 어떤 Firestore write 함수도 부르지 않는다.
+    expect(confirmTournamentBracketMock).not.toHaveBeenCalled()
+  })
+
+  it('대진 확정을 누르면 계산된 경기 전체와 bracketSize로 confirmTournamentBracket이 호출된다', async () => {
+    fetchTournamentsMock.mockResolvedValue([drawReadyTournament])
+    fetchTournamentParticipantsMock.mockResolvedValue(savedParticipants)
+    loadTournamentDrawMappingMock.mockResolvedValue({ bracketSize: 2, numberToSlot: { 1: 1, 2: 2 }, byeSlots: [] })
+    confirmTournamentBracketMock.mockResolvedValue(undefined)
+    fetchTournamentMatchesMock.mockResolvedValue([])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    fireEvent.click(await screen.findByText('대진표 확인'))
+    fireEvent.click(await screen.findByText('대진 확정'))
+
+    await waitFor(() => expect(confirmTournamentBracketMock).toHaveBeenCalledTimes(1))
+    const [tid, matches, opts, clubId] = confirmTournamentBracketMock.mock.calls[0]
+    expect(tid).toBe('t1')
+    expect(matches.length).toBeGreaterThan(0)
+    expect(opts.bracketSize).toBe(2)
+    expect(clubId).toBe('skkubc')
+  })
+})
+
+describe('관리자 — 참가자 확정 취소 · 대진 확정 취소', () => {
+  beforeEach(() => {
+    useAdmin.setState({ isAdmin: true })
+    useAdminAuthStore.setState({ status: 'authorizedAdmin', uid: 'admin-1', email: 'a@test', adminDisplayName: '관리자', errorMessage: null })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+  })
+
+  it('참가자 확정 취소를 누르면 reopenTournamentEntries가 호출된다', async () => {
+    fetchTournamentsMock.mockResolvedValueOnce([entryClosedTournament]).mockResolvedValue([draftTournament])
+    fetchTournamentParticipantsMock.mockResolvedValue(enteredParticipants)
+    reopenTournamentEntriesMock.mockResolvedValue(undefined)
+
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    fireEvent.click(await screen.findByText('참가자 확정 취소'))
+
+    await waitFor(() => expect(reopenTournamentEntriesMock).toHaveBeenCalledWith('t1', 'skkubc'))
+  })
+
+  it('대진 확정 취소를 누르면 cancelTournamentBracket이 호출된다', async () => {
+    const bracketFixedTournament: Tournament = { ...entryClosedTournament, status: 'bracketFixed', bracketSize: 2 }
+    fetchTournamentsMock.mockResolvedValueOnce([bracketFixedTournament]).mockResolvedValue([entryClosedTournament])
+    fetchTournamentParticipantsMock.mockResolvedValue(enteredParticipants)
+    fetchTournamentMatchesMock.mockResolvedValue([])
+    cancelTournamentBracketMock.mockResolvedValue(undefined)
+
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    fireEvent.click(await screen.findByText('대진 확정 취소'))
+
+    await waitFor(() => expect(cancelTournamentBracketMock).toHaveBeenCalledWith('t1', 'skkubc'))
+  })
+})
+
+describe('회원 — 공개 대진표', () => {
+  const bracketFixedTournament: Tournament = { ...entryClosedTournament, status: 'bracketFixed', bracketSize: 2 }
+  const confirmedMatches = [{
+    id: 'r1m1', roundNumber: 1, playerCountInRound: 2, matchNumber: 1,
+    playerAParticipantId: 'm1', playerBParticipantId: 'm2',
+    playerAMemberId: 'm1', playerBMemberId: 'm2',
+    playerAHandicapSnapshot: 20, playerBHandicapSnapshot: 18,
+    scoreA: null, scoreB: null, resultType: 'normal' as const, status: 'awaitingResult' as const,
+    nextMatchId: null, nextSlot: null,
+  }]
+
+  beforeEach(() => {
+    useAuth.setState({ memberId: 'm1', memberName: '테스트회원A', isGuest: false })
+    fetchTournamentsMock.mockResolvedValue([bracketFixedTournament])
+    fetchTournamentParticipantsMock.mockResolvedValue(enteredParticipants)
+    fetchTournamentMatchesMock.mockResolvedValue(confirmedMatches)
+  })
+
+  it('대진이 확정되면 회원에게 공개 대진표가 보인다', async () => {
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    await waitFor(() => expect(fetchTournamentMatchesMock).toHaveBeenCalledWith('t1', 'skkubc'))
+    expect(await screen.findByText('테스트회원A')).toBeInTheDocument()
+    expect(screen.getByText('테스트회원B')).toBeInTheDocument()
+  })
+
+  it('회원 화면에는 관리자 전용 대진 관리 버튼이 없다', async () => {
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    await screen.findByText('테스트회원A')
+    expect(screen.queryByText('대진 확정 취소')).not.toBeInTheDocument()
+    expect(screen.queryByText('추첨 준비')).not.toBeInTheDocument()
+  })
+
+  it('★ 회원 화면 경로는 관리자 전용 loadTournamentDrawMapping을 절대 호출하지 않는다', async () => {
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    await screen.findByText('테스트회원A')
+    expect(loadTournamentDrawMappingMock).not.toHaveBeenCalled()
   })
 })

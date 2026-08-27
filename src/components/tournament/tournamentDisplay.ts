@@ -36,3 +36,15 @@ export function entryStatusLabel(status: TournamentEntryStatus): string {
     case 'excluded': return '관리자 제외'
   }
 }
+
+/**
+ * 그 라운드에 남은 선수 수를 대회 화면 문구로 바꾼다. TournamentMatch.playerCountInRound에는
+ * 숫자만 들어 있다(도메인이 "16강" 같은 한국어 문구를 갖지 않는다) — 그 숫자를 화면에서만
+ * 이렇게 해석한다. 정의되지 않은 규모(대진 생성 규칙상 항상 2의 거듭제곱이므로 실사용에서는
+ * 나오지 않는다)는 그대로 "N강"으로 표시해 안전하게 대응한다.
+ */
+export function roundLabel(playerCountInRound: number): string {
+  if (playerCountInRound === 2) return '결승'
+  if (playerCountInRound === 4) return '4강'
+  return `${playerCountInRound}강`
+}
