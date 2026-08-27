@@ -375,6 +375,38 @@ export function applyPromotion(nextMatch: TournamentMatch, promotion: Tournament
 }
 
 /**
+ * 이미 공식 확정된 경기의 결과를 지금 고쳐도 안전한지 판정한다.
+ *
+ * 위험한 상황은 하나다: 이 경기 승자가 이미 다음 경기를 치르기 시작한 뒤에 승자를 바꾸면,
+ * 다음 경기에 "그 경기에 나가지도 않은 사람"의 결과가 남는다. 대진 전체가 어긋난다.
+ *
+ * 그래서 다음 경기가 아직 아무 결과도 받지 않은 상태(awaitingResult)일 때만 허용한다.
+ * 결승은 뒤에 아무것도 없으므로 언제나 허용한다.
+ *
+ * ⚠ 자동으로 뒤 경기까지 되돌리는 연쇄 취소는 만들지 않는다 — 관리자가 상황을 보고
+ * 직접 판단해야 하는 문제이지, 시스템이 알아서 지워도 되는 문제가 아니다.
+ */
+export function canCorrectOfficialResult(
+  match: TournamentMatch,
+  nextMatch: TournamentMatch | null,
+): TournamentResult<true> {
+  if (match.status !== 'official') {
+    return { ok: false, message: '아직 공식 확정되지 않은 경기입니다. 일반 수정으로 처리하세요.' }
+  }
+  if (!match.nextMatchId) return { ok: true, value: true }
+  if (!nextMatch) {
+    return { ok: false, message: '다음 경기를 찾을 수 없어 안전한지 확인할 수 없습니다.' }
+  }
+  if (nextMatch.status === 'official') {
+    return { ok: false, message: '다음 경기가 이미 공식 확정되어 이 결과를 고칠 수 없습니다.' }
+  }
+  if (nextMatch.status !== 'awaitingResult') {
+    return { ok: false, message: '다음 경기 결과가 이미 입력되어 이 결과를 고칠 수 없습니다.' }
+  }
+  return { ok: true, value: true }
+}
+
+/**
  * 한 참가자의 대회 내 전적.
  *
  * **부전승은 경기수·승수에 넣지 않는다** — 실제로 친 경기가 아니기 때문이다.

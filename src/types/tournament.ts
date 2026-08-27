@@ -67,10 +67,18 @@ export interface Tournament {
   /** 경기 제한시간(분). MVP에서는 모든 라운드가 같은 값을 쓴다. */
   timeLimitMinutes: number
   status: TournamentStatus
+  /** 관리자가 확정한 최종 참가 인원. 추첨번호의 허용 범위(1..이 값)가 여기서 나온다. */
+  participantCount?: number
   /** 대진 규모(2의 거듭제곱). 대진을 만들기 전에는 없다. */
   bracketSize?: number
   createdAt: string // ISO datetime
   createdByAdminUid?: string
+  /** 관리자가 대진을 확정·공개한 시각. 대진 확정 취소를 하면 다시 비운다. */
+  drawConfirmedAt?: string
+  /** 결승이 공식 확정되어 대회를 마감한 시각. */
+  completedAt?: string
+  championParticipantId?: string | null
+  runnerUpParticipantId?: string | null
 }
 
 /**
@@ -90,6 +98,12 @@ export interface TournamentParticipant {
   /** 이 대회에서 실제로 적용할 핸디. 기본값은 baseHandicapSnapshot이고 관리자가 대회 시작 전에 조정한다. */
   tournamentHandicap: number
   entryStatus: TournamentEntryStatus
+  /**
+   * 관리자가 신청자를 제외했을 때 누가·언제 했는지. 참가자 문서를 지우지 않고 상태만
+   * 'excluded'로 두는 이유는, 나중에 "왜 빠졌는지"를 확인할 수 있어야 하기 때문이다.
+   */
+  excludedByAdminUid?: string
+  excludedAt?: string
   /** 현장 오프라인 추첨에서 받은 번호(1..참가자수). 관리자가 입력하기 전에는 없다. */
   drawNumber?: number
   /** 중도 기권·철회 여부. */

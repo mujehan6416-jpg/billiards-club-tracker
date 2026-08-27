@@ -6,7 +6,7 @@ import {
   tournamentMatchOutcome, submitTournamentMatchResult, verifyTournamentMatchResult,
   adminVerifyTournamentMatchResult, requestTournamentMatchCorrection, correctTournamentMatchResult,
   approveTournamentMatch, declareTournamentForfeit, applyPromotion, promotionFor,
-  tournamentRecord, calculateFinalPlacements,
+  tournamentRecord, calculateFinalPlacements, canCorrectOfficialResult,
 } from '../src/logic/tournamentMatch'
 import type { Game } from '../src/types'
 import type { TournamentMatch, TournamentSeat } from '../src/types/tournament'
@@ -378,6 +378,49 @@ describe('tournamentRecord — 부전승은 경기수·승수에서 뺀다', () 
     const pending = readyForApproval(firstMatch(matches))
     const all = matches.map((m) => (m.id === pending.id ? pending : m))
     expect(tournamentRecord(all, 'p1')).toEqual({ played: 0, wins: 0, losses: 0 })
+  })
+})
+
+describe('canCorrectOfficialResult — 공식 결과 정정 보호', () => {
+  const officialMatch = (overrides: Partial<TournamentMatch> = {}): TournamentMatch => ({
+    ...firstMatch(bracket4()),
+    scoreA: 18,
+    scoreB: 15,
+    status: 'official',
+    officialWinnerParticipantId: 'p1',
+    officialLoserParticipantId: 'p2',
+    ...overrides,
+  })
+
+  it('아직 공식 확정 전이면 이 판정 대상이 아니다', () => {
+    const result = canCorrectOfficialResult(firstMatch(bracket4()), null)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toContain('일반 수정')
+  })
+
+  it('다음 경기가 아직 시작 전이면 정정할 수 있다', () => {
+    const next = { ...firstMatch(bracket4()), id: 'r2m1', status: 'awaitingResult' as const }
+    expect(canCorrectOfficialResult(officialMatch(), next).ok).toBe(true)
+  })
+
+  it('다음 경기에 결과가 입력됐으면 막는다', () => {
+    const next = { ...firstMatch(bracket4()), id: 'r2m1', status: 'awaitingVerification' as const }
+    expect(canCorrectOfficialResult(officialMatch(), next).ok).toBe(false)
+  })
+
+  it('다음 경기가 공식 확정됐으면 막는다', () => {
+    const next = { ...firstMatch(bracket4()), id: 'r2m1', status: 'official' as const }
+    const result = canCorrectOfficialResult(officialMatch(), next)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toContain('공식 확정')
+  })
+
+  it('결승은 뒤에 아무것도 없으므로 언제나 정정할 수 있다', () => {
+    expect(canCorrectOfficialResult(officialMatch({ nextMatchId: null, nextSlot: null }), null).ok).toBe(true)
+  })
+
+  it('다음 경기를 못 찾으면 안전한 쪽으로 막는다', () => {
+    expect(canCorrectOfficialResult(officialMatch(), null).ok).toBe(false)
   })
 })
 
