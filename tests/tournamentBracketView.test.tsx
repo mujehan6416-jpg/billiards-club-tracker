@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TournamentBracketView } from '../src/components/tournament/TournamentBracketView'
 import type { TournamentMatch } from '../src/types/tournament'
@@ -131,6 +131,40 @@ describe('빈 데이터', () => {
   it('경기가 없으면 안내 문구만 보인다', () => {
     render(<TournamentBracketView matches={[]} nameOf={nameOf} />)
     expect(screen.getByText('대진 정보가 없습니다.')).toBeInTheDocument()
+  })
+})
+
+describe('공식 결과 표시(4C)', () => {
+  it('공식 확정된 경기는 점수/핸디(달성률)와 승자를 함께 보여준다', () => {
+    const matches = [normalMatch({
+      status: 'official', scoreA: 15, scoreB: 12,
+      officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
+    })]
+    render(<TournamentBracketView matches={matches} nameOf={nameOf} />)
+    expect(screen.getByText(/15\/20 \(75%\)/)).toBeInTheDocument()
+    expect(screen.getByText(/12\/20 \(60%\)/)).toBeInTheDocument()
+    expect(screen.getByText(/승자: 테스트회원1/)).toBeInTheDocument()
+  })
+
+  it('아직 공식 확정 전이면 점수 대신 진행 상태 문구를 보여준다', () => {
+    const matches = [normalMatch({ status: 'awaitingResult' })]
+    render(<TournamentBracketView matches={matches} nameOf={nameOf} />)
+    expect(screen.getByText('아직 경기 결과가 입력되지 않았습니다.')).toBeInTheDocument()
+  })
+})
+
+describe('경기 선택(4C)', () => {
+  it('onSelectMatch를 넘기면 카드를 눌러 선택할 수 있고, 선택된 카드가 강조된다', () => {
+    const matches = [normalMatch()]
+    const onSelectMatch = vi.fn()
+    render(<TournamentBracketView matches={matches} nameOf={nameOf} onSelectMatch={onSelectMatch} selectedMatchId="r1m1" />)
+    fireEvent.click(screen.getByText('테스트회원1'))
+    expect(onSelectMatch).toHaveBeenCalledWith(matches[0])
+  })
+
+  it('onSelectMatch가 없으면 카드는 버튼 역할을 갖지 않는다', () => {
+    render(<TournamentBracketView matches={[normalMatch()]} nameOf={nameOf} />)
+    expect(screen.queryByRole('button', { name: /테스트회원1/ })).not.toBeInTheDocument()
   })
 })
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { TournamentMatch } from '../../types/tournament'
-import { roundLabel } from './tournamentDisplay'
+import { matchMemberStatusMessage, rateDisplay, roundLabel } from './tournamentDisplay'
 
 /**
  * 라운드별 대진표. 대진 미리보기(관리자, 확정 전)와 확정된 공개 대진표(관리자·회원, 확정 후)가
@@ -14,7 +14,7 @@ import { roundLabel } from './tournamentDisplay'
  * 전체 bracket을 한 화면에 욱여넣지 않고 라운드 탭으로 나눈다(고령 사용자 UI 기준).
  */
 export function TournamentBracketView({
-  matches, nameOf, highlightMemberId, isPreview,
+  matches, nameOf, highlightMemberId, isPreview, onSelectMatch, selectedMatchId,
 }: {
   matches: TournamentMatch[]
   nameOf: (participantId: string | null) => string
@@ -22,6 +22,9 @@ export function TournamentBracketView({
   highlightMemberId?: string
   /** true면 "아직 확정 전" 배너를 보여준다(관리자 미리보기 전용). */
   isPreview?: boolean
+  /** 경기 카드를 눌러 상세(결과 입력·확인·관리자 처리) 화면을 열 때 쓴다. 미리보기 화면에서는 넘기지 않는다. */
+  onSelectMatch?: (match: TournamentMatch) => void
+  selectedMatchId?: string | null
 }) {
   const rounds = useMemo(() => {
     const byRound = new Map<number, TournamentMatch[]>()
@@ -78,13 +81,20 @@ export function TournamentBracketView({
           // 이름을 보여준다 — "항상 A 자리"라고 가정하면 B 자리로 들어간 부전승자가
           // 빈칸으로 보인다.
           const byeName = isBye ? nameOf(m.playerAParticipantId || m.playerBParticipantId) : ''
+          const isOfficial = m.status === 'official' && m.resultType !== 'bye'
+          const selected = selectedMatchId === m.id
           return (
             <div
               key={m.id}
+              role={onSelectMatch ? 'button' : undefined}
+              tabIndex={onSelectMatch ? 0 : undefined}
               className="card"
+              onClick={onSelectMatch ? () => onSelectMatch(m) : undefined}
+              onKeyDown={onSelectMatch ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelectMatch(m) } : undefined}
               style={{
-                display: 'flex', flexDirection: 'column', gap: 4,
-                border: mine ? '2px solid #0f6e56' : undefined,
+                display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'left',
+                border: selected ? '2px solid #1a56db' : mine ? '2px solid #0f6e56' : undefined,
+                cursor: onSelectMatch ? 'pointer' : undefined,
               }}
             >
               <span className="muted" style={{ fontSize: 12 }}>경기 {i + 1}</span>
@@ -94,11 +104,32 @@ export function TournamentBracketView({
                   <span style={{ fontSize: 14, color: '#856404', fontWeight: 600 }}>부전승으로 다음 라운드 진출</span>
                 </div>
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontWeight: 600, fontSize: 15 }}>{nameOf(m.playerAParticipantId)}</span>
-                  <span className="vs">vs</span>
-                  <span style={{ fontWeight: 600, fontSize: 15, textAlign: 'right' }}>{nameOf(m.playerBParticipantId)}</span>
-                </div>
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerAParticipantId ? 800 : 600, fontSize: 15 }}>
+                      {nameOf(m.playerAParticipantId)}
+                      {isOfficial && m.scoreA !== null && m.playerAHandicapSnapshot !== null && (
+                        <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}> {rateDisplay(m.scoreA, m.playerAHandicapSnapshot)}</span>
+                      )}
+                    </span>
+                    <span className="vs">vs</span>
+                    <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerBParticipantId ? 800 : 600, fontSize: 15, textAlign: 'right' }}>
+                      {isOfficial && m.scoreB !== null && m.playerBHandicapSnapshot !== null && (
+                        <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>{rateDisplay(m.scoreB, m.playerBHandicapSnapshot)} </span>
+                      )}
+                      {nameOf(m.playerBParticipantId)}
+                    </span>
+                  </div>
+                  {isOfficial ? (
+                    <span style={{ fontSize: 13, color: '#0f6e56', fontWeight: 700 }}>
+                      ✅ 공식 결과 · 승자: {nameOf(m.officialWinnerParticipantId ?? null)}
+                    </span>
+                  ) : m.playerAParticipantId && m.playerBParticipantId ? (
+                    <span className="muted" style={{ fontSize: 13 }}>{matchMemberStatusMessage(m, highlightMemberId)}</span>
+                  ) : (
+                    <span className="muted" style={{ fontSize: 13 }}>상대 진출 확정 대기 중</span>
+                  )}
+                </>
               )}
             </div>
           )

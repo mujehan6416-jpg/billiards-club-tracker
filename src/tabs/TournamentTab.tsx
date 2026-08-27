@@ -12,8 +12,22 @@ import { TournamentEntryCard } from '../components/tournament/TournamentEntryCar
 import { TournamentParticipantAdmin } from '../components/tournament/TournamentParticipantAdmin'
 import { TournamentDrawAdmin } from '../components/tournament/TournamentDrawAdmin'
 import { TournamentBracketView } from '../components/tournament/TournamentBracketView'
+import { TournamentMatchPanel } from '../components/tournament/TournamentMatchPanel'
+import { TournamentFinalResults } from '../components/tournament/TournamentFinalResults'
 import { createTournamentParticipant, createDrawMapping, buildSeatsFromDraw } from '../logic/tournamentDraw'
 import { buildEmptyBracket, buildTournamentMatches } from '../logic/tournamentBracket'
+import {
+  submitTournamentMatchResult as applySubmitResult,
+  verifyTournamentMatchResult as applyVerify,
+  requestTournamentMatchCorrection as applyRequestCorrection,
+  adminVerifyTournamentMatchResult as applyAdminVerify,
+  correctTournamentMatchResult as applyAdminCorrect,
+  approveTournamentMatch as applyApprove,
+  declareTournamentForfeit as applyForfeit,
+  promotionFor,
+  applyPromotion,
+  calculateFinalPlacements,
+} from '../logic/tournamentMatch'
 import {
   createTournament as createTournamentDoc,
   createMissingParticipants,
@@ -31,6 +45,14 @@ import {
   confirmTournamentBracket,
   cancelTournamentBracket,
   fetchTournamentMatches,
+  submitTournamentMatchResult,
+  verifyTournamentMatchResult,
+  requestTournamentMatchCorrection,
+  adminVerifyTournamentMatch,
+  correctTournamentMatchByAdmin,
+  approveTournamentMatch,
+  declareTournamentForfeit,
+  finishTournament,
 } from '../lib/tournamentSync'
 
 type View = 'list' | 'create' | 'detail'
@@ -96,9 +118,11 @@ export function TournamentTab({
   const [devDrawMappingByTournamentId, setDevDrawMappingByTournamentId] =
     useState<Record<string, TournamentDrawMapping>>(devDrawMappings ?? {})
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null)
   const [loading, setLoading] = useState(!previewMode)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [matchError, setMatchError] = useState('')
 
   const activeMembers = useMemo(() => members.filter((m: Member) => m.active), [members])
   const selected = tournaments.find((t) => t.id === selectedId) ?? null
@@ -409,6 +433,160 @@ export function TournamentTab({
     })
   }
 
+  const selectedMatch = selectedMatchId ? (selectedMatches?.find((m) => m.id === selectedMatchId) ?? null) : null
+  const finalMatch = selectedMatches?.find((m) => m.nextMatchId === null) ?? null
+
+  const nowIso = () => new Date().toISOString()
+
+  const handleSelectMatch = (match: TournamentMatch) => {
+    setMatchError('')
+    setSelectedMatchId(match.id)
+  }
+
+  /**
+   * 경기 관련 동작(입력·확인·수정요청·관리자확인·정정·최종승인·기권)의 공통 처리.
+   * previewMode에서는 순수 도메인 함수를 그 자리에서 적용해 로컬 state만 바꾸고,
+   * 실제 운영에서는 lib/tournamentSync.ts의 대응 함수(서버 왕복 후 결과 반환)를 부른다.
+   * 둘 다 끝나면 selectedMatchId를 그대로 유지해 패널이 최신 상태로 다시 그려지게 한다.
+   */
+  const runMatchAction = async (
+    previewApply: () => { ok: true; value: TournamentMatch } | { ok: false; message: string },
+    serverCall: () => Promise<TournamentMatch>,
+  ) => {
+    if (!selected) return
+    setBusy(true)
+    setMatchError('')
+    try {
+      if (previewMode) {
+        const applied = previewApply()
+        if (!applied.ok) { setMatchError(applied.message); return }
+        setMatchesByTournamentId((prev) => ({
+          ...prev,
+          [selected.id]: (prev[selected.id] ?? []).map((m) => (m.id === applied.value.id ? applied.value : m)),
+        }))
+      } else {
+        await serverCall()
+        await reloadMatches(selected.id)
+      }
+    } catch (e) {
+      setMatchError(e instanceof Error ? e.message : '처리하지 못했습니다. 인터넷 연결을 확인해 주세요.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 관리자 최종 승인·기권 처리는 승자 확정과 동시에 다음 경기 진출까지 함께 일어난다.
+   * previewMode에서는 서버의 원자적 writeBatch(commitOfficialResult)를 흉내내 두 경기를
+   * 한 번의 setState로 같이 바꾼다 — 중간에 "승자는 확정됐는데 다음 경기는 그대로"인
+   * 상태가 로컬 미리보기에서도 생기지 않게 하기 위해서다.
+   */
+  const runApprovalAction = async (
+    previewApply: () => { ok: true; value: { match: TournamentMatch; promotion: ReturnType<typeof promotionFor> } } | { ok: false; message: string },
+    serverCall: () => Promise<TournamentMatch>,
+  ) => {
+    if (!selected) return
+    setBusy(true)
+    setMatchError('')
+    try {
+      if (previewMode) {
+        const applied = previewApply()
+        if (!applied.ok) { setMatchError(applied.message); return }
+        setMatchesByTournamentId((prev) => {
+          const list = (prev[selected.id] ?? []).map((m) => (m.id === applied.value.match.id ? applied.value.match : m))
+          const promoted = applied.value.promotion
+            ? list.map((m) => (m.id === applied.value.promotion!.nextMatchId ? applyPromotion(m, applied.value.promotion!) : m))
+            : list
+          return { ...prev, [selected.id]: promoted }
+        })
+      } else {
+        await serverCall()
+        await reloadMatches(selected.id)
+      }
+    } catch (e) {
+      setMatchError(e instanceof Error ? e.message : '처리하지 못했습니다. 인터넷 연결을 확인해 주세요.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleSubmitResult = (scoreA: number | string, scoreB: number | string) => {
+    if (!selectedMatch || !memberId) return
+    void runMatchAction(
+      () => applySubmitResult(selectedMatch, { byMemberId: memberId, scoreA, scoreB, at: nowIso() }),
+      () => submitTournamentMatchResult(selected!.id, selectedMatch.id, { byMemberId: memberId, scoreA, scoreB, at: nowIso() }, clubId),
+    )
+  }
+
+  const handleVerify = () => {
+    if (!selectedMatch || !memberId) return
+    void runMatchAction(
+      () => applyVerify(selectedMatch, { byMemberId: memberId, at: nowIso() }),
+      () => verifyTournamentMatchResult(selected!.id, selectedMatch.id, { byMemberId: memberId, at: nowIso() }, clubId),
+    )
+  }
+
+  const handleRequestCorrection = () => {
+    if (!selectedMatch || !memberId) return
+    void runMatchAction(
+      () => applyRequestCorrection(selectedMatch, { byMemberId: memberId, at: nowIso() }),
+      () => requestTournamentMatchCorrection(selected!.id, selectedMatch.id, { byMemberId: memberId, at: nowIso() }, clubId),
+    )
+  }
+
+  const handleAdminVerify = () => {
+    if (!selectedMatch) return
+    const uid = previewMode ? 'dev-admin-uid' : (adminUid ?? '')
+    void runMatchAction(
+      () => applyAdminVerify(selectedMatch, { adminUid: uid, at: nowIso() }),
+      () => adminVerifyTournamentMatch(selected!.id, selectedMatch.id, { adminUid: uid, at: nowIso() }, clubId),
+    )
+  }
+
+  const handleAdminCorrect = (scoreA: number | string, scoreB: number | string) => {
+    if (!selectedMatch) return
+    const uid = previewMode ? 'dev-admin-uid' : (adminUid ?? '')
+    void runMatchAction(
+      () => applyAdminCorrect(selectedMatch, { adminUid: uid, scoreA, scoreB, at: nowIso() }),
+      () => correctTournamentMatchByAdmin(selected!.id, selectedMatch.id, { adminUid: uid, scoreA, scoreB, at: nowIso() }, clubId),
+    )
+  }
+
+  const handleApprove = (officialWinnerParticipantId?: string) => {
+    if (!selectedMatch) return
+    const uid = previewMode ? 'dev-admin-uid' : (adminUid ?? '')
+    void runApprovalAction(
+      () => applyApprove(selectedMatch, { adminUid: uid, at: nowIso(), officialWinnerParticipantId }),
+      () => approveTournamentMatch(selected!.id, selectedMatch.id, { adminUid: uid, at: nowIso(), officialWinnerParticipantId }, clubId),
+    )
+  }
+
+  const handleForfeit = (winnerParticipantId: string) => {
+    if (!selectedMatch) return
+    const uid = previewMode ? 'dev-admin-uid' : (adminUid ?? '')
+    void runApprovalAction(
+      () => applyForfeit(selectedMatch, { adminUid: uid, at: nowIso(), winnerParticipantId }),
+      () => declareTournamentForfeit(selected!.id, selectedMatch.id, { adminUid: uid, at: nowIso(), winnerParticipantId }, clubId),
+    )
+  }
+
+  const handleFinishTournament = () => {
+    if (!selected || !selectedMatches) return
+    if (previewMode) {
+      const placements = calculateFinalPlacements(selectedMatches)
+      if (!placements.championParticipantId) return
+      setTournaments((prev) => prev.map((t) => (t.id === selected.id
+        ? { ...t, status: 'finished', completedAt: nowIso(), championParticipantId: placements.championParticipantId, runnerUpParticipantId: placements.runnerUpParticipantId }
+        : t)))
+      return
+    }
+    void runAdminAction(async () => {
+      await finishTournament(selected.id, { at: nowIso() }, clubId)
+      const list = await fetchTournaments(clubId)
+      setTournaments(list)
+    })
+  }
+
   if (loading) {
     return (
       <div className="tab">
@@ -446,9 +624,43 @@ export function TournamentTab({
         )}
 
         {/* 확정된 공개 대진표 — 회원·관리자 모두 같은 화면 하나를 본다(중복 렌더링 방지).
-            아직 대진이 없으면(matches 없음) 아무것도 그리지 않는다. */}
-        {selected.status === 'bracketFixed' && selectedMatches && selectedMatches.length > 0 && (
-          <TournamentBracketView matches={selectedMatches} nameOf={nameOf} highlightMemberId={memberId ?? undefined} />
+            아직 대진이 없으면(matches 없음) 아무것도 그리지 않는다. 대회가 끝난 뒤에도
+            대진표는 계속 볼 수 있어야 하므로 finished도 함께 보여준다. */}
+        {(selected.status === 'bracketFixed' || selected.status === 'finished') && selectedMatches && selectedMatches.length > 0 && (
+          <TournamentBracketView
+            matches={selectedMatches} nameOf={nameOf} highlightMemberId={memberId ?? undefined}
+            onSelectMatch={handleSelectMatch} selectedMatchId={selectedMatchId}
+          />
+        )}
+
+        {selectedMatch && (
+          <TournamentMatchPanel
+            match={selectedMatch}
+            nameOf={nameOf}
+            viewerMemberId={memberId ?? undefined}
+            isAdmin={isAdmin && isAuthorizedAdmin}
+            busy={busy}
+            error={matchError}
+            onClose={() => { setSelectedMatchId(null); setMatchError('') }}
+            onSubmitResult={handleSubmitResult}
+            onVerify={handleVerify}
+            onRequestCorrection={handleRequestCorrection}
+            onAdminVerify={handleAdminVerify}
+            onAdminCorrect={handleAdminCorrect}
+            onApprove={handleApprove}
+            onForfeit={handleForfeit}
+          />
+        )}
+
+        {finalMatch && finalMatch.status === 'official' && selectedMatches && (
+          <TournamentFinalResults
+            tournament={selected}
+            matches={selectedMatches}
+            nameOf={nameOf}
+            isAdmin={isAdmin && isAuthorizedAdmin}
+            busy={busy}
+            onFinish={handleFinishTournament}
+          />
         )}
 
         {isAdmin && (
