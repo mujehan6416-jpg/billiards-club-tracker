@@ -236,6 +236,126 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // ── 대회 토너먼트 ────────────────────────────────────────────────
+    // 기존 일반 경기(sessions/games)와 완전히 분리된 독립 기능이다. 위의 어떤 규칙도
+    // 바꾸지 않고 새 경로만 추가한다.
+    //
+    // 회원이 서버에서 직접 할 수 있는 일은 딱 세 가지뿐이다.
+    //   ① 본인이 나온 경기의 점수 입력   ② 상대가 넣은 결과 확인   ③ 수정 요청
+    // 공식 승패 확정, 다음 라운드 배치, 대진 생성·취소, 추첨 매핑은 전부 관리자만 할 수 있다.
+
+    match /clubs/{clubId}/tournaments/{tournamentId} {
+      allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
+      allow create, update, delete: if isAdmin();
+
+      // 참가자 명단. 이번 단계에서는 회원 쓰기를 열지 않는다 — 참가/불참 화면이 아직 없어서,
+      // 미리 열어 두면 실제로 필요한 것보다 넓은 권한이 그대로 굳어진다. 화면이 생길 때
+      // "그 화면이 실제로 바꾸는 필드"만 따로 연다.
+      match /participants/{participantId} {
+        allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
+        allow create, update, delete: if isAdmin();
+      }
+
+      // ⚠ 추첨번호↔실제 자리 매핑과 부전승 자리. **관리자 외에는 읽을 수도 없다.**
+      // Firestore는 문서를 통째로 내려주고 규칙에 필드 단위 읽기 제어가 없으므로, 이 값이
+      // 회원이 읽을 수 있는 곳에 조금이라도 들어가면 현장에서 번호를 뽑기 전에 어느 번호가
+      // 부전승인지 알 수 있게 된다. 그래서 아예 별도 컬렉션으로 떼어 놓고 여기서 막는다.
+      // (연결된 정상 회원이어도 get·list 모두 거부된다.)
+      match /private/{privateDocId} {
+        allow read, write: if isAdmin();
+      }
+
+      match /matches/{matchId} {
+        allow get, list: if hasActiveMemberLink(clubId) || isAdmin();
+
+        // 경기 문서 생성·삭제는 대진 확정·확정 취소뿐이고 둘 다 관리자 작업이다.
+        allow create, delete: if isAdmin();
+
+        // 회원이 resultLog에 넣을 수 있는 키. 관리자 감사 필드(verifiedByAdminUid·
+        // correctedByAdminUid·approvedByAdminUid·correctedAt·approvedAt)는 일부러 빠져 있다 —
+        // 회원이 "관리자가 승인했다"는 기록을 스스로 만들 수 없어야 한다.
+        function memberLogKeysOnly() {
+          return request.resource.data.resultLog.keys().hasOnly([
+            'submittedByMemberId', 'submittedAt', 'correctionRequested',
+            'verificationType', 'verifiedByMemberId', 'verifiedAt',
+            'correctionRequestedByMemberId', 'correctionRequestedAt'
+          ]);
+        }
+
+        function changedKeys() {
+          return request.resource.data.diff(resource.data).affectedKeys();
+        }
+
+        /** 결과를 처음 넣은 사람. 확인·수정요청 단계에서 "나 말고 상대인지" 판단의 기준이다. */
+        function submitterMemberId() {
+          return resource.data.resultLog.get('submittedByMemberId', '');
+        }
+
+        // ① 결과 제출 — 아직 아무도 넣지 않은 정상 경기에 두 선수 중 한 명이 점수를 넣는다.
+        //    상태는 반드시 "상대 확인 대기"로만 갈 수 있다(스스로 확정 불가).
+        function memberSubmitsResult(me) {
+          return resource.data.status == 'awaitingResult'
+            && resource.data.resultType == 'normal'
+            && changedKeys().hasOnly(['scoreA', 'scoreB', 'calculatedWinnerParticipantId', 'status', 'resultLog'])
+            && request.resource.data.status == 'awaitingVerification'
+            && request.resource.data.scoreA is int && request.resource.data.scoreA >= 0
+            && request.resource.data.scoreB is int && request.resource.data.scoreB >= 0
+            && memberLogKeysOnly()
+            && request.resource.data.resultLog.submittedByMemberId == me
+            && request.resource.data.resultLog.get('correctionRequested', true) == false
+            && !('verificationType' in request.resource.data.resultLog);
+        }
+
+        // ② 상대 확인 — 결과를 넣지 않은 쪽만 할 수 있다.
+        //    ★ 여기가 "한 사람이 입력과 확인을 모두 하는 것"을 서버에서 막는 지점이다.
+        //      비교 기준은 memberLinks가 알려주는 memberId다. 같은 회원이 기기(Firebase UID)를
+        //      바꿔도 memberId는 같으므로 그대로 거부된다.
+        function memberVerifiesResult(me) {
+          return resource.data.status == 'awaitingVerification'
+            && changedKeys().hasOnly(['status', 'resultLog'])
+            && request.resource.data.status == 'awaitingApproval'
+            && submitterMemberId() != me
+            && memberLogKeysOnly()
+            && request.resource.data.resultLog.submittedByMemberId == submitterMemberId()
+            && request.resource.data.resultLog.verificationType == 'player'
+            && request.resource.data.resultLog.verifiedByMemberId == me
+            && request.resource.data.resultLog.get('correctionRequested', true) == false
+            && resource.data.resultLog.get('correctionRequested', false) == false;
+        }
+
+        // ③ 수정 요청 — 결과를 넣지 않은 쪽만 할 수 있고, 점수·상태는 하나도 못 바꾼다.
+        //    회원이 직접 결과를 고치는 길은 어디에도 없다(관리자만 고칠 수 있다).
+        function memberRequestsCorrection(me) {
+          return resource.data.status == 'awaitingVerification'
+            && changedKeys().hasOnly(['resultLog'])
+            && submitterMemberId() != me
+            && memberLogKeysOnly()
+            && request.resource.data.resultLog.submittedByMemberId == submitterMemberId()
+            && request.resource.data.resultLog.correctionRequested == true
+            && request.resource.data.resultLog.correctionRequestedByMemberId == me
+            && !('verificationType' in request.resource.data.resultLog);
+        }
+
+        // 공식 확정(official)된 경기는 회원이 어떤 방법으로도 손대지 못한다.
+        // 공식 결과 정정은 관리자 절차로만 처리한다.
+        function memberMatchUpdate(me) {
+          return resource.data.status != 'official'
+            && me in [resource.data.playerAMemberId, resource.data.playerBMemberId]
+            && (memberSubmitsResult(me) || memberVerifiesResult(me) || memberRequestsCorrection(me));
+        }
+
+        // 관리자 쓰기는 다른 컬렉션(ledger·members·sessions 등)과 같은 기준으로 제한 없이 둔다.
+        // 관리자 동작은 종류가 많고(승인·직권 확인·수정·기권·다음 라운드 배치) 필드 목록을
+        // 규칙에 박아 두면 service가 조금만 바뀌어도 조용히 거부되기 때문이다.
+        // 회원 쓰기만 위처럼 엄격히 좁힌다.
+        //
+        // hasActiveMemberLink는 문서 2회, linkedMemberId는 1회를 읽는다 — 이 규칙 전체에서
+        // 문서 접근은 3회뿐이다(관리자 경로는 admins 1회). 조건을 더 얹을 때 이 예산을 넘기지 않도록 주의.
+        allow update: if isAdmin()
+          || (hasActiveMemberLink(clubId) && memberMatchUpdate(linkedMemberId(clubId)));
+      }
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
