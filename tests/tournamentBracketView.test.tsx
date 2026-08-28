@@ -141,9 +141,10 @@ describe('공식 결과 표시(4C)', () => {
       officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
     })]
     render(<TournamentBracketView matches={matches} nameOf={nameOf} />)
+    expect(screen.getByText(/승자 테스트회원1/)).toBeInTheDocument()
     expect(screen.getByText(/15\/20 \(75%\)/)).toBeInTheDocument()
+    expect(screen.getByText(/패자 테스트회원2/)).toBeInTheDocument()
     expect(screen.getByText(/12\/20 \(60%\)/)).toBeInTheDocument()
-    expect(screen.getByText(/승자: 테스트회원1/)).toBeInTheDocument()
   })
 
   it('아직 공식 확정 전이면 점수 대신 진행 상태 문구를 보여준다', () => {
@@ -165,6 +166,81 @@ describe('경기 선택(4C)', () => {
   it('onSelectMatch가 없으면 카드는 버튼 역할을 갖지 않는다', () => {
     render(<TournamentBracketView matches={[normalMatch()]} nameOf={nameOf} />)
     expect(screen.queryByRole('button', { name: /테스트회원1/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('경기 상세 인라인 표시(4C 개선)', () => {
+  it('renderMatchDetail을 넘기면 선택된 경기 카드 바로 아래에 상세가 나타난다', () => {
+    const matches = [
+      normalMatch({ id: 'r1m1', matchNumber: 1 }),
+      normalMatch({ id: 'r1m2', matchNumber: 2, playerAParticipantId: 'p-3', playerBParticipantId: null }),
+    ]
+    render(
+      <TournamentBracketView
+        matches={matches} nameOf={nameOf} selectedMatchId="r1m1"
+        renderMatchDetail={(m) => <div data-testid="detail">상세: {m.id}</div>}
+      />,
+    )
+    const detail = screen.getByTestId('detail')
+    expect(detail).toHaveTextContent('상세: r1m1')
+    // 상세가 선택된 경기 카드(테스트회원1) 다음, 다른 경기 카드(테스트회원3)보다 앞에 있어야 한다.
+    const card1 = screen.getByText('테스트회원1').closest('.card')!
+    const card2 = screen.getByText('테스트회원3').closest('.card')!
+    const position = card1.compareDocumentPosition(detail)
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(card2.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+
+  it('다른 경기를 선택하면 상세 위치가 그 경기 아래로 옮겨간다', () => {
+    const matches = [
+      normalMatch({ id: 'r1m1', matchNumber: 1 }),
+      normalMatch({ id: 'r1m2', matchNumber: 2, playerAParticipantId: 'p-3', playerBParticipantId: null }),
+    ]
+    const { rerender } = render(
+      <TournamentBracketView matches={matches} nameOf={nameOf} selectedMatchId="r1m1" renderMatchDetail={(m) => <div data-testid="detail">{m.id}</div>} />,
+    )
+    expect(screen.getByTestId('detail')).toHaveTextContent('r1m1')
+    rerender(
+      <TournamentBracketView matches={matches} nameOf={nameOf} selectedMatchId="r1m2" renderMatchDetail={(m) => <div data-testid="detail">{m.id}</div>} />,
+    )
+    expect(screen.getByTestId('detail')).toHaveTextContent('r1m2')
+  })
+
+  it('선택된 경기가 없으면 상세를 그리지 않는다', () => {
+    render(
+      <TournamentBracketView matches={[normalMatch()]} nameOf={nameOf} selectedMatchId={null} renderMatchDetail={(m) => <div data-testid="detail">{m.id}</div>} />,
+    )
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument()
+  })
+
+  it('renderMatchDetail을 넘기지 않으면 상세가 그려지지 않는다(미리보기 화면 등)', () => {
+    render(<TournamentBracketView matches={[normalMatch()]} nameOf={nameOf} selectedMatchId="r1m1" />)
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument()
+  })
+})
+
+describe('라운드 확정 표시(4C 개선)', () => {
+  it('아직 미확정이면 라운드 탭에 확정 표시가 없다', () => {
+    render(<TournamentBracketView matches={[normalMatch()]} nameOf={nameOf} />)
+    expect(screen.queryByText(/확정/)).not.toBeInTheDocument()
+  })
+
+  it('그 라운드 경기가 모두 official이면 탭에 "N강 확정"이 보인다', () => {
+    const matches = [normalMatch({
+      status: 'official', scoreA: 15, scoreB: 12,
+      officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
+    })]
+    render(<TournamentBracketView matches={matches} nameOf={nameOf} />)
+    expect(screen.getByText(/4강 확정/)).toBeInTheDocument()
+  })
+
+  it('결승은 "결승 확정"으로 표시한다(2강이 아니다)', () => {
+    const matches = [normalMatch({
+      playerCountInRound: 2, status: 'official', scoreA: 15, scoreB: 12,
+      officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
+    })]
+    render(<TournamentBracketView matches={matches} nameOf={nameOf} />)
+    expect(screen.getByText(/결승 확정/)).toBeInTheDocument()
   })
 })
 

@@ -5,6 +5,7 @@ import { createDrawMapping, buildSeatsFromDraw } from '../logic/tournamentDraw'
 import {
   submitTournamentMatchResult, verifyTournamentMatchResult, adminVerifyTournamentMatchResult,
   requestTournamentMatchCorrection, approveTournamentMatch, applyPromotion, declareTournamentForfeit,
+  adminEntersMatchResult,
 } from '../logic/tournamentMatch'
 
 // 토너먼트 4A·4B(대회 생성·참가 신청·참가자 관리·추첨·대진 확정) 개발 미리보기 전용 가상 데이터.
@@ -396,4 +397,13 @@ export function buildScenarioO() {
     },
     matches,
   }
+}
+
+/** P: 관리자가 현장에서 직접 점수를 입력함 — 상대 확인 대기(4C 개선: 관리자 현장 직접 입력). */
+export function buildScenarioP() {
+  const built = build8PlayerFixedBracket('dev-tournament-scenario-p', '[개발미리보기] 시나리오P 관리자 현장 직접 입력', '2026-10-15')
+  const r1m1 = findMatch(built.matches, tournamentMatchId(1, 1))
+  const entered = adminEntersMatchResult(r1m1, { adminUid: 'dev-admin-uid', scoreA: 15, scoreB: 9, at: NOW })
+  if (!entered.ok) throw new Error(entered.message)
+  return { ...built, matches: replaceMatch(built.matches, entered.value) }
 }

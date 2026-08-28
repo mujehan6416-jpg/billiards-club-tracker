@@ -174,6 +174,17 @@ export interface TournamentMatch {
   /** 누가 입력·확인·수정·승인했는지 기록. */
   resultLog?: TournamentMatchResultLog
 
+  /**
+   * 관리자가 현장에서 두 선수 대신 점수를 직접 입력했을 때. **일부러 resultLog가 아니라
+   * 최상위 필드로 둔다** — resultLog는 회원 쓰기 Rules(memberLogKeysOnly)가 필드 목록을
+   * 엄격히 제한하는 자리라서, 여기에 관리자 전용 필드를 넣으면 그 뒤 회원이 "상대 확인"을
+   * 누를 때 resultLog를 그대로 이어 쓰다가(nowLog) 화이트리스트에 없는 필드가 섞여 들어가
+   * Rules가 그 확인 자체를 거부하게 된다. 최상위 필드로 두면 회원 쓰기(changedKeys가
+   * ['status','resultLog']만 바꿈)에 전혀 영향을 주지 않아 Rules를 손대지 않아도 된다.
+   */
+  enteredByAdminUid?: string
+  enteredAt?: string
+
   /** 이 경기 승자가 갈 다음 경기. 결승이면 둘 다 null. */
   nextMatchId: string | null
   nextSlot: TournamentMatchSlot | null

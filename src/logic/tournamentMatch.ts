@@ -133,6 +133,52 @@ export function submitTournamentMatchResult(
 }
 
 /**
+ * 관리자가 현장에서 두 선수 대신 점수를 직접 입력한다(현장 편의용).
+ *
+ * ⚠ 관리자가 입력해도 **곧바로 공식 확정되지 않는다** — 회원 입력과 똑같이 "상대 확인 대기"
+ * 상태로만 간다. 입력자 기록은 resultLog가 아니라 최상위 enteredByAdminUid/enteredAt에
+ * 남긴다(이유는 types/tournament.ts의 주석 참고 — Rules를 건드리지 않기 위해서다). resultLog에
+ * submittedByMemberId를 남기지 않으므로, 이후 verifyTournamentMatchResult에서
+ * "입력자 본인은 확인 불가" 조건이 두 참가자 모두에게 적용되지 않는다 — 즉 둘 중 아무나
+ * 확인할 수 있다(관리자가 입력했으니 "상대가 입력했다"는 전제 자체가 없다).
+ */
+export function adminEntersMatchResult(
+  match: TournamentMatch,
+  input: { adminUid: string; scoreA: number | string; scoreB: number | string; at: string },
+): TournamentResult<TournamentMatch> {
+  if (match.resultType !== 'normal') {
+    return { ok: false, message: '부전승·기권 경기에는 점수를 입력하지 않습니다.' }
+  }
+  if (match.status !== 'awaitingResult') {
+    return { ok: false, message: '이미 결과가 입력된 경기입니다.' }
+  }
+  if (!match.playerAParticipantId || !match.playerBParticipantId) {
+    return { ok: false, message: '아직 두 선수가 모두 정해지지 않았습니다.' }
+  }
+  const scores = checkScores(match, input.scoreA, input.scoreB)
+  if (!scores.ok) return scores
+
+  const withScores: TournamentMatch = { ...match, scoreA: scores.value.scoreA, scoreB: scores.value.scoreB }
+  const outcome = tournamentMatchOutcome(withScores)
+  if (!outcome.ok) return outcome
+
+  return {
+    ok: true,
+    value: {
+      ...withScores,
+      calculatedWinnerParticipantId: outcome.value.winnerParticipantId,
+      status: 'awaitingVerification',
+      enteredByAdminUid: input.adminUid,
+      enteredAt: input.at,
+      resultLog: {
+        ...nowLog(match),
+        correctionRequested: false,
+      },
+    },
+  }
+}
+
+/**
  * 입력하지 않은 상대 참가자가 결과를 확인한다.
  *
  * 한 사람이 입력과 확인을 모두 할 수 없다 — 입력자와 같은 memberId면 거부한다.
@@ -427,6 +473,18 @@ export function tournamentRecord(matches: TournamentMatch[], participantId: stri
     else if (match.officialLoserParticipantId === participantId) losses++
   }
   return { played, wins, losses }
+}
+
+/**
+ * 그 라운드의 모든 경기가 공식 확정되었는지. 부전승은 대진 생성 시점에 이미 status가
+ * 'official'로 만들어져 있으므로(별도 승인 절차가 없다) 여기서 따로 나눠 계산하지 않고
+ * 그대로 함께 검사한다. 그 라운드에 경기가 하나도 없으면(아직 다음 라운드가 만들어지지
+ * 않았거나 잘못된 라운드 번호) false — "확정됨"을 함부로 주장하지 않는다.
+ */
+export function isTournamentRoundOfficial(matches: TournamentMatch[], roundNumber: number): boolean {
+  const inRound = matches.filter((m) => m.roundNumber === roundNumber)
+  if (inRound.length === 0) return false
+  return inRound.every((m) => m.status === 'official')
 }
 
 /**

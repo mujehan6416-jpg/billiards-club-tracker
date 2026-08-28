@@ -14,7 +14,7 @@ import { matchMemberStatusMessage, rateDisplay } from './tournamentDisplay'
  */
 export function TournamentMatchPanel({
   match, nameOf, viewerMemberId, isAdmin, busy, error,
-  onClose, onSubmitResult, onVerify, onRequestCorrection,
+  onClose, onSubmitResult, onAdminEnterResult, onVerify, onRequestCorrection,
   onAdminVerify, onAdminCorrect, onApprove, onForfeit,
 }: {
   match: TournamentMatch
@@ -26,6 +26,7 @@ export function TournamentMatchPanel({
   error?: string
   onClose: () => void
   onSubmitResult: (scoreA: number | string, scoreB: number | string) => void
+  onAdminEnterResult: (scoreA: number | string, scoreB: number | string) => void
   onVerify: () => void
   onRequestCorrection: () => void
   onAdminVerify: () => void
@@ -35,6 +36,8 @@ export function TournamentMatchPanel({
 }) {
   const [scoreA, setScoreA] = useState('')
   const [scoreB, setScoreB] = useState('')
+  const [adminScoreA, setAdminScoreA] = useState('')
+  const [adminScoreB, setAdminScoreB] = useState('')
   const [correctA, setCorrectA] = useState('')
   const [correctB, setCorrectB] = useState('')
   const [correcting, setCorrecting] = useState(false)
@@ -48,44 +51,54 @@ export function TournamentMatchPanel({
   const isTie = match.status === 'awaitingApproval' && match.calculatedWinnerParticipantId === null
     && match.scoreA !== null && match.scoreB !== null
 
+  const handicapLine = (name: string, handicap: number | null) => (
+    <span style={{ fontSize: 15 }}>{name} <span className="muted">핸디 {handicap ?? '-'}</span></span>
+  )
+
   return (
     <div className="card col-card" style={{ gap: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontWeight: 700, fontSize: 15 }}>경기 상세</span>
-        <button type="button" onClick={onClose} style={{ fontSize: 13 }}>닫기</button>
+        <span style={{ fontWeight: 700, fontSize: 16 }}>경기 상세</span>
+        <button type="button" onClick={onClose} style={{ fontSize: 14, padding: '6px 10px' }}>닫기</button>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontWeight: 700, fontSize: 16 }}>{nameA}</span>
+        <span style={{ fontWeight: 700, fontSize: 18 }}>{nameA}</span>
         <span className="vs">vs</span>
-        <span style={{ fontWeight: 700, fontSize: 16 }}>{nameB}</span>
+        <span style={{ fontWeight: 700, fontSize: 18 }}>{nameB}</span>
+      </div>
+
+      {/* 핸디는 점수 입력 전에도 항상 보여야 한다 — 경기 시점 스냅샷 핸디를 그대로 쓴다. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {handicapLine(nameA, match.playerAHandicapSnapshot)}
+        {handicapLine(nameB, match.playerBHandicapSnapshot)}
       </div>
 
       {error && <p className="info-msg">{error}</p>}
 
       {match.status === 'official' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {match.resultType === 'forfeit' && <span style={{ fontSize: 13, fontWeight: 600 }}>기권승으로 확정되었습니다.</span>}
+          {match.resultType === 'forfeit' && <span style={{ fontSize: 14, fontWeight: 600 }}>기권승으로 확정되었습니다.</span>}
           {match.scoreA !== null && match.playerAHandicapSnapshot !== null && (
-            <span style={{ fontSize: 14 }}>{nameA} {rateDisplay(match.scoreA, match.playerAHandicapSnapshot)}</span>
+            <span style={{ fontSize: 15 }}>{nameA} {rateDisplay(match.scoreA, match.playerAHandicapSnapshot)}</span>
           )}
           {match.scoreB !== null && match.playerBHandicapSnapshot !== null && (
-            <span style={{ fontSize: 14 }}>{nameB} {rateDisplay(match.scoreB, match.playerBHandicapSnapshot)}</span>
+            <span style={{ fontSize: 15 }}>{nameB} {rateDisplay(match.scoreB, match.playerBHandicapSnapshot)}</span>
           )}
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#0f6e56' }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#0f6e56' }}>
             ✅ 공식 결과 · 승자: {nameOf(match.officialWinnerParticipantId ?? null)}
           </span>
         </div>
       ) : (
         <>
           {!isAdmin && (
-            <span className="muted" style={{ fontSize: 14 }}>{matchMemberStatusMessage(match, viewerMemberId)}</span>
+            <span className="muted" style={{ fontSize: 15 }}>{matchMemberStatusMessage(match, viewerMemberId)}</span>
           )}
 
           {/* ── 회원: 결과 입력 ── */}
           {isPlayer && match.status === 'awaitingResult' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14, fontWeight: 600 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 15, fontWeight: 600 }}>
                 {nameA} 점수
                 <input
                   type="number" inputMode="numeric" value={scoreA}
@@ -93,7 +106,7 @@ export function TournamentMatchPanel({
                   style={{ fontSize: 20, padding: 12, textAlign: 'center' }}
                 />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14, fontWeight: 600 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 15, fontWeight: 600 }}>
                 {nameB} 점수
                 <input
                   type="number" inputMode="numeric" value={scoreB}
@@ -107,6 +120,30 @@ export function TournamentMatchPanel({
                 onClick={() => onSubmitResult(scoreA, scoreB)}
               >
                 결과 입력
+              </button>
+            </div>
+          )}
+
+          {/* ── 관리자: 미입력 경기 직접 입력(현장 편의용) ──
+              회원 결과 입력과 동시에 보일 수 있다(누가 먼저 입력해도 된다는 기존 원칙과 같다).
+              입력해도 곧바로 공식 확정되지 않는다 — 상대 확인 → 관리자 최종 승인이 그대로 남는다. */}
+          {isAdmin && match.status === 'awaitingResult' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+              <span className="muted" style={{ fontSize: 13 }}>회원이 직접 입력하기 어려우면 관리자가 대신 입력할 수 있습니다. 입력해도 즉시 확정되지 않고 상대 확인·최종 승인이 그대로 남습니다.</span>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14, fontWeight: 600 }}>
+                {nameA} 점수
+                <input type="number" inputMode="numeric" value={adminScoreA} onChange={(e) => setAdminScoreA(e.target.value)} style={{ fontSize: 18, padding: 10, textAlign: 'center' }} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14, fontWeight: 600 }}>
+                {nameB} 점수
+                <input type="number" inputMode="numeric" value={adminScoreB} onChange={(e) => setAdminScoreB(e.target.value)} style={{ fontSize: 18, padding: 10, textAlign: 'center' }} />
+              </label>
+              <button
+                className="block" style={{ fontSize: 15, padding: 12 }}
+                disabled={busy || adminScoreA === '' || adminScoreB === ''}
+                onClick={() => onAdminEnterResult(adminScoreA, adminScoreB)}
+              >
+                관리자가 대신 입력
               </button>
             </div>
           )}

@@ -20,7 +20,7 @@ function match(over: Partial<TournamentMatch> = {}): TournamentMatch {
 const nameOf = (id: string | null) => (id === 'pA' ? '가상회원A' : id === 'pB' ? '가상회원B' : '')
 
 const noop = {
-  onClose: vi.fn(), onSubmitResult: vi.fn(), onVerify: vi.fn(), onRequestCorrection: vi.fn(),
+  onClose: vi.fn(), onSubmitResult: vi.fn(), onAdminEnterResult: vi.fn(), onVerify: vi.fn(), onRequestCorrection: vi.fn(),
   onAdminVerify: vi.fn(), onAdminCorrect: vi.fn(), onApprove: vi.fn(), onForfeit: vi.fn(),
 }
 
@@ -193,6 +193,57 @@ describe('official — 공식 확정', () => {
     })
     render(<TournamentMatchPanel match={m} nameOf={nameOf} isAdmin {...noop} />)
     expect(screen.getByText('기권승으로 확정되었습니다.')).toBeInTheDocument()
+  })
+})
+
+describe('핸디 표시(4C 개선)', () => {
+  it('점수 입력 전에도 두 선수의 적용 핸디가 항상 보인다', () => {
+    render(<TournamentMatchPanel match={match({ playerAHandicapSnapshot: 17, playerBHandicapSnapshot: 22 })} nameOf={nameOf} isAdmin {...noop} />)
+    expect(screen.getByText('핸디 17')).toBeInTheDocument()
+    expect(screen.getByText('핸디 22')).toBeInTheDocument()
+  })
+
+  it('공식 확정 후에도 경기 시점 스냅샷 핸디를 그대로 보여준다', () => {
+    const m = match({
+      status: 'official', scoreA: 15, scoreB: 12, playerAHandicapSnapshot: 17, playerBHandicapSnapshot: 22,
+      officialWinnerParticipantId: 'pA', officialLoserParticipantId: 'pB',
+    })
+    render(<TournamentMatchPanel match={m} nameOf={nameOf} isAdmin {...noop} />)
+    expect(screen.getByText('핸디 17')).toBeInTheDocument()
+    expect(screen.getByText('핸디 22')).toBeInTheDocument()
+  })
+})
+
+describe('관리자 현장 직접 입력(4C 개선)', () => {
+  it('결과가 아직 없는 경기에서 관리자에게 별도 점수 입력 UI가 보인다', () => {
+    render(<TournamentMatchPanel match={match()} nameOf={nameOf} isAdmin {...noop} />)
+    expect(screen.getByText('관리자가 대신 입력')).toBeInTheDocument()
+  })
+
+  it('두 점수를 입력하고 누르면 onAdminEnterResult가 호출된다', () => {
+    const onAdminEnterResult = vi.fn()
+    render(<TournamentMatchPanel match={match()} nameOf={nameOf} isAdmin {...noop} onAdminEnterResult={onAdminEnterResult} />)
+    const button = screen.getByText('관리자가 대신 입력')
+    expect(button).toBeDisabled()
+    // admin 입력칸은 회원 입력칸이 없을 때(당사자가 아닌 관리자 뷰)도 항상 보이므로 spinbutton 2개뿐이다.
+    const inputs = screen.getAllByRole('spinbutton')
+    fireEvent.change(inputs[0], { target: { value: '16' } })
+    fireEvent.change(inputs[1], { target: { value: '9' } })
+    fireEvent.click(screen.getByText('관리자가 대신 입력'))
+    expect(onAdminEnterResult).toHaveBeenCalledWith('16', '9')
+  })
+
+  it('관리자가 결과가 있는 경기(awaitingResult 아님)에서는 입력 UI가 보이지 않는다', () => {
+    const m = match({ status: 'awaitingVerification', scoreA: 15, scoreB: 12, resultLog: { submittedByMemberId: 'mA' } })
+    render(<TournamentMatchPanel match={m} nameOf={nameOf} isAdmin {...noop} />)
+    expect(screen.queryByText('관리자가 대신 입력')).not.toBeInTheDocument()
+  })
+
+  it('관리자 입력 후에도 최종 승인 전까지는 최종 승인 버튼이 보이지 않는다(별도 단계)', () => {
+    // awaitingResult 상태 그대로 렌더링 — 입력 즉시 상태가 바뀌는 것이 아니라 부모(TournamentTab)가
+    // 서버 응답 후 다시 렌더링해야 다음 상태로 넘어간다는 것을 컴포넌트 관점에서 확인한다.
+    render(<TournamentMatchPanel match={match()} nameOf={nameOf} isAdmin {...noop} />)
+    expect(screen.queryByText('최종 승인')).not.toBeInTheDocument()
   })
 })
 

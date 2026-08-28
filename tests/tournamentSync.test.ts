@@ -62,6 +62,7 @@ import {
   adminVerifyTournamentMatch, correctTournamentMatchByAdmin,
   approveTournamentMatch, declareTournamentForfeit,
   assertOfficialResultCorrectable, finishTournament,
+  adminEntersTournamentMatchResult,
   TournamentSyncError,
 } from '../src/lib/tournamentSync'
 import { buildEmptyBracket, buildTournamentMatches } from '../src/logic/tournamentBracket'
@@ -661,6 +662,43 @@ describe('회원 결과 제출', () => {
     getDocMock.mockResolvedValue(missingSnap)
     await expect(
       submitTournamentMatchResult(TID, 'r9m9', { byMemberId: 'member-a', scoreA: 1, scoreB: 2, at: AT }, CLUB),
+    ).rejects.toThrow(TournamentSyncError)
+    expect(updateDocMock).not.toHaveBeenCalled()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════
+describe('관리자 현장 직접 입력', () => {
+  it('경기 경로에 상태·점수와 함께 쓴다', async () => {
+    serveMatches(match())
+    await adminEntersTournamentMatchResult(TID, 'r1m1', { adminUid: ADMIN_UID, scoreA: 18, scoreB: 15, at: AT }, CLUB)
+    expect(updateDocMock.mock.calls[0][0].path).toBe(`${BASE}/matches/r1m1`)
+    const data = updateDocMock.mock.calls[0][1]
+    expect(data.status).toBe('awaitingVerification')
+    expect(data.scoreA).toBe(18)
+    expect(data.scoreB).toBe(15)
+  })
+
+  it('입력자를 resultLog가 아니라 최상위 필드(enteredByAdminUid/enteredAt)에 남긴다', async () => {
+    serveMatches(match())
+    await adminEntersTournamentMatchResult(TID, 'r1m1', { adminUid: ADMIN_UID, scoreA: 18, scoreB: 15, at: AT }, CLUB)
+    const data = updateDocMock.mock.calls[0][1]
+    expect(data.enteredByAdminUid).toBe(ADMIN_UID)
+    expect(data.enteredAt).toBe(AT)
+    expect(Object.keys(data.resultLog)).toEqual(['correctionRequested'])
+  })
+
+  it('공식 확정 필드는 쓰지 않는다', async () => {
+    serveMatches(match())
+    await adminEntersTournamentMatchResult(TID, 'r1m1', { adminUid: ADMIN_UID, scoreA: 18, scoreB: 15, at: AT }, CLUB)
+    const data = updateDocMock.mock.calls[0][1]
+    expect('officialWinnerParticipantId' in data).toBe(false)
+  })
+
+  it('이미 결과가 있는 경기에는 쓰지 않는다', async () => {
+    serveMatches(match({ status: 'awaitingVerification', resultLog: { submittedByMemberId: 'member-a' } }))
+    await expect(
+      adminEntersTournamentMatchResult(TID, 'r1m1', { adminUid: ADMIN_UID, scoreA: 18, scoreB: 15, at: AT }, CLUB),
     ).rejects.toThrow(TournamentSyncError)
     expect(updateDocMock).not.toHaveBeenCalled()
   })

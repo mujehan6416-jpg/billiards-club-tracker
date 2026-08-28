@@ -7,6 +7,7 @@ import {
   adminVerifyTournamentMatchResult, requestTournamentMatchCorrection, correctTournamentMatchResult,
   approveTournamentMatch, declareTournamentForfeit, applyPromotion, promotionFor,
   tournamentRecord, calculateFinalPlacements, canCorrectOfficialResult,
+  adminEntersMatchResult, isTournamentRoundOfficial,
 } from '../src/logic/tournamentMatch'
 import type { Game } from '../src/types'
 import type { TournamentMatch, TournamentSeat } from '../src/types/tournament'
@@ -478,5 +479,100 @@ describe('calculateFinalPlacements', () => {
     const matches = unwrap(buildTournamentMatches(nodes, [seat(1, 1), seat(2, 2), seat(3, 3)]))
     const placements = calculateFinalPlacements(matches)
     expect(placements.thirdPlaceParticipantIds).toEqual([])
+  })
+})
+
+describe('adminEntersMatchResult — 관리자가 현장에서 직접 입력', () => {
+  it('입력해도 곧바로 공식 확정되지 않고 상대 확인 대기로만 간다', () => {
+    const match = firstMatch(bracket4())
+    const entered = unwrap(adminEntersMatchResult(match, { adminUid: ADMIN_UID, scoreA: 18, scoreB: 15, at: AT }))
+    expect(entered.status).toBe('awaitingVerification')
+    expect(entered.officialWinnerParticipantId).toBeUndefined()
+  })
+
+  it('입력자를 resultLog가 아니라 최상위 필드에 기록한다(회원 확인 Rules 화이트리스트 보호)', () => {
+    const match = firstMatch(bracket4())
+    const entered = unwrap(adminEntersMatchResult(match, { adminUid: ADMIN_UID, scoreA: 18, scoreB: 15, at: AT }))
+    expect(entered.enteredByAdminUid).toBe(ADMIN_UID)
+    expect(entered.enteredAt).toBe(AT)
+    expect(entered.resultLog?.submittedByMemberId).toBeUndefined()
+    expect(Object.keys(entered.resultLog ?? {})).toEqual(['correctionRequested'])
+  })
+
+  it('점수·핸디로 계산상 승자를 미리 계산해 둔다', () => {
+    const match = firstMatch(bracket4())
+    const entered = unwrap(adminEntersMatchResult(match, { adminUid: ADMIN_UID, scoreA: 18, scoreB: 15, at: AT }))
+    expect(entered.calculatedWinnerParticipantId).toBe('p1')
+  })
+
+  it('관리자가 입력한 결과는 두 선수 중 아무나 확인할 수 있다(입력자 본인 차단 조건이 적용되지 않는다)', () => {
+    const match = firstMatch(bracket4())
+    const entered = unwrap(adminEntersMatchResult(match, { adminUid: ADMIN_UID, scoreA: 18, scoreB: 15, at: AT }))
+    const verifiedByA = verifyTournamentMatchResult(entered, { byMemberId: match.playerAMemberId!, at: AT })
+    const verifiedByB = verifyTournamentMatchResult(entered, { byMemberId: match.playerBMemberId!, at: AT })
+    expect(verifiedByA.ok).toBe(true)
+    expect(verifiedByB.ok).toBe(true)
+  })
+
+  it('점수 검증(핸디 초과 등)은 회원 입력과 같은 규칙을 그대로 쓴다', () => {
+    const match = firstMatch(bracket4())
+    const result = adminEntersMatchResult(match, { adminUid: ADMIN_UID, scoreA: 999, scoreB: 15, at: AT })
+    expect(result.ok).toBe(false)
+  })
+
+  it('이미 결과가 입력된 경기에는 다시 입력할 수 없다', () => {
+    const match = firstMatch(bracket4())
+    const entered = unwrap(adminEntersMatchResult(match, { adminUid: ADMIN_UID, scoreA: 18, scoreB: 15, at: AT }))
+    const again = adminEntersMatchResult(entered, { adminUid: ADMIN_UID, scoreA: 10, scoreB: 5, at: AT })
+    expect(again.ok).toBe(false)
+  })
+
+  it('부전승 경기에는 입력할 수 없다', () => {
+    const nodes = unwrap(buildEmptyBracket(4))
+    const matches = unwrap(buildTournamentMatches(nodes, [seat(1, 1), seat(2, 2), seat(3, 3)]))
+    const bye = matches.find((m) => m.resultType === 'bye')!
+    expect(adminEntersMatchResult(bye, { adminUid: ADMIN_UID, scoreA: 1, scoreB: 1, at: AT }).ok).toBe(false)
+  })
+})
+
+describe('isTournamentRoundOfficial — 라운드 확정 판정', () => {
+  it('경기가 하나도 official이 아니면 확정이 아니다', () => {
+    const matches = bracket4()
+    expect(isTournamentRoundOfficial(matches, 1)).toBe(false)
+  })
+
+  it('일부만 official이면 아직 확정이 아니다', () => {
+    const matches = bracket4()
+    const approved = unwrap(approveTournamentMatch(readyForApproval(firstMatch(matches)), { adminUid: ADMIN_UID, at: AT }))
+    const updated = matches.map((m) => (m.id === approved.match.id ? approved.match : m))
+    expect(isTournamentRoundOfficial(updated, 1)).toBe(false)
+  })
+
+  it('그 라운드 경기가 모두 official이면 확정이다', () => {
+    const matches = bracket4()
+    const r1m1 = unwrap(approveTournamentMatch(readyForApproval(matches[0]), { adminUid: ADMIN_UID, at: AT }))
+    const r1m2 = unwrap(approveTournamentMatch(readyForApproval(matches[1]), { adminUid: ADMIN_UID, at: AT }))
+    const updated = matches.map((m) => {
+      if (m.id === r1m1.match.id) return r1m1.match
+      if (m.id === r1m2.match.id) return r1m2.match
+      return m
+    })
+    expect(isTournamentRoundOfficial(updated, 1)).toBe(true)
+    expect(isTournamentRoundOfficial(updated, 2)).toBe(false)
+  })
+
+  it('부전승은 대진 생성 시점에 이미 official이므로 그대로 확정 판정에 포함된다', () => {
+    const nodes = unwrap(buildEmptyBracket(4))
+    const matches = unwrap(buildTournamentMatches(nodes, [seat(1, 1), seat(2, 2), seat(3, 3)]))
+    // 3명 대진(4자리 중 1자리 부전승) — 1라운드 두 경기 중 하나는 정상, 하나는 부전승.
+    const normal = matches.find((m) => m.resultType === 'normal' && m.roundNumber === 1)!
+    const approved = unwrap(approveTournamentMatch(readyForApproval(normal), { adminUid: ADMIN_UID, at: AT }))
+    const updated = matches.map((m) => (m.id === approved.match.id ? approved.match : m))
+    expect(isTournamentRoundOfficial(updated, 1)).toBe(true)
+  })
+
+  it('없는 라운드 번호는 확정이 아니다', () => {
+    const matches = bracket4()
+    expect(isTournamentRoundOfficial(matches, 99)).toBe(false)
   })
 })

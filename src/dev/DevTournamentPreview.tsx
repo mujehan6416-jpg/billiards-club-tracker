@@ -10,7 +10,7 @@ import {
   buildConfirmedTournament, buildConfirmedTournamentParticipants,
   buildScenarioA, buildScenarioB, buildScenarioC, buildScenarioD, buildScenarioE, buildScenarioG,
   buildScenarioH, buildScenarioI, buildScenarioJ, buildScenarioK, buildScenarioL, buildScenarioM,
-  buildScenarioN, buildScenarioO,
+  buildScenarioN, buildScenarioO, buildScenarioP,
 } from './tournamentDevSeed'
 
 // 대회 토너먼트 4A·4B(대회 생성부터 대진 확정까지) 개발 전용 미리보기. main.tsx에서
@@ -36,6 +36,7 @@ const scenarioL = buildScenarioL() // 달성률 동률, 관리자가 승자 지�
 const scenarioM = buildScenarioM() // 4강 한쪽만 확정
 const scenarioN = buildScenarioN() // 4강 양쪽 확정(정상 진행 가능)
 const scenarioO = buildScenarioO() // 대회 종료(최종 결과 화면)
+const scenarioP = buildScenarioP() // 관리자 현장 직접 입력, 상대 확인 대기
 
 const allTournaments: Tournament[] = [
   draftTournament, confirmedTournament,
@@ -43,6 +44,7 @@ const allTournaments: Tournament[] = [
   scenarioD.tournament, scenarioE.tournament, scenarioG.tournament,
   scenarioH.tournament, scenarioI.tournament, scenarioJ.tournament, scenarioK.tournament,
   scenarioL.tournament, scenarioM.tournament, scenarioN.tournament, scenarioO.tournament,
+  scenarioP.tournament,
 ]
 
 const initialParticipants: Record<string, TournamentParticipant[]> = {
@@ -62,6 +64,7 @@ const initialParticipants: Record<string, TournamentParticipant[]> = {
   [scenarioM.tournament.id]: scenarioM.participants,
   [scenarioN.tournament.id]: scenarioN.participants,
   [scenarioO.tournament.id]: scenarioO.participants,
+  [scenarioP.tournament.id]: scenarioP.participants,
 }
 
 const initialMatches: Record<string, TournamentMatch[]> = {
@@ -74,6 +77,7 @@ const initialMatches: Record<string, TournamentMatch[]> = {
   [scenarioM.tournament.id]: scenarioM.matches,
   [scenarioN.tournament.id]: scenarioN.matches,
   [scenarioO.tournament.id]: scenarioO.matches,
+  [scenarioP.tournament.id]: scenarioP.matches,
 }
 
 const initialDrawMappings: Record<string, TournamentDrawMapping> = {

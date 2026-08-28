@@ -3,6 +3,7 @@ import { db } from './firebase'
 import { createDrawMapping, createTournamentParticipant, validateDrawEntries } from '../logic/tournamentDraw'
 import type { Member } from '../types'
 import {
+  adminEntersMatchResult as applyAdminEntry,
   approveTournamentMatch as applyApproval,
   adminVerifyTournamentMatchResult as applyAdminVerification,
   calculateFinalPlacements,
@@ -610,6 +611,39 @@ export async function submitTournamentMatchResult(
       scoreB: next.scoreB,
       calculatedWinnerParticipantId: next.calculatedWinnerParticipantId ?? null,
       status: next.status,
+      resultLog: next.resultLog,
+    }))
+    return next
+  } catch (e) {
+    throw toSyncError(e)
+  }
+}
+
+/**
+ * 관리자가 현장에서 두 선수 대신 점수를 직접 입력한다. 회원 입력과 마찬가지로 이것만으로는
+ * 공식 결과가 되지 않는다 — enteredByAdminUid/enteredAt은 resultLog가 아닌 최상위 필드에
+ * 쓴다(회원 확인 Rules가 resultLog 필드 목록을 제한하므로, 이후 회원이 확인할 때 그 필드가
+ * 섞여 들어가 거부되지 않도록 하기 위해서 — types/tournament.ts 주석 참고).
+ */
+export async function adminEntersTournamentMatchResult(
+  tournamentId: string,
+  matchId: string,
+  input: { adminUid: string; scoreA: number | string; scoreB: number | string; at: string },
+  clubId = DEFAULT_CLUB_ID,
+): Promise<TournamentMatch> {
+  try {
+    const current = await loadMatch(clubId, tournamentId, matchId)
+    const applied = applyAdminEntry(current, input)
+    if (!applied.ok) throw new TournamentSyncError('validation', applied.message)
+
+    const next = applied.value
+    await updateDoc(matchDoc(clubId, tournamentId, matchId), withoutUndefined({
+      scoreA: next.scoreA,
+      scoreB: next.scoreB,
+      calculatedWinnerParticipantId: next.calculatedWinnerParticipantId ?? null,
+      status: next.status,
+      enteredByAdminUid: next.enteredByAdminUid,
+      enteredAt: next.enteredAt,
       resultLog: next.resultLog,
     }))
     return next

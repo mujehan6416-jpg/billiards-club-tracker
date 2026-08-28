@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { TournamentMatch } from '../../types/tournament'
-import { matchMemberStatusMessage, rateDisplay, roundLabel } from './tournamentDisplay'
+import { isTournamentRoundOfficial } from '../../logic/tournamentMatch'
+import { matchMemberStatusMessage, rateDisplay, roundConfirmedLabel, roundLabel } from './tournamentDisplay'
 
 /**
  * 라운드별 대진표. 대진 미리보기(관리자, 확정 전)와 확정된 공개 대진표(관리자·회원, 확정 후)가
@@ -14,7 +16,7 @@ import { matchMemberStatusMessage, rateDisplay, roundLabel } from './tournamentD
  * 전체 bracket을 한 화면에 욱여넣지 않고 라운드 탭으로 나눈다(고령 사용자 UI 기준).
  */
 export function TournamentBracketView({
-  matches, nameOf, highlightMemberId, isPreview, onSelectMatch, selectedMatchId,
+  matches, nameOf, highlightMemberId, isPreview, onSelectMatch, selectedMatchId, renderMatchDetail,
 }: {
   matches: TournamentMatch[]
   nameOf: (participantId: string | null) => string
@@ -25,6 +27,13 @@ export function TournamentBracketView({
   /** 경기 카드를 눌러 상세(결과 입력·확인·관리자 처리) 화면을 열 때 쓴다. 미리보기 화면에서는 넘기지 않는다. */
   onSelectMatch?: (match: TournamentMatch) => void
   selectedMatchId?: string | null
+  /**
+   * selectedMatchId로 선택된 경기 카드 바로 아래에 상세 화면을 펼쳐 넣는다. 상세 컴포넌트
+   * 자체(TournamentMatchPanel)는 부모(TournamentTab)가 만들어 넘긴다 — 이 컴포넌트는 "어디에
+   * 끼워 넣을지"만 알고 "무엇을 보여줄지"는 모른다. 넘기지 않으면 기존처럼 상세가 아예
+   * 그려지지 않는다(미리보기 화면 등).
+   */
+  renderMatchDetail?: (match: TournamentMatch) => ReactNode
 }) {
   const rounds = useMemo(() => {
     const byRound = new Map<number, TournamentMatch[]>()
@@ -60,77 +69,91 @@ export function TournamentBracketView({
       )}
 
       <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
-        {rounds.map((r) => (
-          <button
-            key={r.roundNumber}
-            type="button"
-            className={r.roundNumber === activeRound ? 'primary' : ''}
-            style={{ flexShrink: 0, fontSize: 14, padding: '9px 14px' }}
-            onClick={() => setActiveRound(r.roundNumber)}
-          >
-            {r.label}
-          </button>
-        ))}
+        {rounds.map((r) => {
+          const confirmed = isTournamentRoundOfficial(matches, r.roundNumber)
+          return (
+            <button
+              key={r.roundNumber}
+              type="button"
+              className={r.roundNumber === activeRound ? 'primary' : ''}
+              style={{ flexShrink: 0, fontSize: 15, padding: '10px 14px', fontWeight: 700 }}
+              onClick={() => setActiveRound(r.roundNumber)}
+            >
+              {confirmed ? `✅ ${roundConfirmedLabel(r.matches[0].playerCountInRound)}` : r.label}
+            </button>
+          )
+        })}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {current?.matches.map((m, i) => {
           const isBye = m.resultType === 'bye'
+          const isForfeit = m.resultType === 'forfeit'
           const mine = isMine(m)
           // 부전승은 A·B 어느 자리에 앉든(추첨 결과에 따라 둘 다 가능) 실제로 채워진 쪽의
           // 이름을 보여준다 — "항상 A 자리"라고 가정하면 B 자리로 들어간 부전승자가
           // 빈칸으로 보인다.
           const byeName = isBye ? nameOf(m.playerAParticipantId || m.playerBParticipantId) : ''
           const isOfficial = m.status === 'official' && m.resultType !== 'bye'
+          const winnerName = nameOf(m.officialWinnerParticipantId ?? null)
+          const loserName = nameOf(m.officialLoserParticipantId ?? null)
+          const winnerIsA = m.officialWinnerParticipantId === m.playerAParticipantId
+          const winnerScore = winnerIsA ? m.scoreA : m.scoreB
+          const winnerHandicap = winnerIsA ? m.playerAHandicapSnapshot : m.playerBHandicapSnapshot
+          const loserScore = winnerIsA ? m.scoreB : m.scoreA
+          const loserHandicap = winnerIsA ? m.playerBHandicapSnapshot : m.playerAHandicapSnapshot
           const selected = selectedMatchId === m.id
           return (
-            <div
-              key={m.id}
-              role={onSelectMatch ? 'button' : undefined}
-              tabIndex={onSelectMatch ? 0 : undefined}
-              className="card"
-              onClick={onSelectMatch ? () => onSelectMatch(m) : undefined}
-              onKeyDown={onSelectMatch ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelectMatch(m) } : undefined}
-              style={{
-                display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'left',
-                border: selected ? '2px solid #1a56db' : mine ? '2px solid #0f6e56' : undefined,
-                cursor: onSelectMatch ? 'pointer' : undefined,
-              }}
-            >
-              <span className="muted" style={{ fontSize: 12 }}>경기 {i + 1}</span>
-              {isBye ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontWeight: 600, fontSize: 15 }}>{byeName}</span>
-                  <span style={{ fontSize: 14, color: '#856404', fontWeight: 600 }}>부전승으로 다음 라운드 진출</span>
-                </div>
-              ) : (
-                <>
+            <div key={m.id} style={{ display: 'flex', flexDirection: 'column' }}>
+              <div
+                role={onSelectMatch ? 'button' : undefined}
+                tabIndex={onSelectMatch ? 0 : undefined}
+                className="card"
+                onClick={onSelectMatch ? () => onSelectMatch(m) : undefined}
+                onKeyDown={onSelectMatch ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelectMatch(m) } : undefined}
+                style={{
+                  display: 'flex', flexDirection: 'column', gap: 6, textAlign: 'left',
+                  border: selected ? '2px solid #1a56db' : mine ? '2px solid #0f6e56' : undefined,
+                  cursor: onSelectMatch ? 'pointer' : undefined,
+                }}
+              >
+                <span className="muted" style={{ fontSize: 13 }}>경기 {i + 1}{isOfficial ? ' — 확정' : ''}</span>
+                {isBye ? (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerAParticipantId ? 800 : 600, fontSize: 15 }}>
-                      {nameOf(m.playerAParticipantId)}
-                      {isOfficial && m.scoreA !== null && m.playerAHandicapSnapshot !== null && (
-                        <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}> {rateDisplay(m.scoreA, m.playerAHandicapSnapshot)}</span>
-                      )}
-                    </span>
-                    <span className="vs">vs</span>
-                    <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerBParticipantId ? 800 : 600, fontSize: 15, textAlign: 'right' }}>
-                      {isOfficial && m.scoreB !== null && m.playerBHandicapSnapshot !== null && (
-                        <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>{rateDisplay(m.scoreB, m.playerBHandicapSnapshot)} </span>
-                      )}
-                      {nameOf(m.playerBParticipantId)}
-                    </span>
+                    <span style={{ fontWeight: 700, fontSize: 17 }}>{byeName}</span>
+                    <span style={{ fontSize: 15, color: '#856404', fontWeight: 700 }}>부전승으로 다음 라운드 진출</span>
                   </div>
-                  {isOfficial ? (
-                    <span style={{ fontSize: 13, color: '#0f6e56', fontWeight: 700 }}>
-                      ✅ 공식 결과 · 승자: {nameOf(m.officialWinnerParticipantId ?? null)}
-                    </span>
-                  ) : m.playerAParticipantId && m.playerBParticipantId ? (
-                    <span className="muted" style={{ fontSize: 13 }}>{matchMemberStatusMessage(m, highlightMemberId)}</span>
-                  ) : (
-                    <span className="muted" style={{ fontSize: 13 }}>상대 진출 확정 대기 중</span>
-                  )}
-                </>
-              )}
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerAParticipantId ? 800 : 600, fontSize: 17 }}>
+                        {nameOf(m.playerAParticipantId)}
+                      </span>
+                      <span className="vs">vs</span>
+                      <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerBParticipantId ? 800 : 600, fontSize: 17, textAlign: 'right' }}>
+                        {nameOf(m.playerBParticipantId)}
+                      </span>
+                    </div>
+                    {isOfficial ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontSize: 15, color: '#0f6e56', fontWeight: 700 }}>
+                          승자 {winnerName}
+                          {!isForfeit && winnerScore !== null && winnerHandicap !== null && ` · ${rateDisplay(winnerScore, winnerHandicap)}`}
+                        </span>
+                        <span style={{ fontSize: 15, color: '#7a1f1f', fontWeight: 700 }}>
+                          패자 {loserName}
+                          {isForfeit ? ' (기권)' : (loserScore !== null && loserHandicap !== null && ` · ${rateDisplay(loserScore, loserHandicap)}`)}
+                        </span>
+                      </div>
+                    ) : m.playerAParticipantId && m.playerBParticipantId ? (
+                      <span className="muted" style={{ fontSize: 14 }}>{matchMemberStatusMessage(m, highlightMemberId)}</span>
+                    ) : (
+                      <span className="muted" style={{ fontSize: 14 }}>상대 진출 확정 대기 중</span>
+                    )}
+                  </>
+                )}
+              </div>
+              {selected && renderMatchDetail && <div style={{ marginTop: 8 }}>{renderMatchDetail(m)}</div>}
             </div>
           )
         })}

@@ -12,11 +12,13 @@ import { TournamentEntryCard } from '../components/tournament/TournamentEntryCar
 import { TournamentParticipantAdmin } from '../components/tournament/TournamentParticipantAdmin'
 import { TournamentDrawAdmin } from '../components/tournament/TournamentDrawAdmin'
 import { TournamentBracketView } from '../components/tournament/TournamentBracketView'
+import { TournamentBracketVisual } from '../components/tournament/TournamentBracketVisual'
 import { TournamentMatchPanel } from '../components/tournament/TournamentMatchPanel'
 import { TournamentFinalResults } from '../components/tournament/TournamentFinalResults'
 import { createTournamentParticipant, createDrawMapping, buildSeatsFromDraw } from '../logic/tournamentDraw'
 import { buildEmptyBracket, buildTournamentMatches } from '../logic/tournamentBracket'
 import {
+  adminEntersMatchResult as applyAdminEnter,
   submitTournamentMatchResult as applySubmitResult,
   verifyTournamentMatchResult as applyVerify,
   requestTournamentMatchCorrection as applyRequestCorrection,
@@ -45,6 +47,7 @@ import {
   confirmTournamentBracket,
   cancelTournamentBracket,
   fetchTournamentMatches,
+  adminEntersTournamentMatchResult,
   submitTournamentMatchResult,
   verifyTournamentMatchResult,
   requestTournamentMatchCorrection,
@@ -119,6 +122,8 @@ export function TournamentTab({
     useState<Record<string, TournamentDrawMapping>>(devDrawMappings ?? {})
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null)
+  /** 라운드별 카드 보기(기존)와 전체 대진표 시각화, 두 가지 보기 방식. */
+  const [bracketViewMode, setBracketViewMode] = useState<'round' | 'full'>('round')
   const [loading, setLoading] = useState(!previewMode)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -518,6 +523,15 @@ export function TournamentTab({
     )
   }
 
+  const handleAdminEnterResult = (scoreA: number | string, scoreB: number | string) => {
+    if (!selectedMatch) return
+    const uid = previewMode ? 'dev-admin-uid' : (adminUid ?? '')
+    void runMatchAction(
+      () => applyAdminEnter(selectedMatch, { adminUid: uid, scoreA, scoreB, at: nowIso() }),
+      () => adminEntersTournamentMatchResult(selected!.id, selectedMatch.id, { adminUid: uid, scoreA, scoreB, at: nowIso() }, clubId),
+    )
+  }
+
   const handleVerify = () => {
     if (!selectedMatch || !memberId) return
     void runMatchAction(
@@ -627,29 +641,74 @@ export function TournamentTab({
             아직 대진이 없으면(matches 없음) 아무것도 그리지 않는다. 대회가 끝난 뒤에도
             대진표는 계속 볼 수 있어야 하므로 finished도 함께 보여준다. */}
         {(selected.status === 'bracketFixed' || selected.status === 'finished') && selectedMatches && selectedMatches.length > 0 && (
-          <TournamentBracketView
-            matches={selectedMatches} nameOf={nameOf} highlightMemberId={memberId ?? undefined}
-            onSelectMatch={handleSelectMatch} selectedMatchId={selectedMatchId}
-          />
-        )}
+          <>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className={bracketViewMode === 'round' ? 'primary grow' : 'grow'} style={{ fontSize: 14, padding: 10 }}
+                onClick={() => setBracketViewMode('round')}
+              >
+                라운드별 보기
+              </button>
+              <button
+                className={bracketViewMode === 'full' ? 'primary grow' : 'grow'} style={{ fontSize: 14, padding: 10 }}
+                onClick={() => setBracketViewMode('full')}
+              >
+                전체 대진표
+              </button>
+            </div>
 
-        {selectedMatch && (
-          <TournamentMatchPanel
-            match={selectedMatch}
-            nameOf={nameOf}
-            viewerMemberId={memberId ?? undefined}
-            isAdmin={isAdmin && isAuthorizedAdmin}
-            busy={busy}
-            error={matchError}
-            onClose={() => { setSelectedMatchId(null); setMatchError('') }}
-            onSubmitResult={handleSubmitResult}
-            onVerify={handleVerify}
-            onRequestCorrection={handleRequestCorrection}
-            onAdminVerify={handleAdminVerify}
-            onAdminCorrect={handleAdminCorrect}
-            onApprove={handleApprove}
-            onForfeit={handleForfeit}
-          />
+            {bracketViewMode === 'round' ? (
+              <TournamentBracketView
+                matches={selectedMatches} nameOf={nameOf} highlightMemberId={memberId ?? undefined}
+                onSelectMatch={handleSelectMatch} selectedMatchId={selectedMatchId}
+                renderMatchDetail={(m) => (
+                  <TournamentMatchPanel
+                    match={m}
+                    nameOf={nameOf}
+                    viewerMemberId={memberId ?? undefined}
+                    isAdmin={isAdmin && isAuthorizedAdmin}
+                    busy={busy}
+                    error={matchError}
+                    onClose={() => { setSelectedMatchId(null); setMatchError('') }}
+                    onSubmitResult={handleSubmitResult}
+                    onAdminEnterResult={handleAdminEnterResult}
+                    onVerify={handleVerify}
+                    onRequestCorrection={handleRequestCorrection}
+                    onAdminVerify={handleAdminVerify}
+                    onAdminCorrect={handleAdminCorrect}
+                    onApprove={handleApprove}
+                    onForfeit={handleForfeit}
+                  />
+                )}
+              />
+            ) : (
+              <>
+                <TournamentBracketVisual
+                  matches={selectedMatches} nameOf={nameOf} highlightMemberId={memberId ?? undefined}
+                  onSelectMatch={handleSelectMatch} selectedMatchId={selectedMatchId}
+                />
+                {selectedMatch && (
+                  <TournamentMatchPanel
+                    match={selectedMatch}
+                    nameOf={nameOf}
+                    viewerMemberId={memberId ?? undefined}
+                    isAdmin={isAdmin && isAuthorizedAdmin}
+                    busy={busy}
+                    error={matchError}
+                    onClose={() => { setSelectedMatchId(null); setMatchError('') }}
+                    onSubmitResult={handleSubmitResult}
+                    onAdminEnterResult={handleAdminEnterResult}
+                    onVerify={handleVerify}
+                    onRequestCorrection={handleRequestCorrection}
+                    onAdminVerify={handleAdminVerify}
+                    onAdminCorrect={handleAdminCorrect}
+                    onApprove={handleApprove}
+                    onForfeit={handleForfeit}
+                  />
+                )}
+              </>
+            )}
+          </>
         )}
 
         {finalMatch && finalMatch.status === 'official' && selectedMatches && (
