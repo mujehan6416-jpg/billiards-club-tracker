@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TournamentBracketVisual } from '../src/components/tournament/TournamentBracketVisual'
-import { buildEmptyBracket, buildTournamentMatches } from '../src/logic/tournamentBracket'
+import { buildEmptyBracket, buildTournamentMatches, tournamentMatchId } from '../src/logic/tournamentBracket'
+import { calculateBracketLayout, BRACKET_LAYOUT } from '../src/logic/tournamentBracketLayout'
 import type { TournamentMatch, TournamentSeat } from '../src/types/tournament'
 
 // 가상 데이터만 사용한다 — 실제 회원 이름·경기 데이터가 아니다.
@@ -99,6 +100,54 @@ describe('전체 대진표', () => {
   it('경기가 없으면 안내 문구만 보인다', () => {
     render(<TournamentBracketVisual matches={[]} nameOf={nameOf} />)
     expect(screen.getByText('대진 정보가 없습니다.')).toBeInTheDocument()
+  })
+
+  it('연결선은 진한 검정(#333)이 아니라 연한 회색으로, 너무 굵지 않게 그린다', () => {
+    const nodes = buildEmptyBracket(4)
+    if (!nodes.ok) throw new Error(nodes.message)
+    const seats: TournamentSeat[] = [1, 2, 3, 4].map((n) => ({ participantId: `p-${n}`, memberId: `m-${n}`, handicap: 20, slotNumber: n }))
+    const built = buildTournamentMatches(nodes.value, seats)
+    if (!built.ok) throw new Error(built.message)
+    const { container } = render(<TournamentBracketVisual matches={built.value} nameOf={() => '이름'} />)
+    const path = container.querySelector('svg path')!
+    expect(path.getAttribute('stroke')).not.toBe('#333')
+    expect(path.getAttribute('stroke')).toBe('#aeb2b5')
+    expect(Number(path.getAttribute('stroke-width'))).toBeLessThanOrEqual(1.5)
+  })
+
+  it('경기 카드가 계산된 좌표(calculateBracketLayout)에 정확히 배치된다 — 렌더 후 측정이 아니라 계산값 그대로다', () => {
+    const nodes = buildEmptyBracket(8)
+    if (!nodes.ok) throw new Error(nodes.message)
+    const seats: TournamentSeat[] = Array.from({ length: 8 }, (_, i) => ({
+      participantId: `p-${i + 1}`, memberId: `m-${i + 1}`, handicap: 20, slotNumber: i + 1,
+    }))
+    const built = buildTournamentMatches(nodes.value, seats)
+    if (!built.ok) throw new Error(built.message)
+    const matches = built.value
+    const layout = calculateBracketLayout(matches)
+
+    const { container } = render(<TournamentBracketVisual matches={matches} nameOf={() => '이름'} />)
+    for (const m of matches) {
+      const el = container.querySelector(`[data-match-id="${m.id}"]`) as HTMLElement
+      const pos = layout.get(m.id)!
+      expect(el.style.left).toBe(`${pos.x}px`)
+      expect(el.style.top).toBe(`${pos.centerY - BRACKET_LAYOUT.CARD_HEIGHT / 2 + 28}px`)
+    }
+  })
+
+  it('다음 라운드 카드의 center가 이전 두 경기 카드 center의 정확한 평균이다(픽셀 단위)', () => {
+    const nodes = buildEmptyBracket(4)
+    if (!nodes.ok) throw new Error(nodes.message)
+    const seats: TournamentSeat[] = [1, 2, 3, 4].map((n) => ({ participantId: `p-${n}`, memberId: `m-${n}`, handicap: 20, slotNumber: n }))
+    const built = buildTournamentMatches(nodes.value, seats)
+    if (!built.ok) throw new Error(built.message)
+    const matches = built.value
+    const layout = calculateBracketLayout(matches)
+
+    const yA = layout.get(tournamentMatchId(1, 1))!.centerY
+    const yB = layout.get(tournamentMatchId(1, 2))!.centerY
+    const finalCenter = layout.get(tournamentMatchId(2, 1))!.centerY
+    expect(Math.abs(finalCenter - (yA + yB) / 2)).toBeLessThan(0.01)
   })
 
   it('연결선(SVG path)이 nextMatchId 기준 junction(꺾쇠) 구조로 그려진다 — bracketSize와 무관하게 하드코딩 없이 동작한다', () => {
