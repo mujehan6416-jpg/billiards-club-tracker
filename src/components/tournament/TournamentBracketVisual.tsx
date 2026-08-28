@@ -57,24 +57,60 @@ export function TournamentBracketVisual({
     const container = containerRef.current
     if (!container) return
     const containerRect = container.getBoundingClientRect()
-    const nextLines: { key: string; d: string }[] = []
+
+    // nextMatchId별로 소스 경기를 묶는다 — 실제 bracket 데이터(nextMatchId)를 기준으로만
+    // 묶고, 화면에 인접해 보인다고 임의로 묶지 않는다. 부전승도 그냥 하나의 소스 경기로
+    // 자연스럽게 섞여 들어온다(대진 생성 시점에 이미 실제 match로 만들어져 있으므로
+    // 가짜 경기를 새로 만들 필요가 없다).
+    const byNext = new Map<string, TournamentMatch[]>()
     for (const m of matches) {
       if (!m.nextMatchId) continue
-      const fromEl = matchRefs.current.get(m.id)
-      const toEl = matchRefs.current.get(m.nextMatchId)
-      if (!fromEl || !toEl) continue
-      const fromRect = fromEl.getBoundingClientRect()
+      if (!byNext.has(m.nextMatchId)) byNext.set(m.nextMatchId, [])
+      byNext.get(m.nextMatchId)!.push(m)
+    }
+
+    const nextLines: { key: string; d: string }[] = []
+    for (const [nextMatchId, sources] of byNext) {
+      const toEl = matchRefs.current.get(nextMatchId)
+      if (!toEl) continue
       const toRect = toEl.getBoundingClientRect()
-      const x1 = fromRect.right - containerRect.left + container.scrollLeft
-      const y1 = fromRect.top + fromRect.height / 2 - containerRect.top + container.scrollTop
       const x2 = toRect.left - containerRect.left + container.scrollLeft
       const y2 = toRect.top + toRect.height / 2 - containerRect.top + container.scrollTop
-      const midX = (x1 + x2) / 2
-      // 꺾은선: 출발 경기 오른쪽 끝 → 중간까지 수평 → 목적 경기 높이까지 수직 → 목적 경기
-      // 왼쪽 끝까지 수평. 실제 nextMatchId 연결관계만 따라가며, 화면에 보이기 좋게
-      // "그럴듯한 곡선"을 임의로 그리지 않는다.
-      nextLines.push({ key: `${m.id}->${m.nextMatchId}`, d: `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}` })
+
+      const points: { x: number; y: number; id: string }[] = []
+      for (const m of sources) {
+        const fromEl = matchRefs.current.get(m.id)
+        if (!fromEl) continue
+        const fromRect = fromEl.getBoundingClientRect()
+        points.push({
+          x: fromRect.right - containerRect.left + container.scrollLeft,
+          y: fromRect.top + fromRect.height / 2 - containerRect.top + container.scrollTop,
+          id: m.id,
+        })
+      }
+      if (points.length === 0) continue
+
+      // 전형적인 브래킷 꺾쇠(junction) 모양: 두 소스 경기에서 나온 가로선이 중간 X에서
+      // 만나 하나의 세로선(spine)으로 합쳐지고, 그 세로선의 중간(두 소스 중심의 평균
+      // 높이)에서 다시 가로선 하나가 나가 다음 경기 카드의 세로 중앙으로 들어간다.
+      // 소스가 하나뿐이면(반대편 자리가 아직 안 정해진 경우) spine 없이 바로 잇는다.
+      const midX = (points[0].x + x2) / 2
+      const mergeY = points.reduce((sum, p) => sum + p.y, 0) / points.length
+
+      for (const p of points) {
+        nextLines.push({ key: `${p.id}-stub`, d: `M ${p.x} ${p.y} H ${midX}` })
+      }
+      if (points.length > 1) {
+        const yTop = Math.min(...points.map((p) => p.y))
+        const yBottom = Math.max(...points.map((p) => p.y))
+        nextLines.push({ key: `${nextMatchId}-spine`, d: `M ${midX} ${yTop} V ${yBottom}` })
+      }
+      // 합쳐진 지점(mergeY)에서 다음 경기의 실제 세로 중앙(y2)까지 마저 연결한다 — 레이아웃상
+      // 두 소스의 평균 높이와 다음 경기 중앙이 항상 정확히 같지는 않으므로 그 차이를 여기서
+      // 마저 메운다(V가 없어도 mergeY===y2면 길이 0으로 자연스럽게 사라진다).
+      nextLines.push({ key: `${nextMatchId}-in`, d: `M ${midX} ${mergeY} V ${y2} H ${x2}` })
     }
+
     // 값이 실제로 달라졌을 때만 state를 바꾼다 — deps 없는 layout effect가 매 렌더마다
     // 다시 실행되므로, 바뀐 게 없는데도 setState를 부르면 렌더가 끝없이 반복된다.
     setLines((prev) => (samePaths(prev, nextLines) ? prev : nextLines))

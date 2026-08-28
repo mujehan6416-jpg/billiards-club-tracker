@@ -27,7 +27,8 @@ const noop = {
 describe('awaitingResult — 결과 입력', () => {
   it('경기 당사자에게는 점수 입력칸과 입력 버튼이 보인다', () => {
     render(<TournamentMatchPanel match={match()} nameOf={nameOf} viewerMemberId="mA" isAdmin={false} {...noop} />)
-    expect(screen.getByText('가상회원A 점수')).toBeInTheDocument()
+    expect(screen.getByLabelText('가상회원A 점수')).toBeInTheDocument()
+    expect(screen.getByLabelText('가상회원B 점수')).toBeInTheDocument()
     expect(screen.getByText('결과 입력')).toBeInTheDocument()
   })
 
@@ -102,7 +103,8 @@ describe('수정 요청됨', () => {
     })
     render(<TournamentMatchPanel match={m} nameOf={nameOf} isAdmin {...noop} />)
     expect(screen.getByText(/상대가 결과 수정을 요청했습니다/)).toBeInTheDocument()
-    expect(screen.getByText('가상회원A 점수(정정)')).toBeInTheDocument()
+    expect(screen.getByText('정정할 점수')).toBeInTheDocument()
+    expect(screen.getByLabelText('가상회원A 점수')).toBeInTheDocument()
   })
 
   it('정정 점수를 입력하고 저장하면 onAdminCorrect가 호출된다', () => {
@@ -209,8 +211,9 @@ describe('핸디 표시(4C 개선)', () => {
       officialWinnerParticipantId: 'pA', officialLoserParticipantId: 'pB',
     })
     render(<TournamentMatchPanel match={m} nameOf={nameOf} isAdmin {...noop} />)
-    expect(screen.getByText('핸디 17')).toBeInTheDocument()
-    expect(screen.getByText('핸디 22')).toBeInTheDocument()
+    // 공식 확정 후에는 "핸디 N" 줄 대신 rateDisplay(점수/핸디(달성률%))로 핸디가 그대로 보인다.
+    expect(screen.getByText(/15\/17 \(88%\)/)).toBeInTheDocument()
+    expect(screen.getByText(/12\/22 \(55%\)/)).toBeInTheDocument()
   })
 })
 

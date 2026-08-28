@@ -92,7 +92,10 @@ describe('전체 대진표', () => {
     expect(screen.getByText('대진 정보가 없습니다.')).toBeInTheDocument()
   })
 
-  it('연결선(SVG path)이 nextMatchId가 있는 경기 수만큼 그려진다 — bracketSize와 무관하게 하드코딩 없이 동작한다', () => {
+  it('연결선(SVG path)이 nextMatchId 기준 junction(꺾쇠) 구조로 그려진다 — bracketSize와 무관하게 하드코딩 없이 동작한다', () => {
+    // junction 하나당: 소스 경기 수만큼의 stub(가로선) + (소스가 2개 이상이면 spine 세로선 1개)
+    // + 다음 경기로 들어가는 선 1개. 8/16/32강 어디서든 이 공식으로 정확히 맞아야 한다
+    // (부전승도 실제 match이므로 다른 소스와 똑같이 하나의 stub으로 계산에 포함된다).
     const check = (bracketSize: number) => {
       const nodes = buildEmptyBracket(bracketSize)
       if (!nodes.ok) throw new Error(nodes.message)
@@ -103,10 +106,19 @@ describe('전체 대진표', () => {
       if (!built.ok) throw new Error(built.message)
       const matches = built.value
 
+      const byNext = new Map<string, number>()
+      for (const m of matches) {
+        if (!m.nextMatchId) continue
+        byNext.set(m.nextMatchId, (byNext.get(m.nextMatchId) ?? 0) + 1)
+      }
+      let expected = 0
+      for (const count of byNext.values()) {
+        expected += count + (count > 1 ? 1 : 0) + 1
+      }
+
       const { container } = render(<TournamentBracketVisual matches={matches} nameOf={() => '이름'} />)
       const paths = container.querySelectorAll('svg path')
-      const expectedConnectors = matches.filter((m) => m.nextMatchId !== null).length
-      expect(paths.length).toBe(expectedConnectors)
+      expect(paths.length).toBe(expected)
     }
     check(8)
     check(16)

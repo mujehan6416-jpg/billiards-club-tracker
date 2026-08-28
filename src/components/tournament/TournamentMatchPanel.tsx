@@ -55,6 +55,26 @@ export function TournamentMatchPanel({
     <span style={{ fontSize: 15 }}>{name} <span className="muted">핸디 {handicap ?? '-'}</span></span>
   )
 
+  /**
+   * 선수 1명 = 한 행. 이름 · 핸디 · 점수 입력을 가로로 나란히 둔다(요구사항: 세로로 길게
+   * 쌓지 않는다). 320px에서도 한 줄을 유지하도록 이름 영역만 유연하게 줄고(flex:1,
+   * minWidth:0), 핸디·입력칸은 고정 폭을 쓴다.
+   */
+  const playerScoreRow = (
+    name: string, handicap: number | null, value: string, onChange: (v: string) => void,
+  ) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontSize: 17, fontWeight: 700 }}>{name}</span>
+      <span className="muted" style={{ flexShrink: 0, fontSize: 14 }}>핸디 {handicap ?? '-'}</span>
+      <input
+        type="number" inputMode="numeric" value={value}
+        aria-label={`${name} 점수`}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ flexShrink: 0, width: 60, fontSize: 18, padding: '8px 4px', textAlign: 'center' }}
+      />
+    </div>
+  )
+
   return (
     <div className="card col-card" style={{ gap: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -68,11 +88,16 @@ export function TournamentMatchPanel({
         <span style={{ fontWeight: 700, fontSize: 18 }}>{nameB}</span>
       </div>
 
-      {/* 핸디는 점수 입력 전에도 항상 보여야 한다 — 경기 시점 스냅샷 핸디를 그대로 쓴다. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {handicapLine(nameA, match.playerAHandicapSnapshot)}
-        {handicapLine(nameB, match.playerBHandicapSnapshot)}
-      </div>
+      {/* 핸디는 점수 입력 전에도 항상 보여야 한다 — 경기 시점 스냅샷 핸디를 그대로 쓴다.
+          당사자(회원)나 관리자는 아래 점수 입력 행이나 점수/달성률 줄에 이미 핸디가
+          함께 나오므로, 그 어느 쪽도 아닌 구경하는 회원에게만 이 요약 줄을 따로 보여준다
+          — 같은 정보를 세로로 두 번 쌓지 않는다. */}
+      {!isPlayer && !isAdmin && match.status !== 'official' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {handicapLine(nameA, match.playerAHandicapSnapshot)}
+          {handicapLine(nameB, match.playerBHandicapSnapshot)}
+        </div>
+      )}
 
       {error && <p className="info-msg">{error}</p>}
 
@@ -98,22 +123,8 @@ export function TournamentMatchPanel({
           {/* ── 회원: 결과 입력 ── */}
           {isPlayer && match.status === 'awaitingResult' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 15, fontWeight: 600 }}>
-                {nameA} 점수
-                <input
-                  type="number" inputMode="numeric" value={scoreA}
-                  onChange={(e) => setScoreA(e.target.value)}
-                  style={{ fontSize: 20, padding: 12, textAlign: 'center' }}
-                />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 15, fontWeight: 600 }}>
-                {nameB} 점수
-                <input
-                  type="number" inputMode="numeric" value={scoreB}
-                  onChange={(e) => setScoreB(e.target.value)}
-                  style={{ fontSize: 20, padding: 12, textAlign: 'center' }}
-                />
-              </label>
+              {playerScoreRow(nameA, match.playerAHandicapSnapshot, scoreA, setScoreA)}
+              {playerScoreRow(nameB, match.playerBHandicapSnapshot, scoreB, setScoreB)}
               <button
                 className="primary block" style={{ fontSize: 16, padding: 14 }}
                 disabled={busy || scoreA === '' || scoreB === ''}
@@ -130,14 +141,8 @@ export function TournamentMatchPanel({
           {isAdmin && match.status === 'awaitingResult' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
               <span className="muted" style={{ fontSize: 13 }}>회원이 직접 입력하기 어려우면 관리자가 대신 입력할 수 있습니다. 입력해도 즉시 확정되지 않고 상대 확인·최종 승인이 그대로 남습니다.</span>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14, fontWeight: 600 }}>
-                {nameA} 점수
-                <input type="number" inputMode="numeric" value={adminScoreA} onChange={(e) => setAdminScoreA(e.target.value)} style={{ fontSize: 18, padding: 10, textAlign: 'center' }} />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14, fontWeight: 600 }}>
-                {nameB} 점수
-                <input type="number" inputMode="numeric" value={adminScoreB} onChange={(e) => setAdminScoreB(e.target.value)} style={{ fontSize: 18, padding: 10, textAlign: 'center' }} />
-              </label>
+              {playerScoreRow(nameA, match.playerAHandicapSnapshot, adminScoreA, setAdminScoreA)}
+              {playerScoreRow(nameB, match.playerBHandicapSnapshot, adminScoreB, setAdminScoreB)}
               <button
                 className="block" style={{ fontSize: 15, padding: 12 }}
                 disabled={busy || adminScoreA === '' || adminScoreB === ''}
@@ -193,14 +198,9 @@ export function TournamentMatchPanel({
 
               {(correcting || correctionRequested) && match.status !== 'awaitingResult' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14, fontWeight: 600 }}>
-                    {nameA} 점수(정정)
-                    <input type="number" inputMode="numeric" value={correctA} onChange={(e) => setCorrectA(e.target.value)} style={{ fontSize: 18, padding: 10, textAlign: 'center' }} />
-                  </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 14, fontWeight: 600 }}>
-                    {nameB} 점수(정정)
-                    <input type="number" inputMode="numeric" value={correctB} onChange={(e) => setCorrectB(e.target.value)} style={{ fontSize: 18, padding: 10, textAlign: 'center' }} />
-                  </label>
+                  <span className="muted" style={{ fontSize: 12 }}>정정할 점수</span>
+                  {playerScoreRow(nameA, match.playerAHandicapSnapshot, correctA, setCorrectA)}
+                  {playerScoreRow(nameB, match.playerBHandicapSnapshot, correctB, setCorrectB)}
                   <button
                     className="primary block" style={{ fontSize: 15, padding: 12 }}
                     disabled={busy || correctA === '' || correctB === ''}
