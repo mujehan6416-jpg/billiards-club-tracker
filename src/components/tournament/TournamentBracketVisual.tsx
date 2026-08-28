@@ -173,8 +173,10 @@ export function TournamentBracketVisual({
         style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
         aria-hidden="true"
       >
+        {/* ⚠ 예전에는 stroke를 var(--border)(#e3e3df, 아주 옅은 회색)로 그려서 실제 화면에서는
+            선이 거의 안 보였다 — 종이 대진표처럼 또렷한 검은 선으로 그린다. */}
         {lines.map((l) => (
-          <path key={l.key} d={l.d} stroke="var(--border)" strokeWidth={2} fill="none" />
+          <path key={l.key} d={l.d} stroke="#333" strokeWidth={2} fill="none" />
         ))}
       </svg>
 
