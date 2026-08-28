@@ -71,13 +71,16 @@ describe('전체 대진표', () => {
     expect(screen.getByText(/테스트회원1 \(부전승\)/)).toBeInTheDocument()
   })
 
-  it('라운드 경기가 모두 확정되면 라운드 이름에 "확정"이 붙는다', () => {
+  it('라운드 경기가 모두 확정되면 라운드 이름표에 체크가 붙지만 "확정"이라는 단어는 쓰지 않는다', () => {
     const matches = [normalMatch({
       status: 'official', scoreA: 15, scoreB: 12,
       officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
     })]
     render(<TournamentBracketVisual matches={matches} nameOf={nameOf} />)
-    expect(screen.getByText(/4강 확정/)).toBeInTheDocument()
+    const header = screen.getByText('✅ 4강')
+    expect(header).toBeInTheDocument()
+    expect(screen.queryByText(/4강 확정/)).not.toBeInTheDocument()
+    expect(header).toHaveStyle({ fontWeight: '800' })
   })
 
   it('경기를 누르면 onSelectMatch가 호출된다', () => {

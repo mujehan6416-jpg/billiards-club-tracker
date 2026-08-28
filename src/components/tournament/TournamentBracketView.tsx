@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { TournamentMatch } from '../../types/tournament'
 import { isTournamentRoundOfficial } from '../../logic/tournamentMatch'
-import { matchMemberStatusMessage, rateDisplay, roundConfirmedLabel, roundLabel } from './tournamentDisplay'
+import { matchMemberStatusMessage, rateDisplay, roundLabel } from './tournamentDisplay'
 
 /**
  * 라운드별 대진표. 대진 미리보기(관리자, 확정 전)와 확정된 공개 대진표(관리자·회원, 확정 후)가
@@ -76,10 +76,10 @@ export function TournamentBracketView({
               key={r.roundNumber}
               type="button"
               className={r.roundNumber === activeRound ? 'primary' : ''}
-              style={{ flexShrink: 0, fontSize: 16, padding: '11px 15px', fontWeight: 700 }}
+              style={{ flexShrink: 0, fontSize: 16, padding: '11px 15px', fontWeight: confirmed ? 800 : 500 }}
               onClick={() => setActiveRound(r.roundNumber)}
             >
-              {confirmed ? `✅ ${roundConfirmedLabel(r.matches[0].playerCountInRound)}` : r.label}
+              {confirmed ? `✅ ${r.label}` : r.label}
             </button>
           )
         })}

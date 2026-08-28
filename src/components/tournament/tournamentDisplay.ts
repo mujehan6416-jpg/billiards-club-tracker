@@ -87,8 +87,3 @@ export function matchMemberStatusMessage(match: TournamentMatch, viewerMemberId:
   if (match.status === 'awaitingApproval') return '관리자 확인을 기다리고 있습니다.'
   return ''
 }
-
-/** 라운드 이름 + "확정" — 예: "8강 확정". */
-export function roundConfirmedLabel(playerCountInRound: number): string {
-  return `${roundLabel(playerCountInRound)} 확정`
-}

@@ -225,22 +225,34 @@ describe('라운드 확정 표시(4C 개선)', () => {
     expect(screen.queryByText(/확정/)).not.toBeInTheDocument()
   })
 
-  it('그 라운드 경기가 모두 official이면 탭에 "N강 확정"이 보인다', () => {
+  it('그 라운드 경기가 모두 official이면 탭에 체크 표시가 붙지만 "확정"이라는 단어는 쓰지 않는다', () => {
     const matches = [normalMatch({
       status: 'official', scoreA: 15, scoreB: 12,
       officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
     })]
     render(<TournamentBracketView matches={matches} nameOf={nameOf} />)
-    expect(screen.getByText(/4강 확정/)).toBeInTheDocument()
+    const tab = screen.getByText('✅ 4강')
+    expect(tab).toBeInTheDocument()
+    expect(screen.queryByText(/4강 확정/)).not.toBeInTheDocument()
+    // 완료된 라운드는 더 굵게 표시한다.
+    expect(tab).toHaveStyle({ fontWeight: '800' })
   })
 
-  it('결승은 "결승 확정"으로 표시한다(2강이 아니다)', () => {
+  it('결승도 "결승"만 표시한다(2강도, "결승 확정"도 아니다)', () => {
     const matches = [normalMatch({
       playerCountInRound: 2, status: 'official', scoreA: 15, scoreB: 12,
       officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
     })]
     render(<TournamentBracketView matches={matches} nameOf={nameOf} />)
-    expect(screen.getByText(/결승 확정/)).toBeInTheDocument()
+    expect(screen.getByText('✅ 결승')).toBeInTheDocument()
+    expect(screen.queryByText(/결승 확정/)).not.toBeInTheDocument()
+    expect(screen.queryByText('✅ 2강')).not.toBeInTheDocument()
+  })
+
+  it('아직 완료되지 않은 라운드는 체크 없이 얇은 글씨로 표시한다', () => {
+    render(<TournamentBracketView matches={[normalMatch()]} nameOf={nameOf} />)
+    const tab = screen.getByText('4강')
+    expect(tab).toHaveStyle({ fontWeight: '500' })
   })
 })
 

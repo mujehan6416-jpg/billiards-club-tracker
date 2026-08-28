@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { TournamentMatch } from '../../types/tournament'
-import { roundConfirmedLabel, roundLabel } from './tournamentDisplay'
+import { roundLabel } from './tournamentDisplay'
 import { isTournamentRoundOfficial } from '../../logic/tournamentMatch'
 import { calculateBracketLayout, BRACKET_LAYOUT } from '../../logic/tournamentBracketLayout'
 
@@ -162,10 +162,10 @@ export function TournamentBracketVisual({
             key={r.roundNumber}
             style={{
               position: 'absolute', left: r.x, top: 0, width: CARD_WIDTH, textAlign: 'center',
-              fontWeight: 700, fontSize: 15,
+              fontWeight: r.confirmed ? 800 : 500, fontSize: 15,
             }}
           >
-            {r.confirmed ? `✅ ${roundConfirmedLabel(matches.find((m) => m.roundNumber === r.roundNumber)!.playerCountInRound)}` : r.label}
+            {r.confirmed ? `✅ ${r.label}` : r.label}
           </span>
         ))}
 
