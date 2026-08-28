@@ -52,14 +52,31 @@ describe('전체 대진표', () => {
     expect(screen.getAllByText('미정')).toHaveLength(2)
   })
 
-  it('공식 확정된 경기는 승자를 굵게 강조한다', () => {
+  it('공식 확정된 경기는 승자를 굵게 강조하고, 패자는 일반 굵기로 유지한다', () => {
     const matches = [normalMatch({
       status: 'official', scoreA: 15, scoreB: 12,
       officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
     })]
     render(<TournamentBracketVisual matches={matches} nameOf={nameOf} />)
-    const winner = screen.getByText('테스트회원1')
-    expect(winner).toHaveStyle({ fontWeight: 800 })
+    expect(screen.getByText('테스트회원1')).toHaveStyle({ fontWeight: 800 })
+    expect(screen.getByText('테스트회원2')).toHaveStyle({ fontWeight: 500 })
+  })
+
+  it('승자 박스에 녹색 배경이나 테두리를 넣지 않는다 — 굵은 글씨만으로 표시한다', () => {
+    const matches = [normalMatch({
+      status: 'official', scoreA: 15, scoreB: 12,
+      officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
+    })]
+    render(<TournamentBracketVisual matches={matches} nameOf={nameOf} />)
+    const winnerBox = screen.getByText('테스트회원1').closest('div')!
+    expect(winnerBox).not.toHaveStyle({ background: '#eafaf3' })
+  })
+
+  it('내 경기(highlightMemberId)라고 해서 초록 테두리를 두르지 않는다 — 선택(클릭) 상태만 테두리로 표시한다', () => {
+    const matches = [normalMatch()]
+    const { container } = render(<TournamentBracketVisual matches={matches} nameOf={nameOf} onSelectMatch={vi.fn()} />)
+    const card = container.querySelector('[data-match-id="r1m1"]') as HTMLElement
+    expect(card.style.outline).toBe('')
   })
 
   it('부전승 경기에는 "(부전승)" 표시가 붙는다', () => {
@@ -116,6 +133,24 @@ describe('전체 대진표', () => {
     expect(path.getAttribute('stroke')).not.toBe('#333')
     expect(path.getAttribute('stroke')).toBe('#aeb2b5')
     expect(Number(path.getAttribute('stroke-width'))).toBeLessThanOrEqual(1.5)
+  })
+
+  it('선수 박스가 기존보다 작고(가로·세로), 글자는 박스 안에서 가운데 정렬된다', () => {
+    const matches = [normalMatch()]
+    render(<TournamentBracketVisual matches={matches} nameOf={nameOf} />)
+    // 기존 크기(176×64, 선수 칸 32)보다 작아야 한다.
+    expect(BRACKET_LAYOUT.CARD_WIDTH).toBeLessThan(176)
+    expect(BRACKET_LAYOUT.CARD_HEIGHT).toBeLessThan(64)
+    const box = screen.getByText('테스트회원1').closest('div')!
+    expect(box).toHaveStyle({ display: 'flex', alignItems: 'center', justifyContent: 'center' })
+  })
+
+  it('글자 크기를 키워도 박스 폭을 넘지 않도록 줄바꿈 없이 한 줄로 자른다', () => {
+    const matches = [normalMatch()]
+    render(<TournamentBracketVisual matches={matches} nameOf={nameOf} />)
+    const nameSpan = screen.getByText('테스트회원1')
+    expect(nameSpan).toHaveStyle({ whiteSpace: 'nowrap' })
+    expect(Number((nameSpan as HTMLElement).style.fontSize.replace('px', ''))).toBeGreaterThan(14)
   })
 
   it('경기 카드가 계산된 좌표(calculateBracketLayout)에 정확히 배치된다 — 렌더 후 측정이 아니라 계산값 그대로다', () => {

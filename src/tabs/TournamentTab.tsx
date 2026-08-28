@@ -710,7 +710,7 @@ export function TournamentTab({
             ) : (
               <>
                 <TournamentBracketVisual
-                  matches={selectedMatches} nameOf={nameOf} highlightMemberId={memberId ?? undefined}
+                  matches={selectedMatches} nameOf={nameOf}
                   onSelectMatch={handleSelectMatch} selectedMatchId={selectedMatchId}
                 />
                 {selectedMatch && (

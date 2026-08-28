@@ -31,11 +31,10 @@ interface ConnectorLine { key: string; d: string }
  * 전체는 스크롤되지 않는다.
  */
 export function TournamentBracketVisual({
-  matches, nameOf, highlightMemberId, onSelectMatch, selectedMatchId,
+  matches, nameOf, onSelectMatch, selectedMatchId,
 }: {
   matches: TournamentMatch[]
   nameOf: (participantId: string | null) => string
-  highlightMemberId?: string
   onSelectMatch?: (match: TournamentMatch) => void
   selectedMatchId?: string | null
 }) {
@@ -103,9 +102,6 @@ export function TournamentBracketVisual({
     return <p className="muted" style={{ textAlign: 'center', padding: '16px 0' }}>대진 정보가 없습니다.</p>
   }
 
-  const isMine = (m: TournamentMatch) =>
-    !!highlightMemberId && (m.playerAMemberId === highlightMemberId || m.playerBMemberId === highlightMemberId)
-
   /**
    * 선수 1명 = 네모난 칸 하나 — 오프라인에서 쓰던 종이 대진표(각 참가자가 자기만의 칸을
    * 갖고, 두 칸이 선으로 모여 다음 칸으로 이어지는 모양)를 그대로 따른다. 카드 하나 안에
@@ -114,6 +110,8 @@ export function TournamentBracketVisual({
    */
   const slotBox = (m: TournamentMatch, side: 'A' | 'B') => {
     const participantId = side === 'A' ? m.playerAParticipantId : m.playerBParticipantId
+    // 부전승으로 다음 라운드에 오른 경우도 "승자"다 — officialWinnerParticipantId는
+    // 부전승 경기에서도 대진 생성 시점에 이미 채워져 있으므로 별도 분기가 필요 없다.
     const isWinner = m.status === 'official' && m.officialWinnerParticipantId === participantId
     const isBye = m.resultType === 'bye' && !!participantId
     // 부전승 경기의 빈 자리는 "아직 정해지지 않음"(미정)이 아니라 애초에 상대가 없는
@@ -125,13 +123,19 @@ export function TournamentBracketVisual({
           border: '1px solid var(--border)',
           borderBottom: side === 'A' ? 'none' : undefined,
           borderRadius: 0,
-          padding: '7px 8px',
-          background: isWinner ? '#eafaf3' : 'var(--surface, #fff)',
+          background: 'var(--surface, #fff)',
           height: CARD_HEIGHT / 2,
           boxSizing: 'border-box',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden',
         }}
       >
-        <span style={{ fontWeight: isWinner ? 800 : 500, opacity: participantId ? 1 : 0.5, fontSize: 14 }}>
+        <span
+          style={{
+            fontWeight: isWinner ? 800 : 500, opacity: participantId ? 1 : 0.5, fontSize: 16,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
+          }}
+        >
           {participantId ? nameOf(participantId) : emptyLabel}
           {isBye && ' (부전승)'}
         </span>
@@ -173,7 +177,6 @@ export function TournamentBracketVisual({
           const pos = layout.get(m.id)
           if (!pos) return null
           const selected = selectedMatchId === m.id
-          const mine = isMine(m)
           return (
             <div
               key={m.id}
@@ -186,7 +189,11 @@ export function TournamentBracketVisual({
                 position: 'absolute',
                 left: pos.x, top: pos.centerY - CARD_HEIGHT / 2 + HEADER_HEIGHT, width: CARD_WIDTH,
                 display: 'flex', flexDirection: 'column',
-                outline: selected ? '2px solid #1a56db' : mine ? '2px solid #0f6e56' : undefined,
+                // ⚠ 예전에는 "내 경기"(mine)에 초록 테두리를 둘렀는데, 우승자 결정 구간에서
+                // 이 테두리가 "선택된 상태"처럼 보여 승자 강조(굵은 글씨)와 헷갈렸다. 지금은
+                // 클릭으로 상세를 연 경기(selected)에만 테두리를 준다 — 승자 표시는 오직
+                // 굵은 글씨로만 한다.
+                outline: selected ? '2px solid #1a56db' : undefined,
                 outlineOffset: 2,
                 cursor: onSelectMatch ? 'pointer' : undefined,
               }}
