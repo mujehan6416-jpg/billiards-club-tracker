@@ -134,15 +134,35 @@ export function TournamentBracketVisual({
   const isMine = (m: TournamentMatch) =>
     !!highlightMemberId && (m.playerAMemberId === highlightMemberId || m.playerBMemberId === highlightMemberId)
 
-  const slot = (m: TournamentMatch, side: 'A' | 'B') => {
+  /**
+   * 선수 1명 = 네모난 칸 하나 — 오프라인에서 쓰던 종이 대진표(각 참가자가 자기만의 칸을
+   * 갖고, 두 칸이 선으로 모여 다음 칸으로 이어지는 모양)를 그대로 따른다. 그래서 이전처럼
+   * 카드 하나 안에 "A vs B"를 함께 넣지 않고, 두 칸을 위아래로 붙여 그린다. 칸 테두리도
+   * 종이 대진표처럼 각진 사각형(모서리 둥글림 없음)으로 둔다.
+   */
+  const slotBox = (m: TournamentMatch, side: 'A' | 'B') => {
     const participantId = side === 'A' ? m.playerAParticipantId : m.playerBParticipantId
     const isWinner = m.status === 'official' && m.officialWinnerParticipantId === participantId
-    const isBye = m.resultType === 'bye'
+    const isBye = m.resultType === 'bye' && !!participantId
+    // 부전승 경기의 빈 자리는 "아직 정해지지 않음"(미정)이 아니라 애초에 상대가 없는
+    // 자리다 — 다른 경기의 빈 자리(승자 진출 대기)와 같은 문구를 쓰면 헷갈린다.
+    const emptyLabel = m.resultType === 'bye' ? '' : '미정'
     return (
-      <span style={{ fontWeight: isWinner ? 800 : 600, opacity: participantId ? 1 : 0.5, fontSize: 15 }}>
-        {participantId ? nameOf(participantId) : '미정'}
-        {isBye && ' (부전승)'}
-      </span>
+      <div
+        style={{
+          border: '1px solid var(--border)',
+          borderBottom: side === 'A' ? 'none' : undefined,
+          borderRadius: 0,
+          padding: '7px 8px',
+          background: isWinner ? '#eafaf3' : 'var(--surface, #fff)',
+          minHeight: 20,
+        }}
+      >
+        <span style={{ fontWeight: isWinner ? 800 : 500, opacity: participantId ? 1 : 0.5, fontSize: 14 }}>
+          {participantId ? nameOf(participantId) : emptyLabel}
+          {isBye && ' (부전승)'}
+        </span>
+      </div>
     )
   }
 
@@ -173,18 +193,17 @@ export function TournamentBracketVisual({
                   ref={(el) => { if (el) matchRefs.current.set(m.id, el); else matchRefs.current.delete(m.id) }}
                   role={onSelectMatch ? 'button' : undefined}
                   tabIndex={onSelectMatch ? 0 : undefined}
-                  className="card"
                   onClick={onSelectMatch ? () => onSelectMatch(m) : undefined}
                   onKeyDown={onSelectMatch ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelectMatch(m) } : undefined}
                   style={{
-                    display: 'flex', flexDirection: 'column', gap: 4, padding: 10,
-                    border: selected ? '2px solid #1a56db' : mine ? '2px solid #0f6e56' : undefined,
+                    display: 'flex', flexDirection: 'column',
+                    outline: selected ? '2px solid #1a56db' : mine ? '2px solid #0f6e56' : undefined,
+                    outlineOffset: 2,
                     cursor: onSelectMatch ? 'pointer' : undefined,
                   }}
                 >
-                  <div>{slot(m, 'A')}</div>
-                  <div className="muted" style={{ fontSize: 12 }}>vs</div>
-                  <div>{slot(m, 'B')}</div>
+                  {slotBox(m, 'A')}
+                  {slotBox(m, 'B')}
                 </div>
               )
             })}

@@ -87,6 +87,15 @@ describe('전체 대진표', () => {
     expect(onSelectMatch).toHaveBeenCalledWith(matches[0])
   })
 
+  it('선수 1명당 별도 네모 칸으로 보이고(오프라인 종이 대진표와 같은 구조), "vs" 표시는 쓰지 않는다', () => {
+    render(<TournamentBracketVisual matches={[normalMatch()]} nameOf={nameOf} />)
+    expect(screen.queryByText('vs')).not.toBeInTheDocument()
+    const nameA = screen.getByText('테스트회원1')
+    const nameB = screen.getByText('테스트회원2')
+    // 서로 다른 칸(부모 div)에 들어 있어야 한다 — 하나의 카드 안에 같이 있지 않다.
+    expect(nameA.closest('div')).not.toBe(nameB.closest('div'))
+  })
+
   it('경기가 없으면 안내 문구만 보인다', () => {
     render(<TournamentBracketVisual matches={[]} nameOf={nameOf} />)
     expect(screen.getByText('대진 정보가 없습니다.')).toBeInTheDocument()
