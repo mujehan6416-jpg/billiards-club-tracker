@@ -141,6 +141,43 @@ describe('drawReady — 번호 입력', () => {
     expect(new Set(entries.map((e: { drawNumber: number }) => e.drawNumber))).toEqual(new Set([1, 2, 3]))
   })
 
+  it('★ 일부 참가자는 이미 저장된 번호(props)로 남아 있고 나머지만 새로 입력해도 저장 버튼이 활성화된다(운영 버그 회귀 방지)', () => {
+    // 참가자1은 이전 세션(또는 새로고침 전)에 이미 drawNumber=1을 저장해 둔 상태로 화면을 다시 연 경우.
+    // 이번에는 나머지 두 명 번호만 새로 입력한다 — 참가자1 입력칸은 건드리지 않는다.
+    const onSaveDrawNumbers = vi.fn()
+    const partiallySaved = [{ ...participants[0], drawNumber: 1 }, participants[1], participants[2]]
+    render(
+      <TournamentDrawAdmin
+        tournament={tournament({ status: 'drawReady' })} enteredParticipants={partiallySaved}
+        matches={null} nameOf={nameOf} {...noop} onSaveDrawNumbers={onSaveDrawNumbers}
+      />,
+    )
+    const inputs = screen.getAllByRole('spinbutton')
+    fireEvent.change(inputs[1], { target: { value: '2' } })
+    fireEvent.change(inputs[2], { target: { value: '3' } })
+    expect(screen.getByText('번호 저장')).not.toBeDisabled()
+    fireEvent.click(screen.getByText('번호 저장'))
+
+    expect(onSaveDrawNumbers).toHaveBeenCalledTimes(1)
+    const entries = onSaveDrawNumbers.mock.calls[0][0]
+    expect(entries).toHaveLength(3)
+    expect(new Set(entries.map((e: { drawNumber: number }) => e.drawNumber))).toEqual(new Set([1, 2, 3]))
+  })
+
+  it('★ 새로 입력한 번호가 이미 저장된(props) 다른 참가자의 번호와 겹치면 중복으로 잡는다', () => {
+    const partiallySaved = [{ ...participants[0], drawNumber: 1 }, participants[1], participants[2]]
+    render(
+      <TournamentDrawAdmin
+        tournament={tournament({ status: 'drawReady' })} enteredParticipants={partiallySaved}
+        matches={null} nameOf={nameOf} {...noop}
+      />,
+    )
+    const inputs = screen.getAllByRole('spinbutton')
+    fireEvent.change(inputs[1], { target: { value: '1' } })
+    expect(screen.getByText(/이미 사용된 번호입니다/)).toBeInTheDocument()
+    expect(screen.getByText('번호 저장')).toBeDisabled()
+  })
+
   it('모든 참가자에게 drawNumber가 이미 저장돼 있으면 "대진표 확인" 버튼이 보인다', () => {
     const saved = participants.map((p, i) => ({ ...p, drawNumber: i + 1 }))
     render(

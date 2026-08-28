@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TournamentBracketVisual } from '../src/components/tournament/TournamentBracketVisual'
-import type { TournamentMatch } from '../src/types/tournament'
+import { buildEmptyBracket, buildTournamentMatches } from '../src/logic/tournamentBracket'
+import type { TournamentMatch, TournamentSeat } from '../src/types/tournament'
 
 // 가상 데이터만 사용한다 — 실제 회원 이름·경기 데이터가 아니다.
 
@@ -89,6 +90,38 @@ describe('전체 대진표', () => {
   it('경기가 없으면 안내 문구만 보인다', () => {
     render(<TournamentBracketVisual matches={[]} nameOf={nameOf} />)
     expect(screen.getByText('대진 정보가 없습니다.')).toBeInTheDocument()
+  })
+
+  it('연결선(SVG path)이 nextMatchId가 있는 경기 수만큼 그려진다 — bracketSize와 무관하게 하드코딩 없이 동작한다', () => {
+    const check = (bracketSize: number) => {
+      const nodes = buildEmptyBracket(bracketSize)
+      if (!nodes.ok) throw new Error(nodes.message)
+      const seats: TournamentSeat[] = Array.from({ length: bracketSize }, (_, i) => ({
+        participantId: `p-${i + 1}`, memberId: `m-${i + 1}`, handicap: 20, slotNumber: i + 1,
+      }))
+      const built = buildTournamentMatches(nodes.value, seats)
+      if (!built.ok) throw new Error(built.message)
+      const matches = built.value
+
+      const { container } = render(<TournamentBracketVisual matches={matches} nameOf={() => '이름'} />)
+      const paths = container.querySelectorAll('svg path')
+      const expectedConnectors = matches.filter((m) => m.nextMatchId !== null).length
+      expect(paths.length).toBe(expectedConnectors)
+    }
+    check(8)
+    check(16)
+    check(32)
+  })
+
+  it('반복 렌더링에서도 무한 루프 없이 안정적으로 멈춘다(레이아웃 재측정 가드)', () => {
+    // jsdom은 실제 레이아웃 계산을 하지 않지만, 이 테스트는 "Maximum update depth exceeded"
+    // 같은 렌더 폭주가 재발하지 않는지를 회귀 확인한다.
+    const nodes = buildEmptyBracket(4)
+    if (!nodes.ok) throw new Error(nodes.message)
+    const seats: TournamentSeat[] = [1, 2, 3, 4].map((n) => ({ participantId: `p-${n}`, memberId: `m-${n}`, handicap: 20, slotNumber: n }))
+    const built = buildTournamentMatches(nodes.value, seats)
+    if (!built.ok) throw new Error(built.message)
+    expect(() => render(<TournamentBracketVisual matches={built.value} nameOf={() => '이름'} />)).not.toThrow()
   })
 
   it('private draw 관련 정보(번호↔자리 매핑)를 가질 방법이 없다 — 애초에 그런 prop을 받지 않는다', () => {

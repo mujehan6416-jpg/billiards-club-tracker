@@ -46,6 +46,7 @@ import {
   loadTournamentDrawMapping,
   confirmTournamentBracket,
   cancelTournamentBracket,
+  deleteTournament,
   fetchTournamentMatches,
   adminEntersTournamentMatchResult,
   submitTournamentMatchResult,
@@ -438,6 +439,31 @@ export function TournamentTab({
     })
   }
 
+  /** 대회 삭제 — 대회 본문·참가자·경기·비공개 추첨 매핑을 전부 지운다(관리자 전용). */
+  const handleDeleteTournament = () => {
+    if (!selected) return
+    if (previewMode) {
+      setTournaments((prev) => prev.filter((t) => t.id !== selected.id))
+      setParticipantsByTournamentId((prev) => { const next = { ...prev }; delete next[selected.id]; return next })
+      setMatchesByTournamentId((prev) => { const next = { ...prev }; delete next[selected.id]; return next })
+      setDevDrawMappingByTournamentId((prev) => { const next = { ...prev }; delete next[selected.id]; return next })
+      setSelectedId(null)
+      setSelectedMatchId(null)
+      setView('list')
+      return
+    }
+    void runAdminAction(async () => {
+      await deleteTournament(selected.id, clubId)
+      const list = await fetchTournaments(clubId)
+      setTournaments(list)
+      setParticipantsByTournamentId((prev) => { const next = { ...prev }; delete next[selected.id]; return next })
+      setMatchesByTournamentId((prev) => { const next = { ...prev }; delete next[selected.id]; return next })
+      setSelectedId(null)
+      setSelectedMatchId(null)
+      setView('list')
+    })
+  }
+
   const selectedMatch = selectedMatchId ? (selectedMatches?.find((m) => m.id === selectedMatchId) ?? null) : null
   const finalMatch = selectedMatches?.find((m) => m.nextMatchId === null) ?? null
 
@@ -644,13 +670,13 @@ export function TournamentTab({
           <>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
-                className={bracketViewMode === 'round' ? 'primary grow' : 'grow'} style={{ fontSize: 14, padding: 10 }}
+                className={bracketViewMode === 'round' ? 'primary grow' : 'grow'} style={{ fontSize: 16, fontWeight: 700, padding: 12 }}
                 onClick={() => setBracketViewMode('round')}
               >
                 라운드별 보기
               </button>
               <button
-                className={bracketViewMode === 'full' ? 'primary grow' : 'grow'} style={{ fontSize: 14, padding: 10 }}
+                className={bracketViewMode === 'full' ? 'primary grow' : 'grow'} style={{ fontSize: 16, fontWeight: 700, padding: 12 }}
                 onClick={() => setBracketViewMode('full')}
               >
                 전체 대진표
@@ -758,6 +784,28 @@ export function TournamentTab({
               <AdminAuthLogin />
             </div>
           )
+        )}
+
+        {/* 대회 삭제 — 관리자 전용, 회원 화면에는 절대 노출되지 않는다. 실수 방지를 위해
+            관리자 영역 맨 아래에만 두고, 대회명을 넣은 확인창을 반드시 거친다. */}
+        {isAdmin && isAuthorizedAdmin && (
+          <div className="card col-card" style={{ borderColor: 'var(--danger)' }}>
+            <span className="muted" style={{ fontSize: 13 }}>
+              대회를 완전히 지웁니다. 참가자·대진·경기 기록이 모두 함께 삭제되며 되돌릴 수 없습니다.
+            </span>
+            <button
+              className="danger block" style={{ fontSize: 15, padding: 12 }} disabled={busy}
+              onClick={() => {
+                if (window.confirm(
+                  `'${selected.name}'를 삭제하시겠습니까?\n대회 참가자, 대진 및 경기 정보가 함께 삭제됩니다.\n이 작업은 되돌릴 수 없습니다.`,
+                )) {
+                  handleDeleteTournament()
+                }
+              }}
+            >
+              대회 삭제
+            </button>
+          </div>
         )}
       </div>
     )

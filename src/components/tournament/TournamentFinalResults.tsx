@@ -23,25 +23,25 @@ export function TournamentFinalResults({
   if (!placements.championParticipantId) return null
 
   return (
-    <div className="card col-card" style={{ gap: 8 }}>
-      <span style={{ fontWeight: 700, fontSize: 16 }}>🏆 대회 최종 결과</span>
-      <span style={{ fontSize: 16, fontWeight: 700 }}>우승: {nameOf(placements.championParticipantId)}</span>
-      <span style={{ fontSize: 15 }}>준우승: {nameOf(placements.runnerUpParticipantId)}</span>
+    <div className="card col-card" style={{ gap: 10 }}>
+      <span style={{ fontWeight: 800, fontSize: 19 }}>🏆 대회 최종 결과</span>
+      <span style={{ fontSize: 18, fontWeight: 800 }}>우승: {nameOf(placements.championParticipantId)}</span>
+      <span style={{ fontSize: 16, fontWeight: 700 }}>준우승: {nameOf(placements.runnerUpParticipantId)}</span>
       {placements.thirdPlaceParticipantIds.length > 0 && (
-        <span style={{ fontSize: 15 }}>
+        <span style={{ fontSize: 16, fontWeight: 700 }}>
           공동 3위: {placements.thirdPlaceParticipantIds.map((id) => nameOf(id)).join(', ')}
         </span>
       )}
       {isAdmin && tournament.status !== 'finished' && (
         <button
-          className="primary block" style={{ fontSize: 15, padding: 12 }} disabled={busy}
+          className="primary block" style={{ fontSize: 16, padding: 14 }} disabled={busy}
           onClick={() => { if (window.confirm('대회를 최종 마감하시겠습니까? 마감 후에도 결과는 그대로 유지됩니다.')) onFinish() }}
         >
           대회 최종 마감
         </button>
       )}
       {tournament.status === 'finished' && (
-        <span className="muted" style={{ fontSize: 13 }}>대회가 종료되었습니다.</span>
+        <span className="muted" style={{ fontSize: 14 }}>대회가 종료되었습니다.</span>
       )}
     </div>
   )

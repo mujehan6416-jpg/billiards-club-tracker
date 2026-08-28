@@ -63,6 +63,7 @@ import {
   approveTournamentMatch, declareTournamentForfeit,
   assertOfficialResultCorrectable, finishTournament,
   adminEntersTournamentMatchResult,
+  deleteTournament,
   TournamentSyncError,
 } from '../src/lib/tournamentSync'
 import { buildEmptyBracket, buildTournamentMatches } from '../src/logic/tournamentBracket'
@@ -604,6 +605,56 @@ describe('대진 확정 취소', () => {
 
     await expect(cancelTournamentBracket(TID, CLUB)).rejects.toThrow(/공식 확정된 경기/)
     expect(batches).toHaveLength(0)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════
+describe('대회 삭제', () => {
+  it('참가자·경기·비공개 추첨매핑·대회 본문을 모두 지운다', async () => {
+    getDocsMock.mockImplementation((ref: { path: string }) =>
+      Promise.resolve(
+        ref.path.endsWith('/matches')
+          ? querySnapOf([match(), match({ id: 'r1m2' })])
+          : querySnapOf([participant('a'), participant('b')]),
+      ),
+    )
+
+    await deleteTournament(TID, CLUB)
+
+    expect(batches).toHaveLength(1)
+    const deletedPaths = lastBatch().ops.filter((op) => op.kind === 'delete').map((op) => op.path)
+    expect(deletedPaths.sort()).toEqual([
+      `${BASE}`,
+      `${BASE}/matches/r1m1`,
+      `${BASE}/matches/r1m2`,
+      `${BASE}/participants/participant-a`,
+      `${BASE}/participants/participant-b`,
+      `${BASE}/private/draw`,
+    ].sort())
+  })
+
+  it('경기가 하나도 없어도(참가 신청 단계 대회) 대회 본문은 지운다', async () => {
+    getDocsMock.mockResolvedValue(querySnapOf([]))
+    await deleteTournament(TID, CLUB)
+    const deletedPaths = lastBatch().ops.filter((op) => op.kind === 'delete').map((op) => op.path)
+    expect(deletedPaths).toEqual([`${BASE}/private/draw`, `${BASE}`])
+  })
+
+  it('500개 배치 제한을 넘으면 여러 배치로 나눠 커밋한다', async () => {
+    const manyParticipants = Array.from({ length: 500 }, (_, i) => participant('a', { id: `p${i}`, memberId: `m${i}` }))
+    getDocsMock.mockImplementation((ref: { path: string }) =>
+      Promise.resolve(ref.path.endsWith('/matches') ? querySnapOf([]) : querySnapOf(manyParticipants)),
+    )
+    await deleteTournament(TID, CLUB)
+    expect(batches.length).toBeGreaterThan(1)
+    const totalDeletes = batches.flatMap((b) => b.ops).filter((op) => op.kind === 'delete').length
+    // 참가자 500 + private/draw 1 + 대회 본문 1
+    expect(totalDeletes).toBe(502)
+  })
+
+  it('없는 대회를 지우려 하면 오류를 낸다', async () => {
+    getDocsMock.mockRejectedValue(new Error('네트워크 오류'))
+    await expect(deleteTournament(TID, CLUB)).rejects.toThrow(TournamentSyncError)
   })
 })
 

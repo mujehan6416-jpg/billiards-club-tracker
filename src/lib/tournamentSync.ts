@@ -587,6 +587,49 @@ export async function cancelTournamentBracket(
   }
 }
 
+// ── 대회 삭제 ───────────────────────────────────────────────────────
+
+/**
+ * 대회를 하위 데이터까지 전부 지운다(관리자 전용).
+ *
+ * Firestore는 부모 문서를 지워도 하위 컬렉션(participants·matches·private/draw)을 자동으로
+ * 지우지 않는다 — cancelTournamentBracket과 같은 이유로, 지울 문서를 전부 모아 배치로 지운다.
+ * 대회 상태(draft~finished 어느 단계든)와 무관하게 항상 이 세 하위 컬렉션/문서 + 대회 본문만
+ * 지우면 고아 데이터가 남지 않는다 — 현재 도메인에 이 4곳(clubs/{clubId}/tournaments/{id},
+ * .../participants, .../matches, .../private/draw) 외에 대회 하위 저장 위치가 없기 때문이다
+ * (src/types/tournament.ts 상단 주석에 명시된 전체 저장 경로 목록과 일치한다).
+ *
+ * 배치 하나는 500개 쓰기로 제한되므로(Firestore 제약), createMissingParticipants와 같은
+ * 방식으로 450개씩 나눠 커밋한다. 마지막 배치에서 대회 본문 문서도 함께 지운다.
+ */
+export async function deleteTournament(
+  tournamentId: string,
+  clubId = DEFAULT_CLUB_ID,
+): Promise<void> {
+  try {
+    const [participants, matches] = await Promise.all([
+      fetchTournamentParticipants(tournamentId, clubId),
+      fetchTournamentMatches(tournamentId, clubId),
+    ])
+
+    const refs = [
+      ...participants.map((p) => participantDoc(clubId, tournamentId, p.id)),
+      ...matches.map((m) => matchDoc(clubId, tournamentId, m.id)),
+      drawDoc(clubId, tournamentId),
+      tournamentDoc(clubId, tournamentId),
+    ]
+
+    const BATCH_LIMIT = 450
+    for (let i = 0; i < refs.length; i += BATCH_LIMIT) {
+      const batch = writeBatch(db)
+      for (const ref of refs.slice(i, i + BATCH_LIMIT)) batch.delete(ref)
+      await batch.commit()
+    }
+  } catch (e) {
+    throw toSyncError(e)
+  }
+}
+
 // ── 경기 결과: 입력 → 확인 → 관리자 승인 ─────────────────────────────
 //
 // 아래 함수들은 모두 같은 모양이다: 서버에서 지금 경기를 읽고 → 순수 도메인 함수에 넘겨

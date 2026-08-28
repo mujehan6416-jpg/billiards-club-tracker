@@ -90,9 +90,20 @@ export function TournamentDrawAdmin({
 
     const allSaved = enteredParticipants.every((p) => p.drawNumber !== undefined)
 
-    const entries: TournamentDrawEntry[] = Object.entries(inputs)
-      .map(([participantId, raw]) => ({ participantId, drawNumber: parseInt(raw, 10) }))
-      .filter((e) => Number.isInteger(e.drawNumber))
+    // ⚠ 버그 수정: 예전에는 이 화면에 새로 입력한 값(inputs)만으로 entries를 만들었다.
+    // 그래서 일부 참가자가 이전 세션(또는 새로고침 전)에 이미 번호를 저장해 둔 상태로
+    // 이 화면을 다시 열면 — 화면에는(아래 124번째 줄과 같은 fallback으로) 기존 번호가
+    // 정상적으로 보이는데도 — 그 참가자는 entries에 아예 들어가지 않아 "번호 저장"
+    // 버튼이 영원히 비활성 상태로 남았다(전부 다시 타이핑해야만 저장이 가능했다).
+    // 화면에 보이는 값과 저장 대상을 항상 같은 fallback 규칙으로 맞춘다.
+    const entries: TournamentDrawEntry[] = enteredParticipants
+      .map((p) => {
+        const raw = inputs[p.id] ?? (p.drawNumber !== undefined ? String(p.drawNumber) : undefined)
+        if (raw === undefined) return null
+        const drawNumber = parseInt(raw, 10)
+        return Number.isInteger(drawNumber) ? { participantId: p.id, drawNumber } : null
+      })
+      .filter((e): e is TournamentDrawEntry => e !== null)
 
     // 즉시 안내용 — 아직 다 채우지 않았어도 "지금까지 입력된 것" 안에서 중복만 가볍게 찾는다.
     // (완전한 검증은 아래 validateDrawEntries가 전부 채워졌을 때만 한다.)

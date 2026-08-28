@@ -18,6 +18,7 @@ const loadTournamentDrawMappingMock = vi.fn()
 const confirmTournamentBracketMock = vi.fn()
 const cancelTournamentBracketMock = vi.fn()
 const fetchTournamentMatchesMock = vi.fn()
+const deleteTournamentMock = vi.fn()
 
 vi.mock('../src/lib/tournamentSync', () => ({
   createTournament: (...args: unknown[]) => createTournamentMock(...args),
@@ -36,6 +37,7 @@ vi.mock('../src/lib/tournamentSync', () => ({
   confirmTournamentBracket: (...args: unknown[]) => confirmTournamentBracketMock(...args),
   cancelTournamentBracket: (...args: unknown[]) => cancelTournamentBracketMock(...args),
   fetchTournamentMatches: (...args: unknown[]) => fetchTournamentMatchesMock(...args),
+  deleteTournament: (...args: unknown[]) => deleteTournamentMock(...args),
 }))
 
 import { TournamentTab } from '../src/tabs/TournamentTab'
@@ -379,6 +381,64 @@ describe('관리자 — 참가자 확정 취소 · 대진 확정 취소', () => 
     fireEvent.click(await screen.findByText('대진 확정 취소'))
 
     await waitFor(() => expect(cancelTournamentBracketMock).toHaveBeenCalledWith('t1', 'skkubc'))
+  })
+})
+
+describe('관리자 — 대회 삭제', () => {
+  beforeEach(() => {
+    useAdmin.setState({ isAdmin: true })
+    useAdminAuthStore.setState({ status: 'authorizedAdmin', uid: 'admin-1', email: 'a@test', adminDisplayName: '관리자', errorMessage: null })
+    fetchTournamentsMock.mockResolvedValue([draftTournament])
+    fetchTournamentParticipantsMock.mockResolvedValue(participants)
+  })
+
+  it('일반 회원에게는 대회 삭제 버튼이 보이지 않는다', async () => {
+    useAdmin.setState({ isAdmin: false })
+    useAdminAuthStore.setState({ status: 'unauthenticated', uid: null, email: null, adminDisplayName: null, errorMessage: null })
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    await screen.findByText('테스트 대회', { selector: 'h2' })
+    expect(screen.queryByText('대회 삭제')).not.toBeInTheDocument()
+  })
+
+  it('관리자에게는 대회 삭제 버튼이 보인다', async () => {
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    expect(await screen.findByText('대회 삭제')).toBeInTheDocument()
+  })
+
+  it('확인창에 대회명이 포함되고, 승인하면 deleteTournament가 호출된다', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    deleteTournamentMock.mockResolvedValue(undefined)
+    fetchTournamentsMock.mockResolvedValueOnce([draftTournament]).mockResolvedValue([])
+
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    fireEvent.click(await screen.findByText('대회 삭제'))
+
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('테스트 대회'))
+    await waitFor(() => expect(deleteTournamentMock).toHaveBeenCalledWith('t1', 'skkubc'))
+  })
+
+  it('확인창에서 취소하면 deleteTournament가 호출되지 않는다', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    fireEvent.click(await screen.findByText('대회 삭제'))
+    expect(deleteTournamentMock).not.toHaveBeenCalled()
+  })
+
+  it('삭제 후 대회 목록 화면으로 돌아간다', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    deleteTournamentMock.mockResolvedValue(undefined)
+    fetchTournamentsMock.mockResolvedValueOnce([draftTournament]).mockResolvedValue([])
+
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    fireEvent.click(await screen.findByText('대회 삭제'))
+
+    await waitFor(() => expect(screen.queryByText('대회 삭제')).not.toBeInTheDocument())
+    expect(screen.getByText('🏆 대회')).toBeInTheDocument()
   })
 })
 

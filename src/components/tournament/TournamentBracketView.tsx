@@ -76,7 +76,7 @@ export function TournamentBracketView({
               key={r.roundNumber}
               type="button"
               className={r.roundNumber === activeRound ? 'primary' : ''}
-              style={{ flexShrink: 0, fontSize: 15, padding: '10px 14px', fontWeight: 700 }}
+              style={{ flexShrink: 0, fontSize: 16, padding: '11px 15px', fontWeight: 700 }}
               onClick={() => setActiveRound(r.roundNumber)}
             >
               {confirmed ? `✅ ${roundConfirmedLabel(r.matches[0].playerCountInRound)}` : r.label}
