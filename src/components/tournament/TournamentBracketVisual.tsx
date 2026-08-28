@@ -132,7 +132,7 @@ export function TournamentBracketVisual({
       >
         <span
           style={{
-            fontWeight: isWinner ? 800 : 500, opacity: participantId ? 1 : 0.5, fontSize: 16,
+            fontWeight: isWinner ? 800 : 500, opacity: participantId ? 1 : 0.5, fontSize: 17,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
           }}
         >

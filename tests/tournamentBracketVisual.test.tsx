@@ -135,22 +135,26 @@ describe('전체 대진표', () => {
     expect(Number(path.getAttribute('stroke-width'))).toBeLessThanOrEqual(1.5)
   })
 
-  it('선수 박스가 기존보다 작고(가로·세로), 글자는 박스 안에서 가운데 정렬된다', () => {
+  it('선수 박스가 이전 단계(152×56)보다 다시 작아지고(가로·세로 5~10%), 글자는 박스 안에서 가운데 정렬된다', () => {
     const matches = [normalMatch()]
     render(<TournamentBracketVisual matches={matches} nameOf={nameOf} />)
-    // 기존 크기(176×64, 선수 칸 32)보다 작아야 한다.
-    expect(BRACKET_LAYOUT.CARD_WIDTH).toBeLessThan(176)
-    expect(BRACKET_LAYOUT.CARD_HEIGHT).toBeLessThan(64)
+    // 이번 단계 직전 크기(152×56)보다 5~10% 정도 더 작아야 한다.
+    expect(BRACKET_LAYOUT.CARD_WIDTH).toBeLessThan(152)
+    expect(BRACKET_LAYOUT.CARD_WIDTH / 152).toBeGreaterThan(0.85) // 15% 넘게 줄지는 않는다
+    expect(BRACKET_LAYOUT.CARD_HEIGHT).toBeLessThan(56)
+    expect(BRACKET_LAYOUT.CARD_HEIGHT / 56).toBeGreaterThan(0.85)
     const box = screen.getByText('테스트회원1').closest('div')!
     expect(box).toHaveStyle({ display: 'flex', alignItems: 'center', justifyContent: 'center' })
   })
 
-  it('글자 크기를 키워도 박스 폭을 넘지 않도록 줄바꿈 없이 한 줄로 자른다', () => {
+  it('글자 크기를 1~3px 더 키워도(16→17) 박스 폭을 넘지 않도록 줄바꿈 없이 한 줄로 자른다', () => {
     const matches = [normalMatch()]
     render(<TournamentBracketVisual matches={matches} nameOf={nameOf} />)
-    const nameSpan = screen.getByText('테스트회원1')
-    expect(nameSpan).toHaveStyle({ whiteSpace: 'nowrap' })
-    expect(Number((nameSpan as HTMLElement).style.fontSize.replace('px', ''))).toBeGreaterThan(14)
+    const nameSpan = screen.getByText('테스트회원1') as HTMLElement
+    expect(nameSpan).toHaveStyle({ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })
+    const fontSize = Number(nameSpan.style.fontSize.replace('px', ''))
+    expect(fontSize).toBeGreaterThan(16)
+    expect(fontSize).toBeLessThanOrEqual(19)
   })
 
   it('경기 카드가 계산된 좌표(calculateBracketLayout)에 정확히 배치된다 — 렌더 후 측정이 아니라 계산값 그대로다', () => {
