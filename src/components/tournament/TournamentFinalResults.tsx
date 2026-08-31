@@ -27,10 +27,19 @@ export function TournamentFinalResults({
       <span style={{ fontWeight: 800, fontSize: 19 }}>🏆 대회 최종 결과</span>
       <span style={{ fontSize: 18, fontWeight: 800 }}>우승: {nameOf(placements.championParticipantId)}</span>
       <span style={{ fontSize: 16, fontWeight: 700 }}>준우승: {nameOf(placements.runnerUpParticipantId)}</span>
-      {placements.thirdPlaceParticipantIds.length > 0 && (
-        <span style={{ fontSize: 16, fontWeight: 700 }}>
-          공동 3위: {placements.thirdPlaceParticipantIds.map((id) => nameOf(id)).join(', ')}
-        </span>
+      {placements.fourthPlaceParticipantId !== undefined ? (
+        <>
+          {placements.thirdPlaceParticipantIds.length > 0 && (
+            <span style={{ fontSize: 16, fontWeight: 700 }}>3위: {nameOf(placements.thirdPlaceParticipantIds[0])}</span>
+          )}
+          <span style={{ fontSize: 16, fontWeight: 700 }}>4위: {nameOf(placements.fourthPlaceParticipantId)}</span>
+        </>
+      ) : (
+        placements.thirdPlaceParticipantIds.length > 0 && (
+          <span style={{ fontSize: 16, fontWeight: 700 }}>
+            공동 3위: {placements.thirdPlaceParticipantIds.map((id) => nameOf(id)).join(', ')}
+          </span>
+        )
       )}
       {isAdmin && tournament.status !== 'finished' && (
         <button

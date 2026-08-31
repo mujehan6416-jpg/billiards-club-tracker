@@ -71,13 +71,36 @@ export function calculateBracketLayout(matches: TournamentMatch[]): Map<string, 
         .map((s) => positions.get(s.id)?.centerY)
         .filter((y): y is number => y !== undefined)
       // 소스가 없는 경우는 정상적인 대진 데이터에서는 나오지 않는다(모든 비1라운드 경기는
-      // 반드시 이전 라운드 경기 1~2개가 가리킨다) — 방어적으로 기본값만 둔다.
+      // 반드시 이전 라운드 경기 1~2개가 가리킨다) — 단 3·4위전은 예외라 아래에서 따로 덮어쓴다.
       const centerY = sourceYs.length > 0
         ? sourceYs.reduce((a, b) => a + b, 0) / sourceYs.length
         : BRACKET_LAYOUT.CARD_HEIGHT / 2
       positions.set(m.id, { round: roundNumber, x, centerY })
     }
   })
+
+  // 3·4위전(playerCountInRound === 3) 특수 처리 — 위 일반 규칙은 nextMatchId로 가리키는
+  // 이전 경기가 있어야 위치를 구할 수 있는데, 3·4위전은 "승자 진출"이 아니라 "준결승 패자
+  // 둘이 만나는" 경기라 어느 경기도 nextMatchId로 이 경기를 가리키지 않는다(그 필드의 의미를
+  // 바꾸지 않기 위해 그대로 둔다). 그래서 여기서만 따로, 결승과 똑같은 방식으로 —
+  // "두 준결승 경기 위치의 평균" — centerY를 계산해 덮어쓴다. x(라운드 컬럼)는 이미 일반
+  // 루프에서 정해졌으므로 그대로 두고 centerY만 고친다. 결승과 x가 다른 컬럼이라 겹치지 않는다.
+  const thirdPlaceMatch = matches.find((m) => m.playerCountInRound === 3)
+  if (thirdPlaceMatch) {
+    const withoutThirdPlace = matches.filter((m) => m.playerCountInRound !== 3)
+    const final = withoutThirdPlace.find((m) => m.nextMatchId === null)
+    if (final) {
+      const semiFinalYs = withoutThirdPlace
+        .filter((m) => m.nextMatchId === final.id)
+        .map((m) => positions.get(m.id)?.centerY)
+        .filter((y): y is number => y !== undefined)
+      const existing = positions.get(thirdPlaceMatch.id)
+      if (semiFinalYs.length > 0 && existing) {
+        const centerY = semiFinalYs.reduce((a, b) => a + b, 0) / semiFinalYs.length
+        positions.set(thirdPlaceMatch.id, { ...existing, centerY })
+      }
+    }
+  }
 
   return positions
 }

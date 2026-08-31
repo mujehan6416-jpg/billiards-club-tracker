@@ -480,6 +480,67 @@ describe('calculateFinalPlacements', () => {
     const placements = calculateFinalPlacements(matches)
     expect(placements.thirdPlaceParticipantIds).toEqual([])
   })
+
+  describe('3·4위전이 있는 대회', () => {
+    /** 준결승 패자 둘(p2, p3)이 맞붙는 3·4위전 하나를 공식 확정 상태로 만들어 덧붙인다. */
+    function withThirdPlaceMatch(winnerParticipantId: 'p2' | 'p3'): TournamentMatch[] {
+      const loserParticipantId = winnerParticipantId === 'p2' ? 'p3' : 'p2'
+      const thirdPlaceMatch: TournamentMatch = {
+        id: 'r2-third-place',
+        roundNumber: 3,
+        playerCountInRound: 3,
+        matchNumber: 1,
+        playerAParticipantId: 'p2',
+        playerBParticipantId: 'p3',
+        playerAMemberId: 'm2',
+        playerBMemberId: 'm3',
+        playerAHandicapSnapshot: 20,
+        playerBHandicapSnapshot: 20,
+        scoreA: winnerParticipantId === 'p2' ? 18 : 12,
+        scoreB: winnerParticipantId === 'p3' ? 18 : 12,
+        resultType: 'normal',
+        status: 'official',
+        officialWinnerParticipantId: winnerParticipantId,
+        officialLoserParticipantId: loserParticipantId,
+        nextMatchId: null,
+        nextSlot: null,
+      }
+      return [...playFullBracket4(), thirdPlaceMatch]
+    }
+
+    it('3·4위전 승자가 3위, 패자가 4위로 각각 단독 표시된다(공동 3위가 아니다)', () => {
+      const placements = calculateFinalPlacements(withThirdPlaceMatch('p2'))
+      expect(placements.thirdPlaceParticipantIds).toEqual(['p2'])
+      expect(placements.fourthPlaceParticipantId).toBe('p3')
+    })
+
+    it('3·4위전 승자가 바뀌면 순위도 그대로 따라간다', () => {
+      const placements = calculateFinalPlacements(withThirdPlaceMatch('p3'))
+      expect(placements.thirdPlaceParticipantIds).toEqual(['p3'])
+      expect(placements.fourthPlaceParticipantId).toBe('p2')
+    })
+
+    it('우승·준우승은 3·4위전이 있어도 결승 결과 그대로다', () => {
+      const placements = calculateFinalPlacements(withThirdPlaceMatch('p2'))
+      expect(placements.championParticipantId).toBe('p1')
+      expect(placements.runnerUpParticipantId).toBe('p4')
+    })
+
+    it('3·4위전이 아직 공식 확정 전이면(진행 중), 결정될 때까지는 준결승 패자 둘을 공동 3위로 보여준다', () => {
+      const matches = withThirdPlaceMatch('p2').map((m) =>
+        m.id === 'r2-third-place' ? { ...m, status: 'awaitingResult' as const, officialWinnerParticipantId: undefined, officialLoserParticipantId: undefined } : m,
+      )
+      const placements = calculateFinalPlacements(matches)
+      expect(placements.thirdPlaceParticipantIds.sort()).toEqual(['p2', 'p3'])
+      expect(placements.fourthPlaceParticipantId).toBeUndefined()
+    })
+
+    it('3·4위전이 없는 기존 대회는 fourthPlaceParticipantId가 아예 없다(undefined) — 기존 동작 유지', () => {
+      const placements = calculateFinalPlacements(playFullBracket4())
+      expect(placements.thirdPlaceParticipantIds.sort()).toEqual(['p2', 'p3'])
+      expect(placements.fourthPlaceParticipantId).toBeUndefined()
+    })
+  })
 })
 
 describe('adminEntersMatchResult — 관리자가 현장에서 직접 입력', () => {

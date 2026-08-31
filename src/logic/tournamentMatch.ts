@@ -488,8 +488,16 @@ export function isTournamentRoundOfficial(matches: TournamentMatch[], roundNumbe
 }
 
 /**
- * 최종 순위. 3·4위전을 하지 않으므로 준결승에서 진 두 명이 공동 3위다.
+ * 최종 순위.
+ *
+ * 3·4위전이 없는 대회(대부분)는 기존 그대로 준결승에서 진 두 명이 공동 3위다.
  * 대진 규모가 2면 준결승이 없어 공동 3위는 빈 배열이다.
+ *
+ * 3·4위전이 있는 대회는 playerCountInRound === 3인 경기 하나로 표시된다(새 필드를 두지 않고
+ * 기존 숫자 필드의 예약값만 쓴다 — components/tournament/tournamentDisplay.ts의 roundLabel과
+ * 같은 규칙). 결승을 찾을 때는 이 경기를 제외해야 한다 — 결승과 3·4위전 둘 다 nextMatchId가
+ * null(둘 다 다음 라운드로 이어지지 않는 마지막 경기)이라, 제외하지 않으면 어느 쪽을 결승으로
+ * 찾을지 배열 순서에 좌우된다.
  */
 export function calculateFinalPlacements(matches: TournamentMatch[]): TournamentFinalPlacements {
   const empty: TournamentFinalPlacements = {
@@ -497,16 +505,29 @@ export function calculateFinalPlacements(matches: TournamentMatch[]): Tournament
     runnerUpParticipantId: null,
     thirdPlaceParticipantIds: [],
   }
-  const final = matches.find((m) => m.nextMatchId === null)
+  const thirdPlaceMatch = matches.find((m) => m.playerCountInRound === 3) ?? null
+  const withoutThirdPlace = matches.filter((m) => m.playerCountInRound !== 3)
+  const final = withoutThirdPlace.find((m) => m.nextMatchId === null)
   if (!final) return empty
 
-  const semiFinals = matches.filter((m) => m.nextMatchId === final.id)
-  return {
+  const placements: TournamentFinalPlacements = {
     championParticipantId: final.status === 'official' ? final.officialWinnerParticipantId ?? null : null,
     runnerUpParticipantId: final.status === 'official' ? final.officialLoserParticipantId ?? null : null,
-    thirdPlaceParticipantIds: semiFinals
-      .filter((m) => m.status === 'official' && m.resultType !== 'bye')
-      .map((m) => m.officialLoserParticipantId)
-      .filter((id): id is string => !!id),
+    thirdPlaceParticipantIds: [],
   }
+
+  if (thirdPlaceMatch && thirdPlaceMatch.status === 'official' && thirdPlaceMatch.resultType !== 'bye') {
+    if (thirdPlaceMatch.officialWinnerParticipantId) {
+      placements.thirdPlaceParticipantIds = [thirdPlaceMatch.officialWinnerParticipantId]
+    }
+    placements.fourthPlaceParticipantId = thirdPlaceMatch.officialLoserParticipantId ?? null
+    return placements
+  }
+
+  const semiFinals = withoutThirdPlace.filter((m) => m.nextMatchId === final.id)
+  placements.thirdPlaceParticipantIds = semiFinals
+    .filter((m) => m.status === 'official' && m.resultType !== 'bye')
+    .map((m) => m.officialLoserParticipantId)
+    .filter((id): id is string => !!id)
+  return placements
 }

@@ -296,10 +296,26 @@ export interface TournamentRecord {
   losses: number
 }
 
-/** 대회 최종 순위. 3·4위전이 없으므로 3위는 공동 2명이다. */
+/**
+ * 대회 최종 순위. 계산 결과 타입일 뿐 Firestore에 저장되는 필드가 아니므로, 여기 필드를
+ * 늘려도 문서 스키마에는 영향이 없다.
+ *
+ * 기본(3·4위전 없음): 준결승 공식 패자 2명이 공동 3위 — thirdPlaceParticipantIds에 둘 다 들어가고
+ * fourthPlaceParticipantId는 없다(undefined).
+ *
+ * 3·4위전이 있는 대회: thirdPlaceParticipantIds에는 그 경기의 승자 1명만 들어가고,
+ * fourthPlaceParticipantId에 패자가 채워진다. 3·4위전 여부는 TournamentMatch.playerCountInRound
+ * === 3(일반 대진에서는 나오지 않는 값 — roundLabel()의 "정의되지 않은 규모" 관례와 같은 방식)로
+ * 표시한다 — 새 필드를 추가하지 않고 기존 숫자 필드의 값 하나만 예약해서 쓴다.
+ */
 export interface TournamentFinalPlacements {
   championParticipantId: string | null
   runnerUpParticipantId: string | null
-  /** 준결승 공식 패자 2명(공동 3위). 대진 규모가 2면 준결승이 없어 빈 배열이다. */
+  /**
+   * 3·4위전이 없으면 준결승 공식 패자 2명(공동 3위), 있으면 그 경기의 승자 1명만 들어간다.
+   * 대진 규모가 2면 준결승이 없어 빈 배열이다.
+   */
   thirdPlaceParticipantIds: string[]
+  /** 3·4위전이 있고 공식 확정됐을 때만 채워진다. 없으면 undefined(기존 공동 3위 동작 유지). */
+  fourthPlaceParticipantId?: string | null
 }

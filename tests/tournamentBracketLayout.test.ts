@@ -119,3 +119,64 @@ describe('calculateBracketLayout — 부전승', () => {
     expect(layout.get(nextId)!.centerY).toBeCloseTo(expected, 6)
   })
 })
+
+describe('calculateBracketLayout — 3·4위전', () => {
+  /** 4강 대진에 준결승 패자 둘(r1경기1·2)이 맞붙는 3·4위전 하나를 덧붙인다. */
+  function bracket4WithThirdPlace() {
+    const matches = bracket(4)
+    const thirdPlaceMatch = {
+      id: 'third-place',
+      roundNumber: 3,
+      playerCountInRound: 3,
+      matchNumber: 1,
+      playerAParticipantId: 'p-1',
+      playerBParticipantId: 'p-2',
+      playerAMemberId: 'm-1',
+      playerBMemberId: 'm-2',
+      playerAHandicapSnapshot: 20,
+      playerBHandicapSnapshot: 20,
+      scoreA: 18,
+      scoreB: 12,
+      resultType: 'normal' as const,
+      status: 'official' as const,
+      officialWinnerParticipantId: 'p-1',
+      officialLoserParticipantId: 'p-2',
+      nextMatchId: null,
+      nextSlot: null,
+    }
+    return [...matches, thirdPlaceMatch]
+  }
+
+  it('3·4위전의 centerY는 두 준결승(1라운드) 경기 위치의 평균이다', () => {
+    const matches = bracket4WithThirdPlace()
+    const layout = calculateBracketLayout(matches)
+    const yA = layout.get(tournamentMatchId(1, 1))!.centerY
+    const yB = layout.get(tournamentMatchId(1, 2))!.centerY
+    expect(layout.get('third-place')!.centerY).toBeCloseTo((yA + yB) / 2, 6)
+  })
+
+  it('3·4위전은 결승과 x(라운드 컬럼)가 다르다 — 겹치지 않는다', () => {
+    const matches = bracket4WithThirdPlace()
+    const layout = calculateBracketLayout(matches)
+    const finalPos = layout.get(tournamentMatchId(2, 1))!
+    const thirdPos = layout.get('third-place')!
+    expect(thirdPos.x).not.toBe(finalPos.x)
+  })
+
+  it('3·4위전이 있어도 나머지 경기(1라운드·결승) 좌표는 그대로다(회귀 없음)', () => {
+    const withThird = calculateBracketLayout(bracket4WithThirdPlace())
+    const without = calculateBracketLayout(bracket(4))
+    for (const id of [tournamentMatchId(1, 1), tournamentMatchId(1, 2), tournamentMatchId(2, 1)]) {
+      expect(withThird.get(id)).toEqual(without.get(id))
+    }
+  })
+
+  it('3·4위전 위치에 NaN·undefined가 없다', () => {
+    const matches = bracket4WithThirdPlace()
+    const layout = calculateBracketLayout(matches)
+    const pos = layout.get('third-place')!
+    expect(pos).toBeTruthy()
+    expect(Number.isFinite(pos.x)).toBe(true)
+    expect(Number.isFinite(pos.centerY)).toBe(true)
+  })
+})
