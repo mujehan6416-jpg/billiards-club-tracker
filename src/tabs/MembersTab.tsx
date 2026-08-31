@@ -322,16 +322,35 @@ export function MembersTab() {
       )}
 
       {me ? (
-        <div className="card member-hero">
-          <span className="hero-badge">내 실적</span>
-          <MemberCardBody
-            displayName={labelOf(me)}
-            roleLabel={roleOf(me)}
-            handicap={me.handicap}
-            stat={statOf(me.id)}
-            size="hero"
-          />
-        </div>
+        <>
+          <div
+            className="card member-hero"
+            style={{
+              cursor: 'pointer',
+              ...(detailId === me.id
+                ? { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottom: 'none' }
+                : {}),
+            }}
+            onClick={() => toggleDetail(me.id)}
+          >
+            <span className="hero-badge">내 실적</span>
+            <MemberCardBody
+              displayName={labelOf(me)}
+              roleLabel={roleOf(me)}
+              handicap={me.handicap}
+              stat={statOf(me.id)}
+              size="hero"
+            />
+          </div>
+          {detailId === me.id && (
+            <MemberDetail
+              member={me}
+              rank={rankMap.get(me.id)}
+              total={activeCount}
+              onClose={() => setDetailId(null)}
+            />
+          )}
+        </>
       ) : (
         <p className="muted" style={{ textAlign: 'center', padding: '10px 0' }}>
           회원 로그인 시 내 실적이 표시됩니다.
