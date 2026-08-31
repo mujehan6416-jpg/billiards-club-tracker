@@ -157,18 +157,18 @@ function MemberDetail({ member, rank, total, onClose }: {
         <button onClick={onClose}>닫기</button>
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        <div className="metric" style={{ flex: 1 }}>
+        <div className="metric" style={{ flex: 1, alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
           <span className="metric-label">현재 핸디</span>
           <span className="metric-value">{member.handicap}</span>
         </div>
         {rank !== undefined && (
-          <div className="metric" style={{ flex: 1 }}>
+          <div className="metric" style={{ flex: 1, alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
             <span className="metric-label">핸디 순위</span>
             <span className="metric-value">{rank}위 <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--muted)' }}>/ {total}명</span></span>
           </div>
         )}
       </div>
-      <div className="muted" style={{ marginBottom: 6 }}>핸디 변화 이력</div>
+      <div className="muted" style={{ marginBottom: 6, textAlign: 'center' }}>핸디 변화 이력</div>
       {history.length === 0 ? (
         <p className="muted">기록 없음</p>
       ) : (
@@ -179,7 +179,10 @@ function MemberDetail({ member, rank, total, onClose }: {
             const date = h.changedAt.slice(0, 10)
             const time = h.changedAt.slice(11, 16)
             return (
-              <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+              <li key={i} style={{
+                display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)', flexWrap: 'wrap',
+              }}>
                 <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 80 }}>{date} {time}</span>
                 <span style={{ fontWeight: 600, fontSize: 15, minWidth: 24 }}>{h.value}</span>
                 {diff !== null && (
