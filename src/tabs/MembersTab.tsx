@@ -180,17 +180,22 @@ function MemberDetail({ member, rank, total, onClose }: {
             const time = h.changedAt.slice(11, 16)
             return (
               <li key={i} style={{
-                display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)', flexWrap: 'wrap',
+                display: 'grid', gridTemplateColumns: '104px 30px 46px 1fr', columnGap: 8,
+                alignItems: 'center', justifyItems: 'start',
+                padding: '7px 0', borderBottom: '1px solid var(--border)',
               }}>
-                <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 80 }}>{date} {time}</span>
-                <span style={{ fontWeight: 600, fontSize: 15, minWidth: 24 }}>{h.value}</span>
+                <span style={{ fontSize: 12, color: 'var(--muted)', gridColumn: 1, whiteSpace: 'nowrap' }}>{date} {time}</span>
+                <span style={{ fontWeight: 600, fontSize: 15, gridColumn: 2 }}>{h.value}</span>
                 {diff !== null && (
-                  <span style={{ fontSize: 12, color: diff > 0 ? '#1d9e75' : diff < 0 ? '#c0392b' : 'var(--muted)' }}>
+                  <span style={{ fontSize: 12, color: diff > 0 ? '#1d9e75' : diff < 0 ? '#c0392b' : 'var(--muted)', gridColumn: 3 }}>
                     {diff > 0 ? `▲ +${diff}` : diff < 0 ? `▼ ${diff}` : '─'}
                   </span>
                 )}
-                {i === 0 && <span style={{ fontSize: 11, background: '#e1f5ee', color: '#0f6e56', borderRadius: 4, padding: '2px 6px' }}>현재</span>}
+                {i === 0 && (
+                  <span style={{ fontSize: 11, background: '#e1f5ee', color: '#0f6e56', borderRadius: 4, padding: '2px 6px', gridColumn: 4 }}>
+                    현재
+                  </span>
+                )}
               </li>
             )
           })}

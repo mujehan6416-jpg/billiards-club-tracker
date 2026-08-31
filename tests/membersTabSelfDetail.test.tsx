@@ -115,3 +115,49 @@ describe('회원 상세 — 이력이 없는 회원(본인/타인 공통)', () =
     expect(screen.getByText('기록 없음')).toBeInTheDocument()
   })
 })
+
+describe('회원 상세 — 핸디 변화 이력 행의 열 정렬(이번 수정)', () => {
+  beforeEach(() => {
+    useAuth.setState({ memberId: 'm1', memberName: '테스트회원A', isGuest: false })
+  })
+
+  // m1의 이력 3건은 각각 다른 모양(증감 없음 / 증감만 있음 / 증감+현재 배지)을 가진다.
+  // 이 세 모양 모두에서 날짜가 같은 열(gridColumn 1)에 있어야 시작 X 좌표가 동일해진다.
+  it('증감·현재 배지 유무와 관계없이 모든 행이 같은 grid-template-columns를 공유하고, 날짜는 항상 1열에 있다', () => {
+    render(<MembersTab />)
+    const heroCard = document.querySelector('.member-hero') as HTMLElement
+    fireEvent.click(heroCard)
+
+    const rows = Array.from(document.querySelectorAll('ul li')).filter((li) => /\d{4}-\d{2}-\d{2}/.test(li.textContent ?? ''))
+    expect(rows.length).toBe(3)
+
+    const templates = rows.map((li) => (li as HTMLElement).style.gridTemplateColumns)
+    expect(new Set(templates).size).toBe(1) // 세 행 모두 같은 열 구조
+
+    rows.forEach((li) => {
+      const dateCell = li.querySelector('span') as HTMLElement
+      expect(dateCell.style.gridColumn).toBe('1')
+    })
+  })
+
+  it('증감이 없는 행(가장 오래된 기록)도 핸디 값이 2열, 날짜가 1열에 고정된다', () => {
+    render(<MembersTab />)
+    const heroCard = document.querySelector('.member-hero') as HTMLElement
+    fireEvent.click(heroCard)
+
+    const oldestRow = Array.from(document.querySelectorAll('ul li')).find((li) => li.textContent?.includes('2025-12-31'))!
+    const cells = Array.from(oldestRow.children) as HTMLElement[]
+    expect(cells.length).toBe(2) // 날짜 + 핸디 값만(증감·배지 없음)
+    expect(cells[0].style.gridColumn).toBe('1')
+    expect(cells[1].style.gridColumn).toBe('2')
+  })
+
+  it('"현재" 배지는 4열에 고정된다', () => {
+    render(<MembersTab />)
+    const heroCard = document.querySelector('.member-hero') as HTMLElement
+    fireEvent.click(heroCard)
+
+    const badge = screen.getByText('현재')
+    expect((badge as HTMLElement).style.gridColumn).toBe('4')
+  })
+})
