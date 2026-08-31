@@ -10,6 +10,7 @@ import { DeviceLinkCard } from '../components/memberLink/DeviceLinkCard'
 import { DeviceLinkAdminCard } from '../components/memberLink/DeviceLinkAdminCard'
 import { SplitMigrationCard } from '../components/admin/SplitMigrationCard'
 import { MemberIndexBackfillCard } from '../components/admin/MemberIndexBackfillCard'
+import { TournamentApr18ImportCard } from '../components/admin/TournamentApr18ImportCard'
 import { todayStr } from '../lib/date'
 import { winnerId } from '../logic/game'
 import { fmtScore } from '../lib/format'
@@ -564,6 +565,10 @@ export function SettingsTab() {
           {/* 4-2. 새 저장 구조로 데이터 복사 (Firebase 관리자 인증 필요).
               기존 데이터는 그대로 두고 같은 내용을 한 벌 더 복사만 한다. */}
           <SplitMigrationCard />
+
+          {/* 4-3. 2026-04-18 과거 대회(제2회 회장배 당구대회·챌린전) 가져오기 (Firebase 관리자
+              인증 필요). 이번 단계는 dry-run까지만 — 실제 적용 버튼은 비활성화돼 있다. */}
+          <TournamentApr18ImportCard />
 
           {/* 5. 데이터 관리 — 회원·경기·모임·회계 변경은 이제 자동으로 서버에 저장되므로,
               평소에 눌러야 하는 버튼은 "서버 내용 받기"뿐이다. 수동 올리기는 지우지 않고 남겨
