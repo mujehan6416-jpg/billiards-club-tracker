@@ -2,6 +2,7 @@ import type { Game, Member, Session } from '../types'
 import type {
   Tournament, TournamentMatch, TournamentParticipant, TournamentResultType,
 } from '../types/tournament'
+import { calculateFinalPlacements } from '../logic/tournamentMatch'
 
 // 2026-04-18 과거 대회(제2회 회장배 당구대회 + 제2회 회장배 챌린전) 복원 전용 가져오기 로직.
 //
@@ -370,5 +371,216 @@ export function buildApr18ImportPlan(
     totalActualGameCount: regularGames.length + challengerGames.length,
     totalByeCount: regularByes + challengerByes,
     gameDuplicateCheck: gameDup,
+  }
+}
+
+// ── 실제 적용(apply) 가능 여부 판정 ──────────────────────────────────────
+
+export interface ApplyEligibility {
+  eligible: boolean
+  reasons: string[]
+}
+
+/**
+ * "실제 적용" 버튼을 활성화해도 되는지 판정한다. 이번 2026-04-18 가져오기 전용으로
+ * 목표 수치(대회 2개, 정기대회 14경기, 챌린전 9경기, 총 23경기, 부전진출 3건)를 그대로
+ * 확인 조건에 박아 둔다 — 범용 import 도구가 아니라 이번 두 대회 전용이기 때문이다.
+ *
+ * isAdminAuthorized는 호출부가 Firebase 관리자 인증 상태(useAdminAuthStore.status ===
+ * 'authorizedAdmin')를 확인해서 넘긴다 — 이 파일은 Firebase를 모르므로 판정 자체는 하지 않고
+ * 이미 확인된 결과만 받는다.
+ */
+export function evaluateApplyEligibility(plan: Apr18ImportPlan, isAdminAuthorized: boolean): ApplyEligibility {
+  const reasons: string[] = []
+  if (!plan.ok) reasons.push('검증 미리보기를 통과하지 못했습니다.')
+  if (plan.mapping.totalCount !== 14 || plan.mapping.mappedCount !== 14) reasons.push('회원 이름 매핑이 14/14가 아닙니다.')
+  if (plan.mapping.missingNames.length > 0) reasons.push('누락된 회원이 있습니다.')
+  if (plan.mapping.duplicateNames.length > 0) reasons.push('동명이인이 있습니다.')
+  if (!plan.regular.duplicateCheck.ok) reasons.push('정기대회 이름이 이미 존재합니다.')
+  if (!plan.challenger.duplicateCheck.ok) reasons.push('챌린전 이름이 이미 존재합니다.')
+  if (!plan.gameDuplicateCheck.ok) reasons.push('같은 날짜에 이미 저장된 경기가 있습니다.')
+  if (plan.totalTournamentCount !== 2) reasons.push('대회 수가 2개가 아닙니다.')
+  if (plan.regular.actualGameCount !== 14) reasons.push('정기대회 실제 경기가 14건이 아닙니다.')
+  if (plan.challenger.actualGameCount !== 9) reasons.push('챌린전 실제 경기가 9건이 아닙니다.')
+  if (plan.totalActualGameCount !== 23) reasons.push('총 실제 경기가 23건이 아닙니다.')
+  if (plan.totalByeCount !== 3) reasons.push('부전진출이 3건이 아닙니다.')
+  if (!isAdminAuthorized) reasons.push('관리자 Firebase 인증이 확인되지 않았습니다.')
+  return { eligible: reasons.length === 0, reasons }
+}
+
+// ── 실제 Firestore 문서 계산(순수 함수 — 아직 아무것도 쓰지 않는다) ────────────────────
+
+export interface Apr18BuiltWrites {
+  session: { id: string; date: string; attendeeIds: string[] }
+  games: { sessionId: string; game: Game }[]
+  tournaments: Tournament[]
+  participants: { tournamentId: string; participant: TournamentParticipant }[]
+  matches: { tournamentId: string; match: TournamentMatch }[]
+}
+
+function bracketSizeFor(participantCount: number): number {
+  return Math.pow(2, Math.ceil(Math.log2(Math.max(participantCount, 1))))
+}
+
+/**
+ * 실제로 Firestore에 쓸 문서들을 전부 계산한다. 이 함수 자체는 아무것도 쓰지 않는다 —
+ * 결과를 하나의 writeBatch로 커밋하는 것은 호출부(Firebase를 아는 별도 파일)의 책임이다.
+ *
+ * 대회 2개는 이미 완전히 끝난 과거 기록이므로 라이브 진행(추첨→확정→승인) 단계를 거치지
+ * 않고 바로 status:'finished'로 만든다 — 결과가 이미 확정된 사실이기 때문이다.
+ */
+export function buildApr18FirestoreWrites(
+  spec: Apr18ImportSpec,
+  nameToId: Map<string, string>,
+  input: { adminUid: string; at: string; makeId: () => string },
+): Apr18BuiltWrites {
+  const handicapByName = new Map(spec.participants.map((p) => [p.name, p.handicap]))
+
+  const regularBracket = buildBracketFromSpec(spec.regular, nameToId, handicapByName, 'R')
+  const challengerBracket = buildBracketFromSpec(spec.challenger, nameToId, handicapByName, 'C')
+  const regularGames = buildGamesFromSpec(spec.regular, nameToId, handicapByName, input.makeId)
+  const challengerGames = buildGamesFromSpec(spec.challenger, nameToId, handicapByName, input.makeId)
+
+  const regularPlacements = calculateFinalPlacements(regularBracket.matches)
+  const challengerPlacements = calculateFinalPlacements(challengerBracket.matches)
+
+  const regularTournamentId = input.makeId()
+  const challengerTournamentId = input.makeId()
+
+  const regularTournament: Tournament = {
+    id: regularTournamentId,
+    name: spec.regular.name,
+    date: spec.regular.date,
+    timeLimitMinutes: spec.regular.timeLimitMinutes,
+    status: 'finished',
+    participantCount: regularBracket.participants.length,
+    bracketSize: bracketSizeFor(regularBracket.participants.length),
+    createdAt: input.at,
+    createdByAdminUid: input.adminUid,
+    drawConfirmedAt: input.at,
+    completedAt: input.at,
+    championParticipantId: regularPlacements.championParticipantId,
+    runnerUpParticipantId: regularPlacements.runnerUpParticipantId,
+  }
+  const challengerTournament: Tournament = {
+    id: challengerTournamentId,
+    name: spec.challenger.name,
+    date: spec.challenger.date,
+    timeLimitMinutes: spec.challenger.timeLimitMinutes,
+    status: 'finished',
+    participantCount: challengerBracket.participants.length,
+    bracketSize: bracketSizeFor(challengerBracket.participants.length),
+    createdAt: input.at,
+    createdByAdminUid: input.adminUid,
+    drawConfirmedAt: input.at,
+    completedAt: input.at,
+    championParticipantId: challengerPlacements.championParticipantId,
+    runnerUpParticipantId: challengerPlacements.runnerUpParticipantId,
+  }
+
+  const sessionId = input.makeId()
+  const attendeeIds = [...new Set([
+    ...regularBracket.participants.map((p) => p.id),
+    ...challengerBracket.participants.map((p) => p.id),
+  ])]
+
+  return {
+    session: { id: sessionId, date: spec.regular.date, attendeeIds },
+    games: [
+      ...regularGames.map((game) => ({ sessionId, game })),
+      ...challengerGames.map((game) => ({ sessionId, game })),
+    ],
+    tournaments: [regularTournament, challengerTournament],
+    participants: [
+      ...regularBracket.participants.map((participant) => ({ tournamentId: regularTournamentId, participant })),
+      ...challengerBracket.participants.map((participant) => ({ tournamentId: challengerTournamentId, participant })),
+    ],
+    matches: [
+      ...regularBracket.matches.map((match) => ({ tournamentId: regularTournamentId, match })),
+      ...challengerBracket.matches.map((match) => ({ tournamentId: challengerTournamentId, match })),
+    ],
+  }
+}
+
+// ── 적용 오케스트레이션(의존성 주입 — 이 함수도 Firebase를 모른다) ──────────────────────
+
+export interface Apr18ApplyDeps {
+  /** admins/{uid} 문서를 다시 읽어 관리자 여부를 확인한다. */
+  fetchAdminDoc: (uid: string) => Promise<{ active: boolean } | null>
+  /** 회원·모임(경기 포함) 최신 상태를 다시 읽는다(적용 직전 중복 재검사용). */
+  loadState: () => Promise<{ members: Pick<Member, 'id' | 'name'>[]; sessions: Session[] }>
+  /** 대회 목록을 다시 읽는다(적용 직전 중복 재검사용). */
+  fetchTournaments: () => Promise<Pick<Tournament, 'name' | 'date'>[]>
+  /** 계산된 문서 전체를 하나의 원자적 쓰기로 커밋한다. */
+  commitBatch: (writes: Apr18BuiltWrites) => Promise<void>
+  makeId: () => string
+  now: () => string
+}
+
+export interface Apr18ApplyResult {
+  ok: boolean
+  message: string
+  summary?: { tournaments: number; actualGames: number; byeAdvances: number }
+}
+
+/**
+ * 실제 적용. Firebase를 전혀 import하지 않는다 — 필요한 모든 I/O는 deps로 주입받는다.
+ * 그래서 이 함수는 mock/fake deps만으로 완전히 단위 테스트할 수 있고, 실제 Firestore
+ * 연결 코드는 아주 얇은 별도 파일(tournamentApr18ApplyFirestore.ts)에만 있다.
+ *
+ * 순서:
+ *   1. 관리자 인증을 서버 문서 기준으로 다시 확인한다(세션에 남은 상태를 신뢰하지 않는다).
+ *   2. 회원·모임·대회를 다시 읽어 dry-run을 한 번 더 계산한다 — 미리보기 이후 운영 DB
+ *      상태가 바뀌었을 수 있기 때문이다. 조건을 하나라도 만족하지 못하면 아무것도 쓰지
+ *      않고 중단한다.
+ *   3. 통과했을 때만 실제 쓸 문서를 계산해 commitBatch 한 번으로 전부 커밋한다(원자적).
+ */
+export async function applyApr18Import(
+  spec: Apr18ImportSpec,
+  input: { adminUid: string },
+  deps: Apr18ApplyDeps,
+): Promise<Apr18ApplyResult> {
+  const adminDoc = await deps.fetchAdminDoc(input.adminUid)
+  if (!adminDoc || adminDoc.active !== true) {
+    return { ok: false, message: '관리자 권한을 다시 확인하지 못했습니다. 다시 로그인해 주세요.' }
+  }
+
+  const [state, existingTournaments] = await Promise.all([deps.loadState(), deps.fetchTournaments()])
+  const plan = buildApr18ImportPlan(spec, {
+    members: state.members, existingSessions: state.sessions, existingTournaments,
+  })
+  const eligibility = evaluateApplyEligibility(plan, true)
+  if (!eligibility.eligible) {
+    return { ok: false, message: `적용 직전 재검사에서 문제를 발견해 중단했습니다: ${eligibility.reasons.join(' / ')}` }
+  }
+
+  const allNames = [...new Set([
+    ...spec.participants.map((p) => p.name),
+    ...namesUsedInSpec(spec.regular),
+    ...namesUsedInSpec(spec.challenger),
+  ])]
+  const mapping = mapParticipantNames(state.members, allNames)
+  if (!mapping.ok) {
+    return { ok: false, message: '적용 직전 재검사에서 회원 매핑 문제를 발견해 중단했습니다.' }
+  }
+
+  const writes = buildApr18FirestoreWrites(spec, mapping.nameToId, {
+    adminUid: input.adminUid, at: deps.now(), makeId: deps.makeId,
+  })
+
+  try {
+    await deps.commitBatch(writes)
+  } catch {
+    return { ok: false, message: '저장 중 오류가 발생했습니다. 운영 데이터가 바뀌지 않았을 수 있으니, 다시 검증 미리보기부터 확인한 뒤 재시도해 주세요.' }
+  }
+
+  return {
+    ok: true,
+    message: '적용을 완료했습니다.',
+    summary: {
+      tournaments: writes.tournaments.length,
+      actualGames: writes.games.length,
+      byeAdvances: plan.totalByeCount,
+    },
   }
 }
