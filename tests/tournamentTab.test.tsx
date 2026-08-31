@@ -102,23 +102,120 @@ describe('회원 참가/불참', () => {
     await waitFor(() => expect(setParticipantEntryStatusMock).toHaveBeenCalledWith('t1', 'm1', 'declined', 'skkubc'))
   })
 
-  it('현재 상태가 화면에 표시된다', async () => {
+  it('참가 상태로 재접속하면 최초 선택 화면 대신 완료 요약(현재 선택 대신 완료 표시 + 참가인원 + 명단)이 보인다', async () => {
     fetchTournamentParticipantsMock.mockResolvedValue([
       { ...participants[0], entryStatus: 'entered' },
       participants[1],
     ])
     render(<TournamentTab />)
     fireEvent.click(await screen.findByText('테스트 대회'))
-    expect(await screen.findByText('현재 선택: 참가')).toBeInTheDocument()
+    expect(await screen.findByText('✅ 참가신청 완료')).toBeInTheDocument()
+    expect(screen.getByText('현재 참가신청 1명')).toBeInTheDocument()
+    expect(screen.getByText('참가자 명단 1명')).toBeInTheDocument()
+    expect(screen.getByText('테스트회원A')).toBeInTheDocument()
+    // 아직 참가/불참 선택 버튼(최초 선택 화면)은 보이지 않는다 — "참가신청 변경"을 눌러야 나온다.
+    expect(screen.queryByText('참가합니다')).not.toBeInTheDocument()
+    expect(screen.getByText('참가신청 변경')).toBeInTheDocument()
   })
 
-  it('참가자 확정 후에는 참가/불참 버튼이 사라진다', async () => {
+  it('불참 상태로 재접속하면 불참 요약이 보이고, 명단에는 본인이 없다', async () => {
+    fetchTournamentParticipantsMock.mockResolvedValue([
+      { ...participants[0], entryStatus: 'declined' },
+      { ...participants[1], entryStatus: 'entered' },
+    ])
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    expect(await screen.findByText('불참으로 신청되어 있습니다.')).toBeInTheDocument()
+    expect(screen.getByText('현재 참가신청 1명')).toBeInTheDocument()
+    expect(screen.queryByText('테스트회원A')).not.toBeInTheDocument()
+    expect(screen.getByText('테스트회원B')).toBeInTheDocument()
+  })
+
+  it('"참가신청 변경"을 누르면 다시 참가/불참 버튼이 보이고, 선택하면 저장된다', async () => {
+    fetchTournamentParticipantsMock.mockResolvedValue([
+      { ...participants[0], entryStatus: 'entered' },
+      participants[1],
+    ])
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    fireEvent.click(await screen.findByText('참가신청 변경'))
+    expect(screen.getByText('현재 신청 상태: 참가')).toBeInTheDocument()
+    fireEvent.click(await screen.findByText('참가하지 않습니다'))
+    await waitFor(() => expect(setParticipantEntryStatusMock).toHaveBeenCalledWith('t1', 'm1', 'declined', 'skkubc'))
+  })
+
+  it('참가 → 불참 변경이 성공하면 참가인원이 줄고 본인이 명단에서 빠진다(같은 participant 문서 재사용)', async () => {
+    fetchTournamentParticipantsMock.mockResolvedValueOnce([
+      { ...participants[0], entryStatus: 'entered' },
+      { ...participants[1], entryStatus: 'entered' },
+    ])
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    expect(await screen.findByText('현재 참가신청 2명')).toBeInTheDocument()
+
+    fetchTournamentParticipantsMock.mockResolvedValueOnce([
+      { ...participants[0], entryStatus: 'declined' },
+      { ...participants[1], entryStatus: 'entered' },
+    ])
+    fireEvent.click(screen.getByText('참가신청 변경'))
+    fireEvent.click(await screen.findByText('참가하지 않습니다'))
+
+    await waitFor(() => expect(setParticipantEntryStatusMock).toHaveBeenCalledWith('t1', 'm1', 'declined', 'skkubc'))
+    expect(setParticipantEntryStatusMock).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('현재 참가신청 1명')).toBeInTheDocument()
+    expect(screen.queryByText('테스트회원A')).not.toBeInTheDocument()
+    expect(screen.getByText('불참으로 신청되어 있습니다.')).toBeInTheDocument()
+  })
+
+  it('불참 → 참가 변경이 성공하면 참가인원이 늘고 본인이 명단에 다시 나타난다', async () => {
+    fetchTournamentParticipantsMock.mockResolvedValueOnce([
+      { ...participants[0], entryStatus: 'declined' },
+      { ...participants[1], entryStatus: 'entered' },
+    ])
+    render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    expect(await screen.findByText('현재 참가신청 1명')).toBeInTheDocument()
+
+    fetchTournamentParticipantsMock.mockResolvedValueOnce([
+      { ...participants[0], entryStatus: 'entered' },
+      { ...participants[1], entryStatus: 'entered' },
+    ])
+    fireEvent.click(screen.getByText('참가신청 변경'))
+    fireEvent.click(await screen.findByText('참가합니다'))
+
+    await waitFor(() => expect(setParticipantEntryStatusMock).toHaveBeenCalledWith('t1', 'm1', 'entered', 'skkubc'))
+    expect(await screen.findByText('현재 참가신청 2명')).toBeInTheDocument()
+    expect(screen.getByText('테스트회원A')).toBeInTheDocument()
+    expect(screen.getByText('✅ 참가신청 완료')).toBeInTheDocument()
+  })
+
+  it('참가자 확정(마감) 후에는 참가/불참 버튼과 참가신청 변경 버튼이 모두 사라지지만, 참가인원·명단은 계속 보인다', async () => {
     fetchTournamentsMock.mockResolvedValue([{ ...draftTournament, status: 'entryClosed', participantCount: 1 }])
+    fetchTournamentParticipantsMock.mockResolvedValue([
+      { ...participants[0], entryStatus: 'entered' },
+      participants[1],
+    ])
     render(<TournamentTab />)
     fireEvent.click(await screen.findByText('테스트 대회'))
     await screen.findByText('내 참가 여부')
     expect(screen.queryByText('참가합니다')).not.toBeInTheDocument()
-    expect(screen.getByText('참가자가 확정되어 더 이상 변경할 수 없습니다.')).toBeInTheDocument()
+    expect(screen.queryByText('참가신청 변경')).not.toBeInTheDocument()
+    expect(screen.getByText('참가신청이 마감되어 더 이상 변경할 수 없습니다.')).toBeInTheDocument()
+    expect(screen.getByText('현재 참가신청 1명')).toBeInTheDocument()
+    expect(screen.getByText('참가자 명단 1명')).toBeInTheDocument()
+    expect(screen.getByText('테스트회원A')).toBeInTheDocument()
+  })
+
+  it('참가자 명단에는 이름만 표시되고 전화번호·이메일·회원ID 등은 노출되지 않는다', async () => {
+    fetchTournamentParticipantsMock.mockResolvedValue([
+      { ...participants[0], entryStatus: 'entered' },
+      participants[1],
+    ])
+    const { container } = render(<TournamentTab />)
+    fireEvent.click(await screen.findByText('테스트 대회'))
+    await screen.findByText('참가자 명단 1명')
+    expect(container.textContent).not.toMatch(/@|010-|dev-tm-/)
+    expect(container.innerHTML).not.toContain('"m1"')
   })
 })
 
@@ -464,14 +561,15 @@ describe('회원 — 공개 대진표', () => {
     render(<TournamentTab />)
     fireEvent.click(await screen.findByText('테스트 대회'))
     await waitFor(() => expect(fetchTournamentMatchesMock).toHaveBeenCalledWith('t1', 'skkubc'))
-    expect(await screen.findByText('테스트회원A')).toBeInTheDocument()
-    expect(screen.getByText('테스트회원B')).toBeInTheDocument()
+    // 참가신청 카드의 참가자 명단에도 같은 이름이 나오므로(§10~11), 대진표 쪽은 개수로 확인한다.
+    expect((await screen.findAllByText('테스트회원A')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('테스트회원B').length).toBeGreaterThan(0)
   })
 
   it('회원 화면에는 관리자 전용 대진 관리 버튼이 없다', async () => {
     render(<TournamentTab />)
     fireEvent.click(await screen.findByText('테스트 대회'))
-    await screen.findByText('테스트회원A')
+    await screen.findAllByText('테스트회원A')
     expect(screen.queryByText('대진 확정 취소')).not.toBeInTheDocument()
     expect(screen.queryByText('추첨 준비')).not.toBeInTheDocument()
   })
@@ -479,7 +577,7 @@ describe('회원 — 공개 대진표', () => {
   it('★ 회원 화면 경로는 관리자 전용 loadTournamentDrawMapping을 절대 호출하지 않는다', async () => {
     render(<TournamentTab />)
     fireEvent.click(await screen.findByText('테스트 대회'))
-    await screen.findByText('테스트회원A')
+    await screen.findAllByText('테스트회원A')
     expect(loadTournamentDrawMappingMock).not.toHaveBeenCalled()
   })
 })

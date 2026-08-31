@@ -658,6 +658,7 @@ export function TournamentTab({
           <TournamentEntryCard
             tournament={selected}
             participant={myParticipant}
+            enteredParticipants={enteredParticipants}
             onSetEntryStatus={handleSetOwnEntryStatus}
             busy={busy}
           />
