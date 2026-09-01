@@ -76,6 +76,13 @@ export interface Session {
   date: string // YYYY-MM-DD
   type?: 'regular' | 'flash'  // 미지정 = regular
   approved?: boolean           // 번개모임: 관리자 승인 여부
+  /**
+   * 이 세션이 일반 클럽 모임이 아니라 토너먼트 실제 경기를 담는 내부 통계용 세션인지.
+   * 'tournament'면 MeetingTab의 일반 모임 목록에서 제외된다(logic/stats.ts의 통계 계산에는
+   * 그대로 포함된다 — type이 없으면 approvedSessions()가 'regular'와 동일하게 취급하기
+   * 때문에, 회원 실적에는 일반 경기와 똑같이 반영된다). 미지정이면 기존 세션과 완전히 같다.
+   */
+  source?: 'tournament'
   attendeeIds: string[]
   lineup?: LineupMatch[]       // 게시된 대진표 (일반회원 열람용)
   sitOutIds?: string[]         // 대진표상 대기자 (과거 버전 호환용 — round1ParticipantIds가 없으면 이 값으로 유추)

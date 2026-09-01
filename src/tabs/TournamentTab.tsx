@@ -61,13 +61,23 @@ import {
 
 type View = 'list' | 'create' | 'detail'
 
-/** 이미 계산된 대진 노드·좌석으로 경기 목록을 만든다. 순수 함수 두 개를 이어붙이기만 한다. */
+/**
+ * 이미 계산된 대진 노드·좌석으로 경기 목록을 만든다. 순수 함수 두 개를 이어붙이기만 한다.
+ *
+ * includeThirdPlace가 true면 준결승 패자 둘이 맞붙는 3·4위전 경기 하나를 처음부터 함께
+ * 만든다(비어 있는 상태로 — 실제 선수는 나중에 준결승 결과가 승인될 때 채워진다). 이
+ * 선택은 새 Tournament 필드로 저장하지 않는다 — 대진을 만드는 이 순간 한 번만 쓰고,
+ * 그 결과로 3·4위전 경기가 실제로 존재하는지 자체가 이후 모든 화면·로직의 판단 기준이
+ * 된다(logic/tournamentMatch.ts의 calculateFinalPlacements·loserPromotionForThirdPlace,
+ * logic/tournamentBracketLayout.ts 모두 "그 경기가 있는가"만 본다).
+ */
 function buildMatchesFromMapping(
   mapping: TournamentDrawMapping,
   participants: TournamentParticipant[],
   entries: TournamentDrawEntry[],
+  includeThirdPlace = false,
 ): { ok: true; value: TournamentMatch[] } | { ok: false; message: string } {
-  const bracket = buildEmptyBracket(mapping.bracketSize)
+  const bracket = buildEmptyBracket(mapping.bracketSize, { includeThirdPlace })
   if (!bracket.ok) return bracket
   const seats = buildSeatsFromDraw(participants, entries, mapping)
   if (!seats.ok) return seats
@@ -372,7 +382,7 @@ export function TournamentTab({
   }
 
   // ── 4B: 대진표 미리보기 계산 (Firestore에 쓰지 않는다) ──
-  const handleBuildPreview = () => {
+  const handleBuildPreview = (includeThirdPlace = false) => {
     if (!selected) return
     const entries: TournamentDrawEntry[] = enteredParticipants
       .filter((p) => p.drawNumber !== undefined)
@@ -381,7 +391,7 @@ export function TournamentTab({
     if (previewMode) {
       const mapping = devDrawMappingByTournamentId[selected.id]
       if (!mapping) { setError('먼저 추첨 준비를 진행해 주세요.'); return }
-      const built = buildMatchesFromMapping(mapping, enteredParticipants, entries)
+      const built = buildMatchesFromMapping(mapping, enteredParticipants, entries, includeThirdPlace)
       if (!built.ok) { setError(built.message); return }
       setMatchesByTournamentId((prev) => ({ ...prev, [selected.id]: built.value }))
       return
@@ -392,7 +402,7 @@ export function TournamentTab({
       // 계산이 끝나면 여기서 그대로 버려진다 — state에는 계산 결과(matches)만 남는다.
       const mapping = await loadTournamentDrawMapping(selected.id, clubId)
       if (!mapping) throw new Error('추첨 준비 정보를 찾을 수 없습니다.')
-      const built = buildMatchesFromMapping(mapping, enteredParticipants, entries)
+      const built = buildMatchesFromMapping(mapping, enteredParticipants, entries, includeThirdPlace)
       if (!built.ok) throw new Error(built.message)
       setMatchesByTournamentId((prev) => ({ ...prev, [selected.id]: built.value }))
     })

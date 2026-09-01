@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   calculateBracketSize, buildEmptyBracket, generateByeSlots, buildTournamentMatches, tournamentMatchId,
+  thirdPlaceMatchId,
 } from '../src/logic/tournamentBracket'
 import type { TournamentSeat } from '../src/types/tournament'
 
@@ -226,5 +227,46 @@ describe('buildTournamentMatches', () => {
     expect(final.playerAParticipantId).toBeNull()
     expect(final.playerBParticipantId).toBeNull()
     expect(final.status).toBe('awaitingResult')
+  })
+})
+
+describe('buildEmptyBracket — includeThirdPlace(관리자가 "3·4위전 진행"을 선택한 경우)', () => {
+  it('체크하지 않으면(기본값) 3·4위전 노드가 생기지 않는다 — 기존 동작 그대로', () => {
+    const nodes = unwrap(buildEmptyBracket(4))
+    expect(nodes.some((n) => n.playerCountInRound === 3)).toBe(false)
+  })
+
+  it('체크하면 3·4위전 노드가 결승 바로 다음 라운드로 하나 더 생긴다', () => {
+    const nodes = unwrap(buildEmptyBracket(4, { includeThirdPlace: true }))
+    const thirdPlace = nodes.find((n) => n.playerCountInRound === 3)
+    expect(thirdPlace).toBeTruthy()
+    expect(thirdPlace!.id).toBe(thirdPlaceMatchId(4))
+    expect(thirdPlace!.slotA).toBeNull()
+    expect(thirdPlace!.slotB).toBeNull()
+    expect(thirdPlace!.nextMatchId).toBeNull()
+  })
+
+  it('일반 라운드(1라운드·결승) 구조는 3·4위전 추가와 무관하게 그대로다', () => {
+    const without = unwrap(buildEmptyBracket(4))
+    const withThird = unwrap(buildEmptyBracket(4, { includeThirdPlace: true }))
+    const normalWithout = without.filter((n) => n.playerCountInRound !== 3)
+    const normalWith = withThird.filter((n) => n.playerCountInRound !== 3)
+    expect(normalWith).toEqual(normalWithout)
+  })
+
+  it('참가자 2명(대진 규모 2, 준결승 없음)에서는 체크해도 3·4위전을 만들지 않는다', () => {
+    const nodes = unwrap(buildEmptyBracket(2, { includeThirdPlace: true }))
+    expect(nodes.some((n) => n.playerCountInRound === 3)).toBe(false)
+  })
+
+  it('3·4위전 노드가 있어도 buildTournamentMatches가 정상 동작한다(빈 경기로 시작)', () => {
+    const nodes = unwrap(buildEmptyBracket(4, { includeThirdPlace: true }))
+    const seats = [seat('p1', 1), seat('p2', 2), seat('p3', 3), seat('p4', 4)]
+    const matches = unwrap(buildTournamentMatches(nodes, seats))
+    const thirdPlace = matches.find((m) => m.playerCountInRound === 3)!
+    expect(thirdPlace.playerAParticipantId).toBeNull()
+    expect(thirdPlace.playerBParticipantId).toBeNull()
+    expect(thirdPlace.status).toBe('awaitingResult')
+    expect(thirdPlace.resultType).toBe('normal')
   })
 })

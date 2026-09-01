@@ -97,6 +97,12 @@ export function generateByeSlots(
   return { ok: true, value: slots.sort((a, b) => a - b) }
 }
 
+/** 3·4위전 경기 노드의 id — 결승 다음 라운드 번호를 그대로 써서 다른 라운드와 겹치지 않는다. */
+export function thirdPlaceMatchId(bracketSize: number): string {
+  const totalRounds = Math.log2(bracketSize)
+  return tournamentMatchId(totalRounds + 1, 1)
+}
+
 /**
  * 참가자가 아직 배치되지 않은 빈 대진 구조를 만든다.
  *
@@ -104,8 +110,17 @@ export function generateByeSlots(
  * 같은 라운드에서 홀수 번째 경기의 승자는 다음 경기의 A 자리, 짝수 번째는 B 자리로 간다 —
  * 그래서 8강 1·2경기 승자가 4강 같은 경기의 서로 다른 자리에서 만난다.
  * 결승은 다음 경기가 없으므로 둘 다 null이다.
+ *
+ * includeThirdPlace를 true로 주면 결승 바로 다음 라운드 번호로 3·4위전 노드를 하나 더
+ * 만든다. 이 노드는 처음부터 두 자리 다 비어 있다(slotA/slotB가 없다 — 준결승 패자 두
+ * 명이 나중에 채운다. logic/tournamentMatch.ts의 loserPromotionForThirdPlace 참고).
+ * nextMatchId·nextSlot도 없다(3·4위전 자체는 어디로도 이어지지 않는 마지막 경기다).
+ * 대진 규모가 2(참가자 2명, 준결승이 없음)면 3·4위전을 만들 수 없어 이 옵션을 무시한다.
  */
-export function buildEmptyBracket(bracketSize: number): TournamentResult<TournamentBracketNode[]> {
+export function buildEmptyBracket(
+  bracketSize: number,
+  options: { includeThirdPlace?: boolean } = {},
+): TournamentResult<TournamentBracketNode[]> {
   if (!isPowerOfTwo(bracketSize) || bracketSize < 2) {
     return { ok: false, message: '대진 규모는 2 이상의 2의 거듭제곱이어야 합니다.' }
   }
@@ -128,6 +143,20 @@ export function buildEmptyBracket(bracketSize: number): TournamentResult<Tournam
       })
     }
   }
+
+  if (options.includeThirdPlace && totalRounds >= 2) {
+    nodes.push({
+      id: thirdPlaceMatchId(bracketSize),
+      roundNumber: totalRounds + 1,
+      playerCountInRound: 3,
+      matchNumber: 1,
+      slotA: null,
+      slotB: null,
+      nextMatchId: null,
+      nextSlot: null,
+    })
+  }
+
   return { ok: true, value: nodes }
 }
 

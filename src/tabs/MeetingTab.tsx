@@ -56,12 +56,14 @@ export function MeetingTab() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creatingFlash, setCreatingFlash] = useState(false)
 
-  const daySessions = sessions.filter((s) => s.date === selectedDate)
+  // source==='tournament'인 세션은 일반 클럽 모임이 아니라 토너먼트 실적 통계용 내부 세션이다
+  // (통계 계산에는 그대로 포함되지만, 모임 탭 화면에는 노출하지 않는다).
+  const daySessions = sessions.filter((s) => s.date === selectedDate && s.source !== 'tournament')
   const current = daySessions.find((s) => s.id === selectedId) ?? daySessions[0] ?? null
 
   const markedDates = useMemo(() => {
     const set = new Set<string>()
-    sessions.forEach((s) => { if (s.games.some((g) => !g.pending)) set.add(s.date) })
+    sessions.forEach((s) => { if (s.source !== 'tournament' && s.games.some((g) => !g.pending)) set.add(s.date) })
     return set
   }, [sessions])
 

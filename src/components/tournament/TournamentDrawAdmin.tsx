@@ -29,12 +29,19 @@ export function TournamentDrawAdmin({
   busy?: boolean
   onPrepareDraw: () => void
   onSaveDrawNumbers: (entries: TournamentDrawEntry[]) => void
-  onBuildPreview: () => void
+  /**
+   * includeThirdPlace가 true면 대진표를 준결승 패자 둘이 맞붙는 3·4위전까지 포함해 만든다
+   * (참가자 3명 이상 — 준결승이 있는 대진에서만 실제로 뜻이 있다). 이 값은 이 화면의
+   * 로컬 체크박스 상태일 뿐이라 저장되지 않는다 — "대진표 확인"을 누르는 그 순간에만 쓰이고,
+   * 그 결과로 만들어진 3·4위전 경기 자체가 이후의 유일한 판단 기준이 된다.
+   */
+  onBuildPreview: (includeThirdPlace: boolean) => void
   onConfirmBracket: () => void
   onReopenEntries: () => void
   onCancelBracket: () => void
 }) {
   const [inputs, setInputs] = useState<Record<string, string>>({})
+  const [thirdPlaceEnabled, setThirdPlaceEnabled] = useState(false)
 
   const status = tournament.status
   const participantCount = enteredParticipants.length
@@ -177,9 +184,21 @@ export function TournamentDrawAdmin({
         </button>
 
         {allSaved && (
-          <button className="block" style={{ fontSize: 16, padding: 14 }} disabled={busy} onClick={onBuildPreview}>
-            대진표 확인
-          </button>
+          <>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              <input
+                type="checkbox" checked={thirdPlaceEnabled}
+                onChange={(e) => setThirdPlaceEnabled(e.target.checked)}
+              />
+              3·4위전 진행 — 준결승 패자 2명이 별도의 3·4위전을 진행합니다.
+            </label>
+            <button
+              className="block" style={{ fontSize: 16, padding: 14 }} disabled={busy}
+              onClick={() => onBuildPreview(thirdPlaceEnabled)}
+            >
+              대진표 확인
+            </button>
+          </>
         )}
 
         <button className="block" style={{ fontSize: 14 }} disabled={busy} onClick={reopenEntries}>

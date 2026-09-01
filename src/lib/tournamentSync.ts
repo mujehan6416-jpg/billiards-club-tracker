@@ -1,7 +1,7 @@
 import { collection, deleteField, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { db } from './firebase'
 import { createDrawMapping, createTournamentParticipant, validateDrawEntries } from '../logic/tournamentDraw'
-import type { Member } from '../types'
+import type { Game, Member } from '../types'
 import {
   adminEntersMatchResult as applyAdminEntry,
   approveTournamentMatch as applyApproval,
@@ -10,6 +10,7 @@ import {
   canCorrectOfficialResult,
   correctTournamentMatchResult as applyAdminCorrection,
   declareTournamentForfeit as applyForfeit,
+  loserPromotionForThirdPlace,
   requestTournamentMatchCorrection as applyCorrectionRequest,
   submitTournamentMatchResult as applyResultSubmission,
   verifyTournamentMatchResult as applyResultVerification,
@@ -77,6 +78,71 @@ const matchDoc = (clubId: string, tournamentId: string, matchId: string) =>
 /** 관리자 전용 추첨 매핑 문서. 공개 조회 경로와 완전히 분리된 자리다. */
 const drawDoc = (clubId: string, tournamentId: string) =>
   doc(db, 'clubs', clubId, 'tournaments', tournamentId, 'private', 'draw')
+
+// ── 토너먼트 실제 경기 → 일반 Game/통계 연동 ───────────────────────────
+//
+// 기존 lib/splitFirestore.ts와 완전히 같은 저장 경로(clubs/{clubId}/sessions/{id},
+// .../sessions/{id}/games/{id})를 그대로 재사용한다 — 새 collection이 아니다.
+// 이 대회 전용 Session 하나(id가 tournamentId로부터 결정적으로 정해진다)를 공유하고,
+// 실제로 친 경기마다 그 밑에 Game을 하나씩 만든다. 부전승·부전진출은 대상이 아니다.
+
+/** 이 대회의 실제 경기를 담는 세션 id — 대회당 하나로 고정된다(같은 tournamentId → 같은 id). */
+function tournamentSessionId(tournamentId: string): string {
+  return `tournament-session-${tournamentId}`
+}
+
+/** 이 경기(TournamentMatch)에 대응하는 Game id — 같은 경기를 다시 처리해도 같은 문서를 가리킨다. */
+function tournamentGameId(tournamentId: string, matchId: string): string {
+  return `tournament-game-${tournamentId}-${matchId}`
+}
+
+const sessionDoc = (clubId: string, sessionId: string) => doc(db, 'clubs', clubId, 'sessions', sessionId)
+const gameDoc = (clubId: string, sessionId: string, gameId: string) =>
+  doc(db, 'clubs', clubId, 'sessions', sessionId, 'games', gameId)
+
+/**
+ * 공식 확정된 경기가 "실제로 친 경기"면 Game 저장에 쓸 값을 계산한다. 아니면(부전승, 아직
+ * 점수가 없는 기권 등) null — Game을 만들 대상이 아니라는 뜻이다. 순수 계산만 하고
+ * Firestore를 부르지 않는다.
+ *
+ * winner는 TournamentMatch에 이미 확정된 officialWinnerParticipantId를 그대로 따른다 —
+ * 점수 대소로 다시 계산하지 않는다.
+ */
+function buildTournamentGameWrite(
+  tournamentId: string,
+  approvedAtIso: string,
+  match: TournamentMatch,
+): { sessionId: string; game: Game } | null {
+  if (match.status !== 'official') return null
+  if (match.resultType === 'bye') return null // 부전승은 실제 경기가 아니다.
+
+  const {
+    playerAMemberId, playerBMemberId, playerAHandicapSnapshot, playerBHandicapSnapshot,
+    scoreA, scoreB, officialWinnerParticipantId, playerAParticipantId,
+  } = match
+  if (!playerAMemberId || !playerBMemberId) return null
+  if (playerAHandicapSnapshot === null || playerBHandicapSnapshot === null) return null
+  if (scoreA === null || scoreB === null) return null // 경기 전 기권 등 실제로 치지 않은 경기.
+  if (!officialWinnerParticipantId) return null
+
+  const winnerId = officialWinnerParticipantId === playerAParticipantId ? playerAMemberId : playerBMemberId
+  const endType: 'cleared' | 'time' =
+    scoreA >= playerAHandicapSnapshot || scoreB >= playerBHandicapSnapshot ? 'cleared' : 'time'
+
+  return {
+    sessionId: tournamentSessionId(tournamentId),
+    game: {
+      id: tournamentGameId(tournamentId, match.id),
+      playerAId: playerAMemberId,
+      playerBId: playerBMemberId,
+      handicapA: playerAHandicapSnapshot,
+      handicapB: playerBHandicapSnapshot,
+      scoreA, scoreB, endType,
+      playedAt: approvedAtIso,
+      winnerId,
+    },
+  }
+}
 
 // ── 오류 ────────────────────────────────────────────────────────────
 
@@ -805,9 +871,10 @@ function promotionPatch(promotion: TournamentPromotion) {
 }
 
 /**
- * 공식 확정 + 다음 라운드 배치를 **하나의 배치로 묶어** 쓴다.
+ * 공식 확정 + 다음 라운드 배치(+ 3·4위전이 있으면 패자 배치, + 실제 경기였으면 Game
+ * 저장까지)를 **하나의 배치로 묶어** 쓴다.
  *
- * 둘이 따로 저장되면 "승자는 확정됐는데 다음 경기에 아무도 없는" 또는 그 반대의 어긋난
+ * 따로 저장되면 "승자는 확정됐는데 다음 경기·통계에는 반영 안 된" 또는 그 반대의 어긋난
  * 상태가 남는다. writeBatch는 전부 성공하거나 전부 실패하므로 그런 중간 상태가 생기지 않는다.
  *
  * 참가자 2명의 입력·확인만으로는 절대 여기 도달하지 않는다 — 도메인 함수가 상태를 확인한다.
@@ -818,6 +885,8 @@ async function commitOfficialResult(
   matchId: string,
   approved: { match: TournamentMatch; promotion: TournamentPromotion | null },
   fields: Record<string, unknown>,
+  loserPromotion: TournamentPromotion | null = null,
+  approvedAtIso: string = new Date().toISOString(),
 ): Promise<TournamentMatch> {
   const batch = writeBatch(db)
   batch.update(matchDoc(clubId, tournamentId, matchId), withoutUndefined(fields))
@@ -827,6 +896,28 @@ async function commitOfficialResult(
       promotionPatch(approved.promotion),
     )
   }
+  if (loserPromotion) {
+    batch.update(
+      matchDoc(clubId, tournamentId, loserPromotion.nextMatchId),
+      promotionPatch(loserPromotion),
+    )
+  }
+
+  // 실제로 친 경기면(부전승 제외) 기존 일반 Game 구조로도 함께 저장한다 — 그래야 회원
+  // 통계(logic/stats.ts)가 정상 경로로 이 경기를 읽는다. 세션은 이 대회 전용으로 하나만
+  // 쓰고(id가 tournamentId로 결정적), 이미 있으면 그대로 덮어써도 내용이 같아 안전하다
+  // (games는 하위 컬렉션이라 세션 문서 자체를 다시 써도 지워지지 않는다).
+  const gameWrite = buildTournamentGameWrite(tournamentId, approvedAtIso, approved.match)
+  if (gameWrite) {
+    batch.set(sessionDoc(clubId, gameWrite.sessionId), {
+      id: gameWrite.sessionId,
+      date: gameWrite.game.playedAt.slice(0, 10),
+      source: 'tournament',
+      attendeeIds: [],
+    })
+    batch.set(gameDoc(clubId, gameWrite.sessionId, gameWrite.game.id), gameWrite.game)
+  }
+
   await batch.commit()
   return approved.match
 }
@@ -847,12 +938,16 @@ export async function approveTournamentMatch(
     if (!applied.ok) throw new TournamentSyncError('validation', applied.message)
 
     const next = applied.value.match
+    // 이 경기가 준결승이고 대회에 3·4위전이 있으면(존재 여부만으로 판단 — 새 필드 없음),
+    // 패자도 같은 배치로 함께 보낸다. 그 판정에는 전체 경기 목록이 필요하다.
+    const allMatches = await fetchTournamentMatches(tournamentId, clubId)
+    const loserPromotion = loserPromotionForThirdPlace(next, allMatches)
     return await commitOfficialResult(clubId, tournamentId, matchId, applied.value, {
       status: next.status,
       officialWinnerParticipantId: next.officialWinnerParticipantId ?? null,
       officialLoserParticipantId: next.officialLoserParticipantId ?? null,
       resultLog: next.resultLog,
-    })
+    }, loserPromotion, input.at)
   } catch (e) {
     throw toSyncError(e)
   }
@@ -874,13 +969,15 @@ export async function declareTournamentForfeit(
     if (!applied.ok) throw new TournamentSyncError('validation', applied.message)
 
     const next = applied.value.match
+    const allMatches = await fetchTournamentMatches(tournamentId, clubId)
+    const loserPromotion = loserPromotionForThirdPlace(next, allMatches)
     return await commitOfficialResult(clubId, tournamentId, matchId, applied.value, {
       resultType: next.resultType,
       status: next.status,
       officialWinnerParticipantId: next.officialWinnerParticipantId ?? null,
       officialLoserParticipantId: next.officialLoserParticipantId ?? null,
       resultLog: next.resultLog,
-    })
+    }, loserPromotion, input.at)
   } catch (e) {
     throw toSyncError(e)
   }

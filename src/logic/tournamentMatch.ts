@@ -321,6 +321,43 @@ export function promotionFor(match: TournamentMatch): TournamentPromotion | null
 }
 
 /**
+ * 공식 확정된 준결승의 **패자**를 3·4위전 자리로 보낸다. 3·4위전이 있는 대회에서만
+ * 의미가 있고, 그 존재 여부는 새 필드가 아니라 `matches` 안에 playerCountInRound===3인
+ * 경기가 실제로 있는지로만 판단한다(관리자가 "3·4위전 진행"을 선택해 대진을 만들 때
+ * 그 경기가 처음부터 함께 만들어진다 — logic/tournamentBracket.ts 참고).
+ *
+ * "이 경기가 준결승인가"는 이 경기의 승자가 가는 다음 경기(match.nextMatchId)가 곧
+ * 결승(그 다음이 없는 경기, nextMatchId === null)인지로 판정한다 — 대진 규모와 무관하게
+ * 항상 성립하는 정의라 하드코딩된 라운드 번호가 필요 없다.
+ *
+ * 3·4위전 안에서 패자가 앉을 자리(playerA/playerB)는 이 준결승이 결승의 어느 자리로
+ * 이겼는지(match.nextSlot)를 그대로 재사용한다 — 결승 A자리로 올라간 준결승의 패자는
+ * 3·4위전 A자리로, 결승 B자리로 올라간 준결승의 패자는 3·4위전 B자리로 간다.
+ */
+export function loserPromotionForThirdPlace(
+  match: TournamentMatch,
+  allMatches: TournamentMatch[],
+): TournamentPromotion | null {
+  if (match.status !== 'official') return null
+  const loserId = match.officialLoserParticipantId
+  if (!loserId) return null
+  if (!match.nextMatchId || !match.nextSlot) return null
+
+  const nextMatch = allMatches.find((m) => m.id === match.nextMatchId)
+  if (!nextMatch || nextMatch.nextMatchId !== null) return null // 다음 경기가 결승이어야 한다.
+
+  const thirdPlaceMatch = allMatches.find((m) => m.playerCountInRound === 3)
+  if (!thirdPlaceMatch) return null
+
+  const isA = loserId === match.playerAParticipantId
+  const memberId = isA ? match.playerAMemberId : match.playerBMemberId
+  const handicap = isA ? match.playerAHandicapSnapshot : match.playerBHandicapSnapshot
+  if (!memberId || handicap === null) return null
+
+  return { nextMatchId: thirdPlaceMatch.id, nextSlot: match.nextSlot, participantId: loserId, memberId, handicap }
+}
+
+/**
  * 관리자 최종 승인. **여기서만** 공식 승자·패자가 만들어지고 다음 라운드 진출이 생긴다.
  *
  * 참가자 두 명이 입력·확인을 끝냈다고 자동으로 공식 기록이 되지 않는다.

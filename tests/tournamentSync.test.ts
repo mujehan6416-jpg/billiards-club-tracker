@@ -169,6 +169,10 @@ beforeEach(() => {
   updateDocMock.mockReset()
   getDocMock.mockReset()
   getDocsMock.mockReset()
+  // 관리자 승인/기권 승인은 이제 3·4위전 자리를 찾기 위해 전체 경기 목록도 함께 읽는다
+  // (loserPromotionForThirdPlace). 대부분의 테스트는 3·4위전과 무관하므로 빈 목록을
+  // 기본값으로 둔다 — 그 동작을 실제로 확인하는 테스트만 이 기본값을 덮어쓴다.
+  getDocsMock.mockResolvedValue(querySnapOf([]))
   batches = []
 })
 
@@ -913,20 +917,21 @@ describe('관리자 최종 승인 + 다음 라운드 진출', () => {
     expect('playerAParticipantId' in promoted.data!).toBe(false)
   })
 
-  it('현재 경기 확정과 다음 경기 배치가 같은 배치 하나에 들어간다', async () => {
+  it('현재 경기 확정 + 다음 경기 배치 + 실제 경기 Game/Session 저장이 같은 배치 하나에 들어간다', async () => {
     serveMatches(awaitingApproval())
     await approveTournamentMatch(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT }, CLUB)
 
     expect(batches).toHaveLength(1)
-    expect(lastBatch().ops).toHaveLength(2)
+    // 경기 확정(update) + 다음 라운드 배치(update) + 세션(set) + Game(set) = 4건
+    expect(lastBatch().ops).toHaveLength(4)
     expect(updateDocMock).not.toHaveBeenCalled()
   })
 
-  it('결승은 다음 경기가 없으므로 현재 경기만 쓴다', async () => {
+  it('결승은 다음 경기가 없으므로 경기 확정 + Game/Session 저장만 쓴다', async () => {
     serveMatches(awaitingApproval({ id: 'r2m1', nextMatchId: null, nextSlot: null }))
     await approveTournamentMatch(TID, 'r2m1', { adminUid: ADMIN_UID, at: AT }, CLUB)
 
-    expect(lastBatch().ops).toHaveLength(1)
+    expect(lastBatch().ops).toHaveLength(3)
     expect(lastBatch().ops[0].path).toBe(`${BASE}/matches/r2m1`)
   })
 
@@ -956,6 +961,121 @@ describe('관리자 최종 승인 + 다음 라운드 진출', () => {
     )
     const current = lastBatch().ops.find((op) => op.path.endsWith('/matches/r1m1'))!
     expect(current.data!.officialWinnerParticipantId).toBe('participant-b')
+  })
+
+  describe('3·4위전이 있는 대회 — 패자도 같은 배치로 함께 보낸다', () => {
+    it('준결승(결승 바로 앞 경기)을 승인하면 패자가 3·4위전 자리로도 같은 배치에서 보내진다', async () => {
+      // r1m1(준결승) → r2m1(결승, nextMatchId:null) 로 이어지고, 3·4위전(r3m1)이 별도로 존재한다.
+      serveMatches(awaitingApproval({ nextMatchId: 'r2m1', nextSlot: 'playerA' }))
+      getDocsMock.mockResolvedValue(querySnapOf([
+        match({ id: 'r1m1', nextMatchId: 'r2m1', nextSlot: 'playerA' }),
+        match({ id: 'r2m1', nextMatchId: null, nextSlot: null }),
+        match({ id: 'r3m1', playerCountInRound: 3, nextMatchId: null, nextSlot: null }),
+      ]))
+
+      await approveTournamentMatch(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT }, CLUB)
+
+      expect(batches).toHaveLength(1) // 원자적 — 승자 진출과 패자 배치가 같은 배치 하나에 들어간다
+      const loserOp = lastBatch().ops.find((op) => op.path.endsWith('/matches/r3m1'))!
+      expect(loserOp).toBeTruthy()
+      expect(loserOp.data).toEqual({
+        playerAParticipantId: 'participant-b', // awaitingApproval() 기본 승자는 participant-a → 패자는 b
+        playerAMemberId: 'member-b',
+        playerAHandicapSnapshot: 20,
+      })
+    })
+
+    it('3·4위전이 없는 대회(기존 대회)는 패자 배치 없이 4건이다(경기 확정+다음 라운드+세션+Game) — 3·4위전 관련 회귀 없음', async () => {
+      serveMatches(awaitingApproval())
+      getDocsMock.mockResolvedValue(querySnapOf([
+        match({ id: 'r1m1' }),
+        match({ id: 'r2m1', nextMatchId: null, nextSlot: null }),
+      ]))
+      await approveTournamentMatch(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT }, CLUB)
+      expect(lastBatch().ops).toHaveLength(4)
+      expect(lastBatch().ops.find((op) => op.path.endsWith('/matches/r3m1'))).toBeUndefined()
+    })
+  })
+
+  describe('실제 경기 → 일반 Game/회원 통계 연동', () => {
+    it('경기 확정 시 이 대회 전용 세션(source:"tournament")과 Game이 같은 배치에 만들어진다', async () => {
+      serveMatches(awaitingApproval())
+      await approveTournamentMatch(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT }, CLUB)
+
+      const sessionOp = lastBatch().ops.find((op) => op.kind === 'set' && op.path.includes('/sessions/') && !op.path.includes('/games/'))!
+      expect(sessionOp).toBeTruthy()
+      expect(sessionOp.data!.source).toBe('tournament')
+      expect(sessionOp.path).toBe(`clubs/${CLUB}/sessions/tournament-session-${TID}`)
+
+      const gameOp = lastBatch().ops.find((op) => op.kind === 'set' && op.path.includes('/games/'))!
+      expect(gameOp).toBeTruthy()
+      expect(gameOp.path).toBe(`clubs/${CLUB}/sessions/tournament-session-${TID}/games/tournament-game-${TID}-r1m1`)
+    })
+
+    it('Game의 winner/score/handicap이 TournamentMatch 확정 값과 정확히 일치한다', async () => {
+      serveMatches(awaitingApproval({ scoreA: 18, scoreB: 15, playerAHandicapSnapshot: 20, playerBHandicapSnapshot: 22 }))
+      await approveTournamentMatch(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT }, CLUB)
+
+      const gameOp = lastBatch().ops.find((op) => op.path.includes('/games/'))!
+      expect(gameOp.data).toMatchObject({
+        playerAId: 'member-a', playerBId: 'member-b',
+        handicapA: 20, handicapB: 22, scoreA: 18, scoreB: 15,
+        winnerId: 'member-a', // awaitingApproval() 기본 calculatedWinnerParticipantId가 participant-a
+        playedAt: AT,
+      })
+    })
+
+    it('같은 대회의 서로 다른 경기는 같은 세션을 공유한다(같은 sessionId)', async () => {
+      serveMatches(awaitingApproval({ id: 'r1m1' }))
+      await approveTournamentMatch(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT }, CLUB)
+      const firstSessionPath = lastBatch().ops.find((op) => op.path.endsWith(`/sessions/tournament-session-${TID}`))!.path
+
+      serveMatches(awaitingApproval({ id: 'r1m2', nextMatchId: 'r2m1', nextSlot: 'playerB' }))
+      await approveTournamentMatch(TID, 'r1m2', { adminUid: ADMIN_UID, at: AT }, CLUB)
+      const secondSessionPath = lastBatch().ops.find((op) => op.path.endsWith(`/sessions/tournament-session-${TID}`))!.path
+
+      expect(firstSessionPath).toBe(secondSessionPath)
+    })
+
+    it('세션 id는 tournamentId로부터 결정적으로 정해진다(다른 대회 id면 다른 세션 경로)', async () => {
+      serveMatches(awaitingApproval())
+      await approveTournamentMatch(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT }, CLUB)
+      const sessionOp = lastBatch().ops.find((op) => op.path.includes('/sessions/'))!
+      expect(sessionOp.path).toBe(`clubs/${CLUB}/sessions/tournament-session-${TID}`)
+      expect(sessionOp.path).not.toBe(`clubs/${CLUB}/sessions/tournament-session-other-tournament`)
+    })
+
+    it('부전승은 애초에 승인 절차 자체가 없어 Game도 만들어지지 않는다(대진 생성 시점에 이미 official)', async () => {
+      serveMatches(match({ resultType: 'bye', status: 'official', scoreA: null, scoreB: null, officialWinnerParticipantId: 'participant-a', officialLoserParticipantId: null }))
+      await expect(
+        approveTournamentMatch(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT }, CLUB),
+      ).rejects.toThrow(/승인 절차가 없습니다/)
+      expect(batches).toHaveLength(0) // 아무것도(경기도, 세션도, Game도) 쓰지 않았다
+    })
+
+    it('경기 전 기권(점수 없음)은 Game을 만들지 않는다', async () => {
+      serveMatches(match({ status: 'awaitingResult', scoreA: null, scoreB: null }))
+      await declareTournamentForfeit(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT, winnerParticipantId: 'participant-a' }, CLUB)
+      const gameOp = lastBatch().ops.find((op) => op.path.includes('/games/'))
+      expect(gameOp).toBeUndefined()
+    })
+
+    it('경기 중 기권(점수 있음)은 실제로 친 만큼 Game이 만들어진다', async () => {
+      serveMatches(match({ status: 'awaitingResult', scoreA: 10, scoreB: 4 }))
+      await declareTournamentForfeit(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT, winnerParticipantId: 'participant-a' }, CLUB)
+      const gameOp = lastBatch().ops.find((op) => op.path.includes('/games/'))!
+      expect(gameOp).toBeTruthy()
+      expect(gameOp.data!.winnerId).toBe('member-a')
+    })
+
+    it('실제 3·4위전 경기가 확정되면 다른 실제 경기와 똑같이 Game이 만들어진다', async () => {
+      // r1m1(3·4위전, playerCountInRound=3)이 확정 — nextMatchId가 없어 승자 진출 배치는 없다.
+      serveMatches(awaitingApproval({ id: 'r1m1', playerCountInRound: 3, nextMatchId: null, nextSlot: null }))
+      await approveTournamentMatch(TID, 'r1m1', { adminUid: ADMIN_UID, at: AT }, CLUB)
+      const gameOp = lastBatch().ops.find((op) => op.path.includes('/games/'))!
+      expect(gameOp).toBeTruthy()
+      expect(gameOp.path).toContain('tournament-game-')
+    })
   })
 })
 

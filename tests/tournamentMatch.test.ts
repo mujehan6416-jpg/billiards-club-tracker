@@ -7,7 +7,7 @@ import {
   adminVerifyTournamentMatchResult, requestTournamentMatchCorrection, correctTournamentMatchResult,
   approveTournamentMatch, declareTournamentForfeit, applyPromotion, promotionFor,
   tournamentRecord, calculateFinalPlacements, canCorrectOfficialResult,
-  adminEntersMatchResult, isTournamentRoundOfficial,
+  adminEntersMatchResult, isTournamentRoundOfficial, loserPromotionForThirdPlace,
 } from '../src/logic/tournamentMatch'
 import type { Game } from '../src/types'
 import type { TournamentMatch, TournamentSeat } from '../src/types/tournament'
@@ -635,5 +635,77 @@ describe('isTournamentRoundOfficial — 라운드 확정 판정', () => {
   it('없는 라운드 번호는 확정이 아니다', () => {
     const matches = bracket4()
     expect(isTournamentRoundOfficial(matches, 99)).toBe(false)
+  })
+})
+
+describe('loserPromotionForThirdPlace — 관리자가 "3·4위전 진행"을 선택한 대진', () => {
+  /** 4명 대진 + 3·4위전 노드를 함께 만든다(참가자 4명 모두 실제 배치). */
+  function bracket4WithThirdPlace(): TournamentMatch[] {
+    const nodes = unwrap(buildEmptyBracket(4, { includeThirdPlace: true }))
+    return unwrap(buildTournamentMatches(nodes, [seat(1, 1), seat(2, 2), seat(3, 3), seat(4, 4)]))
+  }
+
+  it('대진을 만들 때 3·4위전 경기가 처음부터 빈 상태로 함께 생긴다(새 필드 없이 경기 존재만으로 판단)', () => {
+    const matches = bracket4WithThirdPlace()
+    const thirdPlace = matches.find((m) => m.playerCountInRound === 3)
+    expect(thirdPlace).toBeTruthy()
+    expect(thirdPlace!.playerAParticipantId).toBeNull()
+    expect(thirdPlace!.playerBParticipantId).toBeNull()
+    expect(thirdPlace!.nextMatchId).toBeNull()
+  })
+
+  it('준결승이 공식 확정되면 패자가 3·4위전 자리로 보내진다', () => {
+    const matches = bracket4WithThirdPlace()
+    const sf1 = matches.find((m) => m.id === tournamentMatchId(1, 1))!
+    const approved = unwrap(approveTournamentMatch(readyForApproval(sf1, 20, 14), { adminUid: ADMIN_UID, at: AT }))
+    const loserPromotion = loserPromotionForThirdPlace(approved.match, matches)
+    expect(loserPromotion).toBeTruthy()
+    expect(loserPromotion!.participantId).toBe(approved.match.officialLoserParticipantId)
+    const thirdPlace = matches.find((m) => m.playerCountInRound === 3)!
+    expect(loserPromotion!.nextMatchId).toBe(thirdPlace.id)
+  })
+
+  it('3·4위전이 없는 대진(기존 대회)에서는 패자를 어디로도 보내지 않는다 — 기존 동작 그대로', () => {
+    const matches = bracket4() // includeThirdPlace 없이 만든 기존 방식 대진
+    const sf1 = matches.find((m) => m.id === tournamentMatchId(1, 1))!
+    const approved = unwrap(approveTournamentMatch(readyForApproval(sf1, 20, 14), { adminUid: ADMIN_UID, at: AT }))
+    expect(loserPromotionForThirdPlace(approved.match, matches)).toBeNull()
+  })
+
+  it('결승 자체는(다음 경기가 없으므로) 패자를 3·4위전으로 보내지 않는다', () => {
+    const matches = bracket4WithThirdPlace()
+    const final = matches.find((m) => m.id === tournamentMatchId(2, 1))!
+    const readyFinal = { ...final, playerAParticipantId: 'p1', playerBParticipantId: 'p3', playerAMemberId: 'm1', playerBMemberId: 'm3', playerAHandicapSnapshot: 20, playerBHandicapSnapshot: 20 }
+    const approved = unwrap(approveTournamentMatch(readyForApproval(readyFinal, 20, 14), { adminUid: ADMIN_UID, at: AT }))
+    expect(loserPromotionForThirdPlace(approved.match, matches)).toBeNull()
+  })
+
+  it('전체 흐름: 준결승 2개 + 결승 + 3·4위전까지 끝내면 최종 순위 1~4위가 정확하다', () => {
+    let matches = bracket4WithThirdPlace()
+    const finish = (matchId: string, scoreA: number, scoreB: number) => {
+      const target = matches.find((m) => m.id === matchId)!
+      const approved = unwrap(approveTournamentMatch(readyForApproval(target, scoreA, scoreB), { adminUid: ADMIN_UID, at: AT }))
+      matches = matches.map((m) => (m.id === approved.match.id ? approved.match : m))
+      if (approved.promotion) {
+        const next = matches.find((m) => m.id === approved.promotion!.nextMatchId)!
+        matches = matches.map((m) => (m.id === next.id ? applyPromotion(next, approved.promotion!) : m))
+      }
+      const loserPromotion = loserPromotionForThirdPlace(approved.match, matches)
+      if (loserPromotion) {
+        const thirdPlace = matches.find((m) => m.id === loserPromotion.nextMatchId)!
+        matches = matches.map((m) => (m.id === thirdPlace.id ? applyPromotion(thirdPlace, loserPromotion) : m))
+      }
+    }
+    finish(tournamentMatchId(1, 1), 20, 14) // p1 승
+    finish(tournamentMatchId(1, 2), 12, 19) // p4 승
+    finish(tournamentMatchId(2, 1), 20, 14) // 결승: p1 승
+    const thirdPlaceId = matches.find((m) => m.playerCountInRound === 3)!.id
+    finish(thirdPlaceId, 15, 10) // 3·4위전: p2 승(준결승1 패자) vs p3(준결승2 패자)
+
+    const placements = calculateFinalPlacements(matches)
+    expect(placements.championParticipantId).toBe('p1')
+    expect(placements.runnerUpParticipantId).toBe('p4')
+    expect(placements.thirdPlaceParticipantIds).toEqual(['p2'])
+    expect(placements.fourthPlaceParticipantId).toBe('p3')
   })
 })

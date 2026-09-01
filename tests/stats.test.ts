@@ -81,3 +81,31 @@ describe('winStreaks', () => {
     expect(s.current).toBe(0)
   })
 })
+
+describe('토너먼트 실제 경기(source:"tournament" 세션)도 일반 경기와 동일하게 통계에 반영된다', () => {
+  const tournamentSessions: Session[] = [
+    {
+      id: 'tournament-session-t1',
+      date: '2026-07-01',
+      source: 'tournament',
+      attendeeIds: [],
+      games: [g('A', 'C', 20, 20, 10, 20)], // A 100% vs C 50% → A 승
+    },
+  ]
+
+  it('경기수·승패가 일반 경기와 똑같이 집계된다(source가 있어도 제외되지 않는다)', () => {
+    const stats = memberStats(tournamentSessions)
+    const a = stats.find((s) => s.memberId === 'A')!
+    const c = stats.find((s) => s.memberId === 'C')!
+    expect(a.games).toBe(1)
+    expect(a.wins).toBe(1)
+    expect(c.games).toBe(1)
+    expect(c.losses).toBe(1)
+  })
+
+  it('상대전적에도 정상 반영된다', () => {
+    const h2h = headToHead(tournamentSessions, 'A', 'C')
+    expect(h2h.aWins).toBe(1)
+    expect(h2h.games).toBe(1)
+  })
+})
