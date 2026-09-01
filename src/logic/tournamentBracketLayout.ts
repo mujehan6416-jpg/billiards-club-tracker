@@ -82,23 +82,21 @@ export function calculateBracketLayout(matches: TournamentMatch[]): Map<string, 
   // 3·4위전(playerCountInRound === 3) 특수 처리 — 위 일반 규칙은 nextMatchId로 가리키는
   // 이전 경기가 있어야 위치를 구할 수 있는데, 3·4위전은 "승자 진출"이 아니라 "준결승 패자
   // 둘이 만나는" 경기라 어느 경기도 nextMatchId로 이 경기를 가리키지 않는다(그 필드의 의미를
-  // 바꾸지 않기 위해 그대로 둔다). 그래서 여기서만 따로, 결승과 똑같은 방식으로 —
-  // "두 준결승 경기 위치의 평균" — centerY를 계산해 덮어쓴다. x(라운드 컬럼)는 이미 일반
-  // 루프에서 정해졌으므로 그대로 두고 centerY만 고친다. 결승과 x가 다른 컬럼이라 겹치지 않는다.
+  // 바꾸지 않기 위해 그대로 둔다). 그래서 여기서만 따로 위치를 정한다 — 결승과 **같은 컬럼
+  // (x)** 에서, 결승 카드 바로 아래에 별도 카드로 둔다(결승 진출선처럼 보이지 않도록 결승과는
+  // 세로로만 떨어뜨리고, 두 준결승 경기와는 어떤 연결선도 그리지 않는다 — TournamentBracketVisual이
+  // nextMatchId 그래프로만 선을 그리므로 이 경기는 애초에 선의 대상이 아니다).
   const thirdPlaceMatch = matches.find((m) => m.playerCountInRound === 3)
   if (thirdPlaceMatch) {
     const withoutThirdPlace = matches.filter((m) => m.playerCountInRound !== 3)
     const final = withoutThirdPlace.find((m) => m.nextMatchId === null)
-    if (final) {
-      const semiFinalYs = withoutThirdPlace
-        .filter((m) => m.nextMatchId === final.id)
-        .map((m) => positions.get(m.id)?.centerY)
-        .filter((y): y is number => y !== undefined)
-      const existing = positions.get(thirdPlaceMatch.id)
-      if (semiFinalYs.length > 0 && existing) {
-        const centerY = semiFinalYs.reduce((a, b) => a + b, 0) / semiFinalYs.length
-        positions.set(thirdPlaceMatch.id, { ...existing, centerY })
-      }
+    const finalPos = final ? positions.get(final.id) : undefined
+    if (finalPos) {
+      positions.set(thirdPlaceMatch.id, {
+        round: thirdPlaceMatch.roundNumber,
+        x: finalPos.x,
+        centerY: finalPos.centerY + BRACKET_LAYOUT.CARD_HEIGHT + BRACKET_LAYOUT.ROW_GAP * 2,
+      })
     }
   }
 

@@ -147,20 +147,24 @@ describe('calculateBracketLayout — 3·4위전', () => {
     return [...matches, thirdPlaceMatch]
   }
 
-  it('3·4위전의 centerY는 두 준결승(1라운드) 경기 위치의 평균이다', () => {
-    const matches = bracket4WithThirdPlace()
-    const layout = calculateBracketLayout(matches)
-    const yA = layout.get(tournamentMatchId(1, 1))!.centerY
-    const yB = layout.get(tournamentMatchId(1, 2))!.centerY
-    expect(layout.get('third-place')!.centerY).toBeCloseTo((yA + yB) / 2, 6)
-  })
-
-  it('3·4위전은 결승과 x(라운드 컬럼)가 다르다 — 겹치지 않는다', () => {
+  it('3·4위전은 결승과 같은 컬럼(x)에, 결승 카드 바로 아래에 위치한다', () => {
     const matches = bracket4WithThirdPlace()
     const layout = calculateBracketLayout(matches)
     const finalPos = layout.get(tournamentMatchId(2, 1))!
     const thirdPos = layout.get('third-place')!
-    expect(thirdPos.x).not.toBe(finalPos.x)
+    expect(thirdPos.x).toBe(finalPos.x)
+    expect(thirdPos.centerY).toBeGreaterThan(finalPos.centerY)
+    expect(thirdPos.centerY).toBeCloseTo(finalPos.centerY + BRACKET_LAYOUT.CARD_HEIGHT + BRACKET_LAYOUT.ROW_GAP * 2, 6)
+  })
+
+  it('3·4위전 카드와 결승 카드가 세로로 겹치지 않는다(간격이 카드 높이 이상)', () => {
+    const matches = bracket4WithThirdPlace()
+    const layout = calculateBracketLayout(matches)
+    const finalPos = layout.get(tournamentMatchId(2, 1))!
+    const thirdPos = layout.get('third-place')!
+    const finalBottom = finalPos.centerY + BRACKET_LAYOUT.CARD_HEIGHT / 2
+    const thirdTop = thirdPos.centerY - BRACKET_LAYOUT.CARD_HEIGHT / 2
+    expect(thirdTop).toBeGreaterThan(finalBottom)
   })
 
   it('3·4위전이 있어도 나머지 경기(1라운드·결승) 좌표는 그대로다(회귀 없음)', () => {

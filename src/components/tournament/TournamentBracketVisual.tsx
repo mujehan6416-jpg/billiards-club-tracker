@@ -10,6 +10,15 @@ const HEADER_HEIGHT = 28
 const LINE_COLOR = '#aeb2b5'
 const LINE_WIDTH = 1.25
 
+/**
+ * 3·4위전 카드는 결승 승자 진출 트리와 헷갈리지 않도록 폭을 살짝 좁혀서 시각적으로
+ * "별도 경기"임을 드러낸다(모바일 가독성이 깨지지 않는 선에서 선수 이름이 잘리지 않는
+ * 최소 폭을 우선했다). 세로 한 칸 높이는 기존 경기 카드보다 살짝 넉넉하게 잡는다.
+ */
+const THIRD_PLACE_CARD_WIDTH = 120
+const THIRD_PLACE_ROW_HEIGHT = 38
+const THIRD_PLACE_LABEL_HEIGHT = 18
+
 interface ConnectorLine { key: string; d: string }
 
 /**
@@ -40,9 +49,15 @@ export function TournamentBracketVisual({
 }) {
   const layout = useMemo(() => calculateBracketLayout(matches), [matches])
 
+  // 3·4위전(playerCountInRound === 3)은 결승과 같은 컬럼 아래에 별도 카드로 그리므로
+  // 공유 라운드 헤더 목록에는 넣지 않는다 — 넣으면 결승 헤더와 같은 x에 두 번째 헤더가
+  // 겹쳐 보인다. 대신 카드 바로 위에 자기만의 작은 라벨을 따로 그린다.
+  const thirdPlaceMatch = useMemo(() => matches.find((m) => m.playerCountInRound === 3) ?? null, [matches])
+
   const rounds = useMemo(() => {
     const byRound = new Map<number, TournamentMatch[]>()
     for (const m of matches) {
+      if (m.playerCountInRound === 3) continue
       if (!byRound.has(m.roundNumber)) byRound.set(m.roundNumber, [])
       byRound.get(m.roundNumber)!.push(m)
     }
@@ -108,7 +123,7 @@ export function TournamentBracketVisual({
    * "A vs B"를 함께 넣지 않고, 두 칸을 위아래로 붙여 그린다. 칸 테두리도 종이 대진표처럼
    * 각진 사각형(모서리 둥글림 없음)으로 둔다.
    */
-  const slotBox = (m: TournamentMatch, side: 'A' | 'B') => {
+  const slotBox = (m: TournamentMatch, side: 'A' | 'B', rowHeight: number = CARD_HEIGHT / 2, fontSize = 17) => {
     const participantId = side === 'A' ? m.playerAParticipantId : m.playerBParticipantId
     // 부전승으로 다음 라운드에 오른 경우도 "승자"다 — officialWinnerParticipantId는
     // 부전승 경기에서도 대진 생성 시점에 이미 채워져 있으므로 별도 분기가 필요 없다.
@@ -124,7 +139,7 @@ export function TournamentBracketVisual({
           borderBottom: side === 'A' ? 'none' : undefined,
           borderRadius: 0,
           background: 'var(--surface, #fff)',
-          height: CARD_HEIGHT / 2,
+          height: rowHeight,
           boxSizing: 'border-box',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           overflow: 'hidden',
@@ -132,7 +147,7 @@ export function TournamentBracketVisual({
       >
         <span
           style={{
-            fontWeight: isWinner ? 800 : 500, opacity: participantId ? 1 : 0.5, fontSize: 17,
+            fontWeight: isWinner ? 800 : 500, opacity: participantId ? 1 : 0.5, fontSize,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
           }}
         >
@@ -143,8 +158,20 @@ export function TournamentBracketVisual({
     )
   }
 
-  const maxCenterY = Math.max(...[...layout.values()].map((p) => p.centerY))
-  const totalHeight = maxCenterY + CARD_HEIGHT / 2 + HEADER_HEIGHT + 4
+  const thirdPlacePos = thirdPlaceMatch ? layout.get(thirdPlaceMatch.id) : null
+  // 3·4위전 카드는 다른 카드보다 한 칸이 더 크고(THIRD_PLACE_ROW_HEIGHT) 라벨까지 위에
+  // 얹히므로, 전체 높이 계산에서 일반 카드 기준 여백(CARD_HEIGHT/2)이 아니라 이 카드의
+  // 실제 아래쪽 끝까지를 따로 반영해야 잘리지 않는다.
+  const genericPositions = matches
+    .filter((m) => m.playerCountInRound !== 3)
+    .map((m) => layout.get(m.id))
+    .filter((p): p is NonNullable<typeof p> => !!p)
+  const genericMaxCenterY = genericPositions.length > 0 ? Math.max(...genericPositions.map((p) => p.centerY)) : 0
+  const genericBottom = genericMaxCenterY + CARD_HEIGHT / 2 + HEADER_HEIGHT + 4
+  const thirdPlaceBottom = thirdPlacePos
+    ? thirdPlacePos.centerY + THIRD_PLACE_ROW_HEIGHT + HEADER_HEIGHT + THIRD_PLACE_LABEL_HEIGHT + 4
+    : 0
+  const totalHeight = Math.max(genericBottom, thirdPlaceBottom)
   const lastRoundX = rounds[rounds.length - 1]?.x ?? 0
   const totalWidth = lastRoundX + CARD_WIDTH
 
@@ -173,7 +200,7 @@ export function TournamentBracketVisual({
           </span>
         ))}
 
-        {matches.map((m) => {
+        {matches.filter((m) => m.playerCountInRound !== 3).map((m) => {
           const pos = layout.get(m.id)
           if (!pos) return null
           const selected = selectedMatchId === m.id
@@ -203,6 +230,39 @@ export function TournamentBracketVisual({
             </div>
           )
         })}
+
+        {/* 3·4위전 — 결승과 같은 컬럼 아래에 별도 카드로 그린다. 실제 TournamentMatch가
+            있을 때만 그려지고(§5: 없으면 라벨·카드·빈 자리 전부 만들지 않는다), 결승 승자
+            진출선과는 어떤 연결선도 공유하지 않는다(lines는 nextMatchId 그래프만 따라가고
+            이 경기는 그 그래프 밖에 있다). */}
+        {thirdPlaceMatch && thirdPlacePos && (() => {
+          const selected = selectedMatchId === thirdPlaceMatch.id
+          return (
+            <div
+              key={thirdPlaceMatch.id}
+              data-match-id={thirdPlaceMatch.id}
+              role={onSelectMatch ? 'button' : undefined}
+              tabIndex={onSelectMatch ? 0 : undefined}
+              onClick={onSelectMatch ? () => onSelectMatch(thirdPlaceMatch) : undefined}
+              onKeyDown={onSelectMatch ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelectMatch(thirdPlaceMatch) } : undefined}
+              style={{
+                position: 'absolute',
+                left: thirdPlacePos.x, width: THIRD_PLACE_CARD_WIDTH,
+                top: thirdPlacePos.centerY - THIRD_PLACE_ROW_HEIGHT + HEADER_HEIGHT,
+                display: 'flex', flexDirection: 'column',
+                outline: selected ? '2px solid #1a56db' : undefined,
+                outlineOffset: 2,
+                cursor: onSelectMatch ? 'pointer' : undefined,
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted-color, #767676)', marginBottom: 2 }}>
+                3·4위전
+              </span>
+              {slotBox(thirdPlaceMatch, 'A', THIRD_PLACE_ROW_HEIGHT, 15)}
+              {slotBox(thirdPlaceMatch, 'B', THIRD_PLACE_ROW_HEIGHT, 15)}
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

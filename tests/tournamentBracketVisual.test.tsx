@@ -245,3 +245,72 @@ describe('전체 대진표', () => {
     expect(container.textContent).not.toMatch(/numberToSlot|byeSlots/i)
   })
 })
+
+describe('전체 대진표 — 3·4위전 카드', () => {
+  /** 4명 대진 + 3·4위전(준결승 패자 둘이 맞붙는 별도 경기)을 만든다. */
+  function bracket4WithThirdPlace(overThirdPlace: Partial<TournamentMatch> = {}): TournamentMatch[] {
+    const nodes = buildEmptyBracket(4)
+    if (!nodes.ok) throw new Error(nodes.message)
+    const seats: TournamentSeat[] = [1, 2, 3, 4].map((n) => ({ participantId: `p-${n}`, memberId: `m-${n}`, handicap: 20, slotNumber: n }))
+    const built = buildTournamentMatches(nodes.value, seats)
+    if (!built.ok) throw new Error(built.message)
+    const thirdPlaceMatch: TournamentMatch = {
+      id: 'third-place', roundNumber: 3, playerCountInRound: 3, matchNumber: 1,
+      playerAParticipantId: 'p-5', playerBParticipantId: 'p-6',
+      playerAMemberId: 'm-5', playerBMemberId: 'm-6',
+      playerAHandicapSnapshot: 20, playerBHandicapSnapshot: 20,
+      scoreA: 18, scoreB: 12, resultType: 'normal', status: 'official',
+      officialWinnerParticipantId: 'p-5', officialLoserParticipantId: 'p-6',
+      nextMatchId: null, nextSlot: null,
+      ...overThirdPlace,
+    }
+    return [...built.value, thirdPlaceMatch]
+  }
+
+  const thirdPlaceNames: Record<string, string> = { ...names, 'p-5': '테스트회원5', 'p-6': '테스트회원6' }
+  const nameOfWithThirdPlace = (id: string | null) => (id ? thirdPlaceNames[id] ?? '알수없음' : '')
+
+  it('3·4위전 TournamentMatch가 있으면 "3·4위전" 라벨과 두 선수가 표시된다', () => {
+    const matches = bracket4WithThirdPlace()
+    render(<TournamentBracketVisual matches={matches} nameOf={nameOfWithThirdPlace} />)
+    expect(screen.getByText('3·4위전')).toBeTruthy()
+    expect(screen.getByText('테스트회원5')).toBeTruthy()
+    expect(screen.getByText('테스트회원6')).toBeTruthy()
+  })
+
+  it('3·4위전 TournamentMatch가 없으면 라벨도 빈 카드도 만들지 않는다', () => {
+    const nodes = buildEmptyBracket(4)
+    if (!nodes.ok) throw new Error(nodes.message)
+    const seats: TournamentSeat[] = [1, 2, 3, 4].map((n) => ({ participantId: `p-${n}`, memberId: `m-${n}`, handicap: 20, slotNumber: n }))
+    const built = buildTournamentMatches(nodes.value, seats)
+    if (!built.ok) throw new Error(built.message)
+    render(<TournamentBracketVisual matches={built.value} nameOf={nameOf} />)
+    expect(screen.queryByText('3·4위전')).toBeNull()
+  })
+
+  it('3·4위전 카드를 누르면 onSelectMatch가 그 경기로 호출된다', () => {
+    const matches = bracket4WithThirdPlace()
+    const onSelectMatch = vi.fn()
+    render(<TournamentBracketVisual matches={matches} nameOf={nameOf} onSelectMatch={onSelectMatch} />)
+    fireEvent.click(screen.getByText('3·4위전').closest('[data-match-id]')!)
+    expect(onSelectMatch).toHaveBeenCalledWith(expect.objectContaining({ id: 'third-place' }))
+  })
+
+  it('3·4위전 카드가 결승 카드와 같은 컬럼(x)의 아래쪽에 있고, 서로 겹치지 않는다', () => {
+    const matches = bracket4WithThirdPlace()
+    const layout = calculateBracketLayout(matches)
+    const finalPos = layout.get(tournamentMatchId(2, 1))!
+    const thirdPos = layout.get('third-place')!
+    expect(thirdPos.x).toBe(finalPos.x)
+    const finalBottom = finalPos.centerY + BRACKET_LAYOUT.CARD_HEIGHT / 2
+    const thirdTop = thirdPos.centerY - BRACKET_LAYOUT.CARD_HEIGHT / 2
+    expect(thirdTop).toBeGreaterThan(finalBottom)
+  })
+
+  it('3·4위전 승자도 굵은 글씨(승자 표시)로 보인다', () => {
+    const matches = bracket4WithThirdPlace()
+    render(<TournamentBracketVisual matches={matches} nameOf={nameOfWithThirdPlace} />)
+    const winnerSpan = screen.getByText('테스트회원5')
+    expect(winnerSpan).toHaveStyle({ fontWeight: '800' })
+  })
+})
