@@ -264,3 +264,41 @@ describe('개발자용 문자열 비노출', () => {
     expect(container.textContent).not.toContain('bracketFixed')
   })
 })
+
+describe('라운드 탭 순서', () => {
+  /** 8강(r1) → 4강(r2) → 결승(r3, roundNumber=3) → 3·4위전(r4, roundNumber=4, 데이터상 결승보다 큼). */
+  function bracket8WithThirdPlace(): TournamentMatch[] {
+    return [
+      normalMatch({ id: 'r1m1', roundNumber: 1, playerCountInRound: 8, nextMatchId: 'r2m1' }),
+      normalMatch({ id: 'r1m2', roundNumber: 1, playerCountInRound: 8, matchNumber: 2, nextMatchId: 'r2m1' }),
+      normalMatch({ id: 'r2m1', roundNumber: 2, playerCountInRound: 4, nextMatchId: 'r3m1' }),
+      normalMatch({ id: 'r3m1', roundNumber: 3, playerCountInRound: 2, nextMatchId: null, nextSlot: null }),
+      normalMatch({ id: 'r4m1', roundNumber: 4, playerCountInRound: 3, nextMatchId: null, nextSlot: null }),
+    ]
+  }
+
+  it('3·4위전이 있으면 탭 순서가 "8강 → 4강 → 3·4위전 → 결승"이다(roundNumber 순서와 다르게 표시)', () => {
+    render(<TournamentBracketView matches={bracket8WithThirdPlace()} nameOf={nameOf} />)
+    const tabLabels = screen.getAllByRole('button')
+      .map((b) => b.textContent?.replace('✅ ', ''))
+      .filter((t): t is string => !!t && ['8강', '4강', '결승', '3·4위전'].includes(t))
+    expect(tabLabels).toEqual(['8강', '4강', '3·4위전', '결승'])
+  })
+
+  it('3·4위전이 없으면 기존처럼 존재하는 라운드만 순서대로 표시된다', () => {
+    const matches = [
+      normalMatch({ id: 'r1m1', roundNumber: 1, playerCountInRound: 4, nextMatchId: 'r2m1' }),
+      normalMatch({ id: 'r2m1', roundNumber: 2, playerCountInRound: 2, nextMatchId: null, nextSlot: null }),
+    ]
+    render(<TournamentBracketView matches={matches} nameOf={nameOf} />)
+    const tabLabels = screen.getAllByRole('button').map((b) => b.textContent)
+    expect(tabLabels).toEqual(['4강', '결승'])
+  })
+
+  it('3·4위전 탭을 눌러도 기존 필터 동작이 그대로 유지된다(그 라운드 경기만 보인다)', () => {
+    render(<TournamentBracketView matches={bracket8WithThirdPlace()} nameOf={nameOf} />)
+    fireEvent.click(screen.getByText('3·4위전'))
+    expect(screen.getByText('테스트회원1')).toBeInTheDocument()
+    expect(screen.queryByText('경기 2')).not.toBeInTheDocument()
+  })
+})

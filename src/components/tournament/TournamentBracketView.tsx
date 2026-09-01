@@ -41,8 +41,17 @@ export function TournamentBracketView({
       if (!byRound.has(m.roundNumber)) byRound.set(m.roundNumber, [])
       byRound.get(m.roundNumber)!.push(m)
     }
+    // 3·4위전은 데이터상 roundNumber가 결승보다 크지만(결승 다음 라운드 번호를 그대로 씀 —
+    // logic/tournamentBracket.ts의 thirdPlaceMatchId), 탭 순서에서는 결승 바로 앞에 둔다
+    // (요청: 8강 → 4강 → 3·4위전 → 결승). roundNumber 자체은 건드리지 않고 정렬 키만 다르게
+    // 잡는다 — 대진 생성·순위 계산 등 다른 로직은 이 파일을 보지 않으므로 영향이 없다.
+    const finalRoundNumber = Math.max(
+      ...[...byRound.entries()].filter(([, list]) => list[0].playerCountInRound !== 3).map(([roundNumber]) => roundNumber),
+    )
+    const sortKey = (roundNumber: number, list: TournamentMatch[]) =>
+      list[0].playerCountInRound === 3 ? finalRoundNumber - 0.5 : roundNumber
     return [...byRound.entries()]
-      .sort(([a], [b]) => a - b)
+      .sort(([a, listA], [b, listB]) => sortKey(a, listA) - sortKey(b, listB))
       .map(([roundNumber, list]) => ({
         roundNumber,
         label: roundLabel(list[0].playerCountInRound),
