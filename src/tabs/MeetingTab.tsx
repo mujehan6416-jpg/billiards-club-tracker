@@ -14,7 +14,7 @@ import { uploadToCloud, UploadCancelledError } from '../lib/cloudSync'
 import {
   USE_SPLIT_FIRESTORE, writeSession, writeGame,
   deleteSplitSession, submitMemberGameResult, updateFlashSessionAttendees, toSessionDoc,
-  syncSplitChanges,
+  syncSplitChanges, deleteSplitGame,
 } from '../lib/splitFirestore'
 import { getLinkedMemberId } from '../lib/memberLink'
 import { currentAuthUid } from '../lib/appAuth'
@@ -553,6 +553,46 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     }
   }
 
+  // 완료 경기 한 건 삭제 — 서버에서 먼저 지우고, 성공했을 때만 로컬에서도 지운다.
+  //
+  // 예전에는 로컬 deleteGame()만 부르고 끝나서 화면에서만 사라지고 서버 문서는 그대로
+  // 남았다. 앱을 다시 열면 서버 내용으로 통째 교체되므로(App.tsx의 replaceAll) 지운 경기가
+  // 그대로 되살아났다.
+  //
+  // 순서를 "서버 먼저"로 잡은 이유: 로컬을 먼저 지우면 서버 삭제가 실패했을 때 화면과 서버가
+  // 어긋난 채로 남아(사용자는 지웠다고 믿는데 다음 접속에 되살아남) 바로 이 문제가 그대로
+  // 재현된다. 서버가 실패하면 아무것도 지우지 않고 그대로 두는 편이 정직하고, 사용자는 다시
+  // 시도하면 된다.
+  //
+  // 지우는 대상은 이 경기 문서 하나뿐이다(deleteSplitGame = deleteDoc 1건). 세션 문서·다른
+  // 경기·회원·정산 데이터는 건드리지 않는다.
+  const removeGame = async (g: Game) => {
+    // 완료된 경기 기록은 되돌릴 수 없으므로 반드시 한 번 확인한다.
+    if (!window.confirm(`이 경기 기록을 삭제하시겠습니까?\n\n${name(g.playerAId)} vs ${name(g.playerBId)}`)) return
+    try {
+      if (USE_SPLIT_FIRESTORE) {
+        await deleteSplitGame(session.id, g.id)
+      } else {
+        // legacy는 전체 스냅샷을 올리는 방식이라, 로컬 상태를 건드리지 않고 "이 경기만 뺀"
+        // 사본을 만들어 올린다 — 업로드가 실패해도 로컬은 손대지 않은 채로 남는다.
+        const s = useApp.getState()
+        const sessions = s.sessions.map((ss) =>
+          ss.id === session.id ? { ...ss, games: ss.games.filter((x) => x.id !== g.id) } : ss,
+        )
+        await uploadToCloud({ members: s.members, sessions, settings: s.settings, ledger: s.ledger })
+      }
+    } catch (err) {
+      if (err instanceof UploadCancelledError) {
+        alert('서버 저장을 취소했습니다.\n경기 기록은 삭제되지 않았습니다.')
+        return
+      }
+      console.error('경기 삭제 실패:', err)
+      alert('경기 기록을 서버에서 삭제하지 못했습니다.\n인터넷 연결을 확인한 뒤 다시 시도해 주세요.\n(기록은 아직 그대로 남아 있습니다.)')
+      return
+    }
+    deleteGame(session.id, g.id)
+  }
+
   // 카톡 배포용 대진표 텍스트 생성 (1부/2부 + 대기자)
   const buildLineupText = () => {
     const line = (o: Ongoing) => `${name(o.aId)}(${o.handicapA}) - ${name(o.bId)}(${o.handicapB})`
@@ -857,11 +897,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
                 <button
                   className="del"
                   aria-label="삭제"
-                  onClick={() => {
-                    // 완료된 경기 기록은 되돌릴 수 없으므로 반드시 한 번 확인한다.
-                    if (!window.confirm(`이 경기 기록을 삭제하시겠습니까?\n\n${name(g.playerAId)} vs ${name(g.playerBId)}`)) return
-                    deleteGame(session.id, g.id)
-                  }}
+                  onClick={() => removeGame(g)}
                 >✕</button>
               )}
               </div>

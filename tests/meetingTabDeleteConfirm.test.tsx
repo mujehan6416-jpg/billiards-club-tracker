@@ -1,11 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
-// cloudSync(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// cloudSync·splitFirestore(실제 Firebase 호출부)를 모킹 — 실제 네트워크에 절대 접근하지 않는다.
+// 경기 삭제는 서버 문서를 먼저 지운 뒤 로컬을 지우므로 splitFirestore도 함께 모킹해야 한다.
 const uploadToCloudMock = vi.fn()
+const deleteSplitGameMock = vi.fn()
 vi.mock('../src/lib/cloudSync', () => ({
   uploadToCloud: (...args: unknown[]) => uploadToCloudMock(...args),
   UploadCancelledError: class UploadCancelledError extends Error {},
+}))
+vi.mock('../src/lib/splitFirestore', () => ({
+  USE_SPLIT_FIRESTORE: true,
+  writeGame: vi.fn().mockResolvedValue(undefined),
+  writeSession: vi.fn().mockResolvedValue(undefined),
+  deleteSplitSession: vi.fn().mockResolvedValue(undefined),
+  deleteSplitGame: (...args: unknown[]) => deleteSplitGameMock(...args),
+  submitMemberGameResult: vi.fn().mockResolvedValue(undefined),
+  updateFlashSessionAttendees: vi.fn().mockResolvedValue(undefined),
+  syncSplitChanges: vi.fn().mockResolvedValue(undefined),
+  toSessionDoc: (s: unknown) => s,
 }))
 
 import { MeetingTab } from '../src/tabs/MeetingTab'
@@ -41,6 +54,8 @@ beforeEach(() => {
   useAuth.setState({ memberId: 'm1', memberName: '테스트회원A', isGuest: false })
   uploadToCloudMock.mockReset()
   uploadToCloudMock.mockResolvedValue(undefined)
+  deleteSplitGameMock.mockReset()
+  deleteSplitGameMock.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -59,14 +74,16 @@ describe('MeetingTab — 완료 경기 삭제 확인', () => {
     expect(gamesOf()).toHaveLength(1)
   })
 
-  it('삭제 확인창에서 확인해야 실제로 삭제된다', () => {
+  it('삭제 확인창에서 확인해야 실제로 삭제된다', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<MeetingTab />)
 
     fireEvent.click(screen.getByLabelText('삭제'))
 
     expect(confirmSpy).toHaveBeenCalledTimes(1)
-    expect(gamesOf()).toHaveLength(0)
+    // 서버 문서를 먼저 지우고 성공한 뒤에 로컬에서 지우므로 비동기다.
+    await waitFor(() => expect(gamesOf()).toHaveLength(0))
+    expect(deleteSplitGameMock).toHaveBeenCalledWith('s1', 'g1')
   })
 
   it('확인창에 어느 경기인지 선수 이름이 함께 나온다', () => {
