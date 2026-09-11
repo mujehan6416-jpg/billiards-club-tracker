@@ -20,6 +20,28 @@ export async function fetchMyLink(uid: string, clubId = DEFAULT_CLUB_ID): Promis
   return snap.exists() ? (snap.data() as MemberLink) : null
 }
 
+/**
+ * 이 기기에 연결된(승인·활성) 회원 ID. 연결이 없거나 비활성이면 null.
+ *
+ * 경기 결과를 저장할 때 "누가 입력했는지"의 기준값으로 쓴다. 앱 로그인(이름 선택)은 로컬
+ * 선택일 뿐이라 신뢰할 수 없고, memberLinks는 관리자가 승인해 만든 서버 기록이라 보안
+ * 규칙(linkedMemberId)이 같은 값을 검사할 수 있다 — 그래서 남의 이름으로 저장되지 않는다.
+ *
+ * 저장할 때마다 서버를 다시 읽지 않도록 uid별로 한 번만 조회해 캐시한다. 기기 연결이
+ * 바뀌는 일은 관리자 승인/해제 때뿐이고, 그 경우 앱을 다시 열면 캐시도 사라진다.
+ */
+const linkedMemberIdCache = new Map<string, string | null>()
+
+export async function getLinkedMemberId(uid: string, clubId = DEFAULT_CLUB_ID): Promise<string | null> {
+  const key = `${clubId}/${uid}`
+  const cached = linkedMemberIdCache.get(key)
+  if (cached !== undefined) return cached
+  const link = await fetchMyLink(uid, clubId).catch(() => null)
+  const memberId = link?.active ? link.memberId : null
+  linkedMemberIdCache.set(key, memberId)
+  return memberId
+}
+
 /** 이 기기(uid)가 보낸 연결 요청. 없으면 null. */
 export async function fetchMyRequest(uid: string, clubId = DEFAULT_CLUB_ID): Promise<LinkRequest | null> {
   const snap = await getDoc(linkRequestDoc(clubId, uid))

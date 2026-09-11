@@ -188,7 +188,7 @@ service cloud.firestore {
           hasActiveMemberLink(clubId)
           && request.resource.data.id == gameId
           && request.resource.data.keys().hasOnly(
-            ['id', 'playerAId', 'playerBId', 'handicapA', 'handicapB', 'scoreA', 'scoreB', 'endType', 'playedAt', 'round', 'pending']
+            ['id', 'playerAId', 'playerBId', 'handicapA', 'handicapB', 'scoreA', 'scoreB', 'endType', 'playedAt', 'round', 'pending', 'submittedByRole', 'submittedByMemberId']
           )
           && request.resource.data.playerAId is string
           && request.resource.data.playerBId is string
@@ -199,6 +199,28 @@ service cloud.firestore {
           && request.resource.data.handicapB is number && request.resource.data.handicapB > 0
           && request.resource.data.endType in ['cleared', 'time']
           && request.resource.data.pending == true
+          // 입력자 표시(승인 대기 · 입력: 홍길동)용 값 — "둘 다 없음" 또는 "둘 다 정확함"만
+          // 허용한다.
+          //
+          // ① 둘 다 없음: 아직 새 앱으로 갱신되지 않은 기기(폰에 캐시된 구버전 PWA)가 보내는
+          //    모양이다. 이걸 막으면 규칙을 먼저 배포한 순간부터 그 회원들은 모임 현장에서
+          //    경기 저장이 통째로 실패한다. 입력자를 모르는 경기로 저장될 뿐이고(화면에서는
+          //    상태만 보여준다) 사칭 위험은 없으므로 허용한다.
+          // ② 둘 다 정확함: 역할은 'member'여야 하고(회원이 스스로 관리자 입력이라고 적을 수
+          //    없다), memberId는 이 기기의 연결 기록(memberLinks)과 정확히 같아야 한다 —
+          //    남의 이름으로 입력한 것처럼 기록하는 사칭을 서버에서 막는다.
+          //
+          // 한쪽만 보낸 경우(role만/ memberId만)는 없는 쪽이 null이 되어 ②의 비교에서 false가
+          // 되고, ①도 hasAny에 걸려 false라 그대로 거부된다.
+          // 한 번 저장된 뒤에는 아래 update 규칙의 affectedKeys 목록에 이 두 필드가 없으므로
+          // 회원이 나중에 입력자를 바꿔칠 수도 없다.
+          && (
+            !request.resource.data.keys().hasAny(['submittedByRole', 'submittedByMemberId'])
+            || (
+              request.resource.data.submittedByRole == 'member'
+              && request.resource.data.submittedByMemberId == linkedMemberId(clubId)
+            )
+          )
           && (
             isFlashSession(clubId, sessionId)
             || isGameParticipant(clubId, request.resource.data.playerAId, request.resource.data.playerBId)

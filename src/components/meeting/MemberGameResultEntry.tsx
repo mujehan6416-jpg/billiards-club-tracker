@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useApp } from '../../store/appStore'
 import { uploadToCloud, UploadCancelledError } from '../../lib/cloudSync'
 import { USE_SPLIT_FIRESTORE, submitMemberGameResult, resubmitMemberGameResult } from '../../lib/splitFirestore'
+import { getLinkedMemberId } from '../../lib/memberLink'
+import { currentAuthUid } from '../../lib/appAuth'
 import type { Game, LineupMatch, Member, Session } from '../../types'
 
 // 정기모임 참가자 본인 경기 결과 입력 — 관리자가 아닌 일반회원 전용 UI.
@@ -41,11 +43,17 @@ function MatchResultRow({ session, match, game, opponentName }: {
     if (game) {
       resubmitGameResult(session.id, game.id, { scoreA: sA, scoreB: sB, endType })
     } else {
+      // 입력자 — 앱에서 고른 이름이 아니라 이 기기의 memberLinks 연결 기준 회원 ID를 쓴다.
+      // 보안 규칙도 같은 값을 검사하므로 남의 이름으로는 저장되지 않는다. 연결을 확인하지
+      // 못하면 필드를 비워 두고 추측해서 채우지 않는다(그 경우 서버 저장이 거부된다).
+      const uid = currentAuthUid()
+      const linkedMemberId = uid ? await getLinkedMemberId(uid) : null
       created = addGame(session.id, {
         playerAId: match.aId, playerBId: match.bId,
         handicapA: match.handicapA, handicapB: match.handicapB,
         scoreA: sA, scoreB: sB, endType, round: match.round,
         pending: true, // 일반회원이 직접 입력한 정기모임 결과는 항상 관리자 확인 대기로 저장한다.
+        ...(linkedMemberId ? { submittedByRole: 'member' as const, submittedByMemberId: linkedMemberId } : {}),
       })
     }
     // 번개모임 회원 입력과 동일하게, 저장 직후 클라우드에 반영한다. 이 화면은 항상 회원 전용

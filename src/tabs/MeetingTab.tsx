@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarPicker } from '../components/CalendarPicker'
 import { useApp } from '../store/appStore'
-import type { LineupMatch, Member, Session } from '../types'
+import type { Game, LineupMatch, Member, Session } from '../types'
 import {
   buildMeetCount, matchAll, matchRoundOne, matchRoundTwo, pairKey,
   canRematchRound, toggleParticipant, replaceRound, applyNewAttendees,
@@ -14,7 +14,10 @@ import { uploadToCloud, UploadCancelledError } from '../lib/cloudSync'
 import {
   USE_SPLIT_FIRESTORE, writeSession, writeGame,
   deleteSplitSession, submitMemberGameResult, updateFlashSessionAttendees, toSessionDoc,
+  syncSplitChanges,
 } from '../lib/splitFirestore'
+import { getLinkedMemberId } from '../lib/memberLink'
+import { currentAuthUid } from '../lib/appAuth'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
 import { MemberSettlementSummary } from '../components/settlement/MemberSettlementSummary'
@@ -462,7 +465,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
 
   const cancel = (key: string) => setOngoing((prev) => prev.filter((o) => o.key !== key))
 
-  const save = (o: Ongoing) => {
+  const save = async (o: Ongoing) => {
     const scoreA = Math.max(0, parseInt(o.scoreA || '0', 10) || 0)
     const scoreB = Math.max(0, parseInt(o.scoreB || '0', 10) || 0)
     if (scoreA > o.handicapA || scoreB > o.handicapB) {
@@ -478,11 +481,25 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     }
     const endType = scoreA >= o.handicapA || scoreB >= o.handicapB ? 'cleared' : 'time'
     const isPending = isFlash && !isAdmin
+    // 입력자 정보 — 화면에 "승인 대기 · 입력: 홍길동"처럼 보여주기 위한 값이다.
+    // 관리자 모드 입력은 'admin'(특정 관리자 개인이 아니라 "관리자 모드에서 입력됨"이라는 뜻),
+    // 회원 입력은 이 기기의 memberLinks 연결 기준 회원 ID를 쓴다 — 앱에서 고른 이름
+    // (useAuth().memberId)은 로컬 선택이라 신뢰하지 않는다. 보안 규칙도 같은 값을 검사한다.
+    const submitter: Pick<Game, 'submittedByRole' | 'submittedByMemberId'> = isAdmin
+      ? { submittedByRole: 'admin' }
+      : await (async () => {
+          const uid = currentAuthUid()
+          const linked = uid ? await getLinkedMemberId(uid) : null
+          // 연결을 확인하지 못하면 입력자 필드를 비워 둔다 — 추측해서 채우지 않는다.
+          // (이 경우 서버 저장은 Rules에서 거부되고 아래 실패 안내가 뜬다.)
+          return linked ? { submittedByRole: 'member' as const, submittedByMemberId: linked } : {}
+        })()
     const created = addGame(session.id, {
       playerAId: o.aId, playerBId: o.bId,
       handicapA: o.handicapA, handicapB: o.handicapB,
       scoreA, scoreB, endType, round: o.round,
       ...(isPending ? { pending: true } : {}),
+      ...submitter,
     })
     cancel(o.key)
     // 저장 직후 클라우드 반영 (관리자 정기/번개, 일반회원 pending 모두 동일).
@@ -509,6 +526,30 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
           console.error('서버 저장 실패:', err)
           saveFailedMessage()
         })
+    }
+  }
+
+  // 번개모임 승인 — 세션 approved와 그 세션 경기들의 pending 해제를 서버에도 반영한다.
+  //
+  // 예전에는 여기서 로컬 approveSession()만 부르고 끝나서, 승인한 기기에서만 "승인됨"으로
+  // 보이고 다른 폰에서는 계속 승인 대기로 보였다(앱을 다시 열면 서버 내용으로 덮어써져
+  // 승인이 사라지기까지 했다). 설정 탭의 승인 버튼과 똑같이 syncSplitChanges로 바뀐 문서만
+  // 반영한다 — 이 버튼은 isAdmin일 때만 보이므로 관리자 전용인 이 함수를 써도 된다.
+  const approveAndSync = async () => {
+    if (!window.confirm('이 번개모임 기록을 승인할까요?')) return
+    const previous = useApp.getState()
+    approveSession(session.id)
+    const next = useApp.getState()
+    try {
+      if (USE_SPLIT_FIRESTORE) await syncSplitChanges(previous, next)
+      else await uploadToCloud({ members: next.members, sessions: next.sessions, settings: next.settings, ledger: next.ledger })
+    } catch (err) {
+      if (err instanceof UploadCancelledError) {
+        alert('서버 저장을 취소했습니다.\n승인은 이 기기에만 반영되었습니다.')
+        return
+      }
+      console.error('승인 서버 반영 실패:', err)
+      alert('승인은 이 기기에 저장됐지만 서버 반영에 실패했습니다.\n인터넷 확인 후 설정 탭에서 다시 승인해 주세요.')
     }
   }
 
@@ -588,6 +629,29 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
       const s = useApp.getState()
       await uploadToCloud({ members: s.members, sessions: s.sessions, settings: s.settings, ledger: s.ledger })
     }
+  }
+
+  // 완료 경기 한 줄 아래에 붙일 "승인 상태 · 입력자" 문구를 만든다.
+  //
+  // 번개모임은 승인이 2층이라 둘을 함께 본다 — 세션 승인(session.approved)과 경기별 확인
+  // (game.pending). 관리자가 입력한 번개모임 경기에는 pending이 붙지 않으므로 세션 승인만
+  // 기다리는 상태이고, 회원이 입력한 경기는 둘 다 걸려 있을 수 있다.
+  //
+  // 정기모임은 세션 승인 절차 자체가 없으므로, 회원이 제출해 아직 관리자가 확인하지 않은
+  // 경기(pending)일 때만 문구를 보여준다 — 확정된 경기에 "승인 완료"를 줄마다 붙이면 기존
+  // 화면이 불필요하게 복잡해진다.
+  //
+  // 입력자 필드가 없던 기존 경기는 상태만 보여준다("입력: 알 수 없음"은 쓰지 않는다).
+  const gameStatusLabel = (g: Game): { text: string; awaiting: boolean } | null => {
+    const awaiting = isFlash ? (!isApproved || g.pending === true) : g.pending === true
+    if (!isFlash && !awaiting) return null
+    const who =
+      g.submittedByRole === 'admin' ? '관리자'
+      : g.submittedByRole === 'member' && g.submittedByMemberId && memberMap.has(g.submittedByMemberId)
+        ? name(g.submittedByMemberId)
+        : null
+    const base = awaiting ? '승인 대기' : '승인 완료'
+    return { text: who ? `${base} · 입력: ${who}` : base, awaiting }
   }
 
   const typeLabel = isFlash ? '⚡ 번개모임' : '📋 정기모임'
@@ -738,7 +802,7 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
       {isFlash && !isApproved && isAdmin && (
         <div style={{ background: '#fff8e1', borderRadius: 8, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <span style={{ fontSize: 16, lineHeight: 1.4 }}>⚡ 번개모임 기록을 정규 통계에 반영할까요?</span>
-          <button className="primary" style={{ fontSize: 16, padding: '13px 18px' }} onClick={() => { if (window.confirm('이 번개모임 기록을 승인할까요?')) approveSession(session.id) }}>
+          <button className="primary" style={{ fontSize: 16, padding: '13px 18px' }} onClick={approveAndSync}>
             승인
           </button>
         </div>
@@ -768,8 +832,12 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
             )
           }
           const win = winnerId(g)
+          const status = gameStatusLabel(g)
+          // 결과 줄(이름·점수·버튼)은 기존 .result-row 그대로 두고, 상태 문구만 그 아래 줄에
+          // 붙인다 — 한 줄에 같이 넣으면 좁은 폰 화면에서 이름과 점수가 눌린다.
           return (
-            <li key={g.id} className="card result-row" style={g.pending ? { opacity: 0.75 } : undefined}>
+            <li key={g.id} className="card col-card" style={g.pending ? { opacity: 0.75 } : undefined}>
+              <div className="result-row">
               <span className={win === g.playerAId ? 'win' : ''}>
                 {name(g.playerAId)} {fmtScore(g.scoreA, g.handicapA)}
               </span>
@@ -777,11 +845,6 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
               <span className={win === g.playerBId ? 'win right' : 'right'}>
                 {name(g.playerBId)} {fmtScore(g.scoreB, g.handicapB)}
               </span>
-              {g.pending && (
-                <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, background: '#fff3cd', color: '#856404', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                  승인대기
-                </span>
-              )}
               {isAdmin && (
                 <button
                   style={{ fontSize: 13, padding: '6px 10px', whiteSpace: 'nowrap' }}
@@ -800,6 +863,15 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
                     deleteGame(session.id, g.id)
                   }}
                 >✕</button>
+              )}
+              </div>
+              {status && (
+                <span style={{
+                  fontSize: 14, fontWeight: 600, lineHeight: 1.4,
+                  color: status.awaiting ? '#856404' : '#0f6e56',
+                }}>
+                  {status.awaiting ? '⏳' : '✅'} {status.text}
+                </span>
               )}
             </li>
           )

@@ -165,10 +165,13 @@ describe.skipIf(!testEnv)('firestore.rules — 회원 전용 split write (보안
     const REGULAR_ID = 'regular-1'
     const FLASH_ID = 'flash-1'
     const GAME_ID = 'game-1'
+    // 입력자(submittedByRole/submittedByMemberId)는 이제 회원 create의 필수 조건이다 —
+    // 기본값은 asMember()(UID_MEMBER_ACTIVE → MEMBER_ID_1)가 자기 자신을 입력자로 적은 형태다.
     const pendingGame = (over: object = {}) => ({
       id: GAME_ID, playerAId: MEMBER_ID_1, playerBId: MEMBER_ID_2,
       handicapA: 18, handicapB: 20, scoreA: 10, scoreB: 12,
-      endType: 'time', playedAt: '2026-08-26T10:00:00.000Z', pending: true, ...over,
+      endType: 'time', playedAt: '2026-08-26T10:00:00.000Z', pending: true,
+      submittedByRole: 'member', submittedByMemberId: MEMBER_ID_1, ...over,
     })
 
     it('정기모임 참가자 본인은 pending:true 경기를 만들 수 있다', async () => {
@@ -181,7 +184,11 @@ describe.skipIf(!testEnv)('firestore.rules — 회원 전용 split write (보안
       await seedDoc(sessionPath(REGULAR_ID), { id: REGULAR_ID, date: '2026-08-26', attendeeIds: [MEMBER_ID_1, MEMBER_ID_2] })
       await linkOtherActive() // uid-member-other → MEMBER_ID_2, 이 게임엔 A/B로 안 씀
       await assertFails(
-        asOtherMember().doc(gamePath(REGULAR_ID, GAME_ID)).set(pendingGame({ playerAId: MEMBER_ID_1, playerBId: 'member-003' })),
+        // 입력자는 본인(MEMBER_ID_2)으로 올바르게 적는다 — 그래야 "비참가자라서 거부"임이
+        // 확인된다(입력자 불일치라는 다른 이유로 거부되면 이 테스트의 의미가 없어진다).
+        asOtherMember().doc(gamePath(REGULAR_ID, GAME_ID)).set(
+          pendingGame({ playerAId: MEMBER_ID_1, playerBId: 'member-003', submittedByMemberId: MEMBER_ID_2 }),
+        ),
       )
     })
 
@@ -190,6 +197,94 @@ describe.skipIf(!testEnv)('firestore.rules — 회원 전용 split write (보안
       await linkActive() // MEMBER_ID_1은 이 경기의 A/B가 아님
       await assertSucceeds(
         asMember().doc(gamePath(FLASH_ID, GAME_ID)).set(pendingGame({ playerAId: MEMBER_ID_2, playerBId: 'member-003' })),
+      )
+    })
+
+    // ── 입력자(누가 입력했는지) 검증 ──────────────────────────────────
+    // 화면에 "승인 대기 · 입력: 홍길동"으로 보여주는 값이라, 남의 이름으로 기록되면
+    // 그 자체가 사칭이 된다. 서버가 memberLinks(linkedMemberId)와 대조해 막는다.
+
+    it('자기 memberId를 입력자로 적으면 허용된다', async () => {
+      await seedDoc(sessionPath(FLASH_ID), { id: FLASH_ID, date: '2026-08-26', type: 'flash', attendeeIds: [MEMBER_ID_1, MEMBER_ID_2], approved: false })
+      await linkActive() // UID_MEMBER_ACTIVE → MEMBER_ID_1
+      await assertSucceeds(
+        asMember().doc(gamePath(FLASH_ID, GAME_ID)).set(pendingGame({ submittedByMemberId: MEMBER_ID_1 })),
+      )
+    })
+
+    it('다른 사람 memberId를 입력자로 적으면 거부된다(사칭 방지)', async () => {
+      await seedDoc(sessionPath(FLASH_ID), { id: FLASH_ID, date: '2026-08-26', type: 'flash', attendeeIds: [MEMBER_ID_1, MEMBER_ID_2], approved: false })
+      await linkActive() // UID_MEMBER_ACTIVE → MEMBER_ID_1인데
+      await assertFails(
+        asMember().doc(gamePath(FLASH_ID, GAME_ID)).set(pendingGame({ submittedByMemberId: MEMBER_ID_2 })),
+      )
+    })
+
+    it('회원이 자기를 관리자 입력으로 적으면 거부된다', async () => {
+      await seedDoc(sessionPath(FLASH_ID), { id: FLASH_ID, date: '2026-08-26', type: 'flash', attendeeIds: [MEMBER_ID_1, MEMBER_ID_2], approved: false })
+      await linkActive()
+      await assertFails(
+        asMember().doc(gamePath(FLASH_ID, GAME_ID)).set(pendingGame({ submittedByRole: 'admin' })),
+      )
+    })
+
+    // 입력자 없이 보내는 모양 = 아직 새 앱으로 갱신되지 않은 기기(캐시된 구버전 PWA).
+    // 규칙을 먼저 배포해도 이 회원들의 경기 입력이 막히지 않아야 한다.
+    it('구버전 앱처럼 입력자 필드가 둘 다 없으면 허용된다', async () => {
+      await seedDoc(sessionPath(FLASH_ID), { id: FLASH_ID, date: '2026-08-26', type: 'flash', attendeeIds: [MEMBER_ID_1, MEMBER_ID_2], approved: false })
+      await linkActive()
+      const noSubmitter = {
+        id: GAME_ID, playerAId: MEMBER_ID_1, playerBId: MEMBER_ID_2,
+        handicapA: 18, handicapB: 20, scoreA: 10, scoreB: 12,
+        endType: 'time', playedAt: '2026-08-26T10:00:00.000Z', pending: true,
+      }
+      await assertSucceeds(asMember().doc(gamePath(FLASH_ID, GAME_ID)).set(noSubmitter))
+    })
+
+    // 한쪽만 보내는 건 구버전도 신버전도 아닌 모양이라 그대로 막는다.
+    it('submittedByMemberId만 있고 role이 없으면 거부된다', async () => {
+      await seedDoc(sessionPath(FLASH_ID), { id: FLASH_ID, date: '2026-08-26', type: 'flash', attendeeIds: [MEMBER_ID_1, MEMBER_ID_2], approved: false })
+      await linkActive()
+      const roleMissing = {
+        id: GAME_ID, playerAId: MEMBER_ID_1, playerBId: MEMBER_ID_2,
+        handicapA: 18, handicapB: 20, scoreA: 10, scoreB: 12,
+        endType: 'time', playedAt: '2026-08-26T10:00:00.000Z', pending: true,
+        submittedByMemberId: MEMBER_ID_1,
+      }
+      await assertFails(asMember().doc(gamePath(FLASH_ID, GAME_ID)).set(roleMissing))
+    })
+
+    it('submittedByRole만 있고 memberId가 없으면 거부된다', async () => {
+      await seedDoc(sessionPath(FLASH_ID), { id: FLASH_ID, date: '2026-08-26', type: 'flash', attendeeIds: [MEMBER_ID_1, MEMBER_ID_2], approved: false })
+      await linkActive()
+      const memberIdMissing = {
+        id: GAME_ID, playerAId: MEMBER_ID_1, playerBId: MEMBER_ID_2,
+        handicapA: 18, handicapB: 20, scoreA: 10, scoreB: 12,
+        endType: 'time', playedAt: '2026-08-26T10:00:00.000Z', pending: true,
+        submittedByRole: 'member',
+      }
+      await assertFails(asMember().doc(gamePath(FLASH_ID, GAME_ID)).set(memberIdMissing))
+    })
+
+    it('submittedByRole이 member/admin이 아닌 다른 값이면 거부된다', async () => {
+      await seedDoc(sessionPath(FLASH_ID), { id: FLASH_ID, date: '2026-08-26', type: 'flash', attendeeIds: [MEMBER_ID_1, MEMBER_ID_2], approved: false })
+      await linkActive()
+      await assertFails(
+        asMember().doc(gamePath(FLASH_ID, GAME_ID)).set(pendingGame({ submittedByRole: 'owner' })),
+      )
+    })
+
+    it('관리자는 submittedByRole:"admin"으로 입력자 없이 만들 수 있다', async () => {
+      await seedDoc(sessionPath(FLASH_ID), { id: FLASH_ID, date: '2026-08-26', type: 'flash', attendeeIds: [MEMBER_ID_1, MEMBER_ID_2], approved: false })
+      await seedAdmin(testEnv!, UID_ADMIN_ACTIVE, true)
+      const db = testEnv!.authenticatedContext(UID_ADMIN_ACTIVE).firestore()
+      await assertSucceeds(
+        db.doc(gamePath(FLASH_ID, GAME_ID)).set({
+          id: GAME_ID, playerAId: MEMBER_ID_1, playerBId: MEMBER_ID_2,
+          handicapA: 18, handicapB: 20, scoreA: 10, scoreB: 12,
+          endType: 'time', playedAt: '2026-08-26T10:00:00.000Z',
+          submittedByRole: 'admin',
+        }),
       )
     })
 
@@ -278,6 +373,38 @@ describe.skipIf(!testEnv)('firestore.rules — 회원 전용 split write (보안
       await linkOtherActive()
       await assertFails(
         asOtherMember().doc(gamePath(SESSION_ID, GAME_ID)).update({ scoreA: 15, pending: true, revisionRequested: false }),
+      )
+    })
+
+    // 한 번 기록된 입력자는 나중에 바꿀 수 없어야 한다 — 바꿀 수 있으면 결과를 제출한 뒤
+    // "저 사람이 입력했다"고 떠넘길 수 있어 표시 자체를 믿을 수 없게 된다.
+    it('참가자 본인이라도 submittedByMemberId를 바꿀 수 없다', async () => {
+      await seedGame({ submittedByRole: 'member', submittedByMemberId: MEMBER_ID_1 })
+      await linkActive()
+      await assertFails(
+        asMember().doc(gamePath(SESSION_ID, GAME_ID)).update({
+          scoreA: 15, pending: true, revisionRequested: false, submittedByMemberId: MEMBER_ID_2,
+        }),
+      )
+    })
+
+    it('참가자 본인이라도 submittedByRole을 바꿀 수 없다', async () => {
+      await seedGame({ submittedByRole: 'member', submittedByMemberId: MEMBER_ID_1 })
+      await linkActive()
+      await assertFails(
+        asMember().doc(gamePath(SESSION_ID, GAME_ID)).update({
+          scoreA: 15, pending: true, revisionRequested: false, submittedByRole: 'admin',
+        }),
+      )
+    })
+
+    it('입력자를 그대로 둔 채 점수만 재제출하는 것은 허용된다', async () => {
+      await seedGame({ submittedByRole: 'member', submittedByMemberId: MEMBER_ID_1 })
+      await linkActive()
+      await assertSucceeds(
+        asMember().doc(gamePath(SESSION_ID, GAME_ID)).update({
+          scoreA: 15, scoreB: 18, endType: 'cleared', pending: true, revisionRequested: false,
+        }),
       )
     })
   })

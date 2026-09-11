@@ -297,6 +297,12 @@ export async function submitMemberGameResult(sessionId: string, game: Game, club
     playedAt: game.playedAt,
     pending: true,
     ...(game.round !== undefined ? { round: game.round } : {}),
+    // 입력자 정보. 회원 경로에서는 항상 'member'이고, memberId는 호출부가 memberLinks에서
+    // 읽어온 값이어야 한다 — Rules가 linkedMemberId()와 같은지 검사하므로 다른 회원 ID를
+    // 넣으면 서버가 거부한다. 값이 없으면 필드를 만들지 않고 그대로 보내 Rules에서 걸린다
+    // (여기서 임의로 채워 넣지 않는다 — 조용히 잘못된 입력자가 기록되는 편이 더 나쁘다).
+    ...(game.submittedByRole !== undefined ? { submittedByRole: game.submittedByRole } : {}),
+    ...(game.submittedByMemberId !== undefined ? { submittedByMemberId: game.submittedByMemberId } : {}),
   }
   await setDoc(gameDoc(clubId, sessionId, game.id), payload)
 }
