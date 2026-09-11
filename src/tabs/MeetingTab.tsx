@@ -315,6 +315,10 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
   // 선택된 매칭 방식 (null = 아직 선택 안 함) — 선택된 버튼만 녹색 표시
   const [matchMode, setMatchMode] = useState<'auto' | 'manual' | null>(null)
   const [manualSel, setManualSel] = useState<{ round: number; id: string } | null>(null)
+  // 번개모임 전용 "➕ 경기 추가" — 첫 경기를 저장한 뒤에도 참석자를 직접 골라 다음 경기를
+  // 만들기 위한 상태. addingFlashGame = 선택 패널이 열려 있는지, flashAddSel = 먼저 누른 한 명.
+  const [addingFlashGame, setAddingFlashGame] = useState(false)
+  const [flashAddSel, setFlashAddSel] = useState<string | null>(null)
   const [lineupText, setLineupText] = useState<string | null>(null)
   // 저장된 경기의 적용 핸디·득점을 관리자가 고치는 중인 경기 id (한 번에 하나만 연다)
   const [editGameId, setEditGameId] = useState<string | null>(null)
@@ -429,6 +433,28 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
     if (manualSel.id === id) { setManualSel(null); return }
     setOngoing((prev) => [...prev, makeOngoing(manualSel.id, id, round)])
     setManualSel(null)
+  }
+
+  // ── 번개모임 전용: ➕ 경기 추가 ──────────────────────────────────────
+  // 후보에서 빼는 조건은 "지금 점수를 입력 중인 대진 카드에 이미 들어 있는 사람" 하나뿐이다
+  // (한 사람이 동시에 두 테이블에 앉을 수는 없으므로). 이미 끝낸 경기(session.games)에
+  // 나왔는지는 후보 제외 조건으로 쓰지 않는다 — 첫 경기를 마친 사람도 다음 경기에 다시
+  // 나올 수 있어야 하고, 그게 이 기능의 핵심이다.
+  //
+  // 그래서 기존 matchedInRound()/unmatchedInRound()(저장된 경기 참가자를 매칭 완료로 보는
+  // 자동매칭·대기자 표시용 로직)는 전혀 건드리지 않고, 여기서 별도로 후보를 계산한다.
+  const flashAddCandidates = () => {
+    const inOngoing = new Set(ongoing.flatMap((o) => [o.aId, o.bId]))
+    return session.attendeeIds.filter((id) => !inOngoing.has(id))
+  }
+
+  // 칩을 두 번 눌러 두 명을 고르면 기존 대진 생성 경로(makeOngoing)로 새 경기 카드를 만든다.
+  // 만든 뒤에도 패널을 닫지 않는다 — 세 번째, 네 번째 경기도 이어서 만들 수 있어야 한다.
+  const tapFlashAdd = (id: string) => {
+    if (flashAddSel === null) { setFlashAddSel(id); return }
+    if (flashAddSel === id) { setFlashAddSel(null); return }
+    setOngoing((prev) => [...prev, makeOngoing(flashAddSel, id, 1)])
+    setFlashAddSel(null)
   }
 
   const patch = (key: string, field: keyof Ongoing, value: string | number) =>
@@ -910,6 +936,56 @@ function Board({ session, members, sessions, selectedDate, onDateChange, daySess
               📋 카톡 대진표
             </button>
           )}
+
+          {/* 번개모임 전용: 첫 경기를 저장한 뒤에도 참석자를 직접 골라 다음 경기를 만든다.
+              지금까지는 자동매칭을 다시 누르는 방법밖에 없어서, 경기를 마친 사람이 아래 "대기"
+              목록에서 사라지면 더 입력할 수 없는 화면처럼 보였다. 정기모임에는 라운드·대진표
+              게시 흐름이 따로 있으므로 이 버튼을 넣지 않는다. */}
+          {isFlash && (
+            <button className="block" style={{ fontSize: 16, padding: 13, marginBottom: 10 }}
+              disabled={session.attendeeIds.length < 2}
+              onClick={() => { setFlashAddSel(null); setAddingFlashGame(true) }}>
+              ➕ 경기 추가
+            </button>
+          )}
+
+          {isFlash && addingFlashGame && (() => {
+            const candidates = flashAddCandidates()
+            return (
+              <div className="card col-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: 16 }}>경기할 두 명을 선택하세요</span>
+                  <button type="button" style={{ fontSize: 15, padding: '9px 14px' }}
+                    onClick={() => { setAddingFlashGame(false); setFlashAddSel(null) }}>
+                    닫기
+                  </button>
+                </div>
+                {candidates.length >= 2 ? (
+                  <>
+                    <div className="chip-grid">
+                      {candidates.map((id) => (
+                        <button key={id} type="button"
+                          className={`chip${flashAddSel === id ? ' on' : ''}`}
+                          onClick={() => tapFlashAdd(id)}>
+                          {flashAddSel === id ? '✓ ' : ''}{name(id)}
+                        </button>
+                      ))}
+                    </div>
+                    <span style={{ fontSize: 15, lineHeight: 1.5 }}>
+                      {flashAddSel
+                        ? `${name(flashAddSel)} 님 선택됨 — 상대를 선택하세요.`
+                        : '이미 경기를 마친 분도 다시 선택할 수 있습니다.'}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ fontSize: 15, lineHeight: 1.5, color: '#c0392b', fontWeight: 600 }}>
+                    지금 새 경기를 만들 수 있는 참석자가 2명보다 적습니다.
+                    입력 중인 경기를 먼저 저장하거나, 위 "참석자"에서 인원을 추가해 주세요.
+                  </span>
+                )}
+              </div>
+            )
+          })()}
 
           {started && renderRoundGroup(1)}
           {!isFlash && started && renderRoundGroup(2)}
