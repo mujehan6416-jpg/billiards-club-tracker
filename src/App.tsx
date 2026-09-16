@@ -18,6 +18,7 @@ import { USE_SPLIT_FIRESTORE, loadSplitAppState } from './lib/splitFirestore'
 import { ensureAppAuth, keepAppAuthAlive, currentAuthUid } from './lib/appAuth'
 import { fetchMyLink } from './lib/memberLink'
 import { AdminAuthLogin } from './components/admin/AdminAuthLogin'
+import { PendingLinkRequestBanner, scrollToDeviceLinkAdminCard } from './components/memberLink/PendingLinkRequestBanner'
 import type { AppState } from './types'
 
 /** Firebase 요청이 권한 거부(permission-denied)로 실패했는지 — 연결 안 된 기기의 정상적인 상태다. */
@@ -399,6 +400,14 @@ export function App() {
   return (
     <div className="app">
       <TopBar onOpenSettlement={() => setTab('settlement')} />
+      {/* 관리자 상단 알림 — 기기등록 요청이 있을 때만 나타난다(0건이면 아무것도 그리지 않는다).
+          누르면 설정 탭의 기존 기기 연결 승인 카드로 바로 이동한다. */}
+      <PendingLinkRequestBanner
+        onOpen={() => {
+          setTab('settings')
+          scrollToDeviceLinkAdminCard()
+        }}
+      />
       {backToast && (
         <div style={{
           position: 'fixed', bottom: 72, left: '50%', transform: 'translateX(-50%)',

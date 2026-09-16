@@ -7,7 +7,11 @@ import { AdminAuthLogin } from '../admin/AdminAuthLogin'
 import {
   approveLinkRequest, deleteMemberLink, fetchMemberLinks, fetchPendingRequests, rejectLinkRequest,
 } from '../../lib/memberLink'
+import { usePendingLinkRequestStore } from './usePendingLinkRequestCount'
 import type { LinkRequestEntry, MemberLinkEntry } from '../../types/memberLink'
+
+/** 상단 알림(🔔 기기등록 요청 N건)을 눌렀을 때 이 카드로 스크롤하기 위한 표식. */
+export const DEVICE_LINK_ADMIN_CARD_ID = 'device-link-admin-card'
 
 /**
  * 관리자용 "기기 연결 승인" 카드 (설정 탭).
@@ -41,6 +45,9 @@ export function DeviceLinkAdminCard() {
       const [reqs, lks] = await Promise.all([fetchPendingRequests(), fetchMemberLinks()])
       setRequests(reqs)
       setLinks(lks)
+      // 상단 알림도 같은 숫자를 쓰게 알려준다 — 승인·거절 직후 reload()가 다시 불리므로
+      // 2분 주기를 기다리지 않고 바로 줄어든다(서버를 한 번 더 읽지도 않는다).
+      usePendingLinkRequestStore.getState().setCount(reqs.length)
     } catch {
       setMessage('목록을 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.')
     } finally { setLoading(false) }
@@ -75,7 +82,7 @@ export function DeviceLinkAdminCard() {
   }
 
   return (
-    <div className="card col-card">
+    <div className="card col-card" id={DEVICE_LINK_ADMIN_CARD_ID} style={{ scrollMarginTop: 12 }}>
       <span style={{ fontWeight: 600, fontSize: 14 }}>📱 기기 연결 승인 ({requests.length}건 대기)</span>
       <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
         회원이 보낸 기기 연결 요청을 확인하고 승인합니다. 승인해도 관리자 권한은 부여되지 않습니다.
