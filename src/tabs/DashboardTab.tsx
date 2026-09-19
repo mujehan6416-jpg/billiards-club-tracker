@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useApp } from '../store/appStore'
 import type { Game, Member, Session } from '../types'
 import { winnerId } from '../logic/game'
+import type { GameResult } from '../logic/stats'
 import { headToHead, memberStats, memberTimeline, winStreaks } from '../logic/stats'
 import { fmtScore } from '../lib/format'
 import { useAuth } from '../store/authStore'
@@ -140,6 +141,9 @@ function H2H({ sessions, members, name, isGuest }: { sessions: Session[]; member
   )
 }
 
+/** 최근 경기 목록의 결과 표시 — 색상만이 아니라 글자로도 승·패·무를 구분한다. */
+const RESULT_LABEL: Record<GameResult, string> = { W: '승', L: '패', D: '무' }
+
 function Trend({ sessions, members, name, isGuest }: { sessions: Session[]; members: Member[]; name: (id: string) => string; isGuest: boolean }) {
   const opts = [...members].sort((a, b) => a.name.localeCompare(b.name))
   const [id, setId] = useState(opts[0]?.id ?? '')
@@ -173,10 +177,19 @@ function Trend({ sessions, members, name, isGuest }: { sessions: Session[]; memb
               .reverse()
               .map((t) => (
                 <li key={t.gameId} className={`trend-item ${t.result}`}>
-                  <span className="badge">{t.result}</span>
-                  <span>{t.date}</span>
-                  <span className="muted">vs {name(t.opponentId)}</span>
-                  <span className="right">{fmtScore(t.score, t.handicap)}</span>
+                  <span className="badge">{RESULT_LABEL[t.result]}</span>
+                  <span className="trend-date">{t.date}</span>
+                  {/* 여기서 줄을 끊어 [승] 날짜를 항상 첫 줄에 둔다(내용 없는 줄바꿈용 칸). */}
+                  <span className="trend-break" aria-hidden="true" />
+                  <span className="trend-side">
+                    <span className="trend-name">{name(id)}</span>{' '}
+                    <span className="trend-score">{fmtScore(t.score, t.handicap)}</span>
+                  </span>
+                  <span className="trend-side">
+                    <span className="trend-vs muted">vs</span>{' '}
+                    <span className="trend-name">{name(t.opponentId)}</span>{' '}
+                    <span className="trend-score">{fmtScore(t.opponentScore, t.opponentHandicap)}</span>
+                  </span>
                 </li>
               ))}
           </ul>

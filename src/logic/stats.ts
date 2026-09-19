@@ -93,6 +93,9 @@ export interface TimelineEntry {
   opponentId: string
   score: number
   handicap: number
+  /** 상대 선수의 득점·적용 핸디 — 최근 경기 목록에 "vs 상대 10/12 (83%)"로 함께 보여준다. */
+  opponentScore: number
+  opponentHandicap: number
   rate: number
   result: GameResult
 }
@@ -107,6 +110,8 @@ export function memberTimeline(sessions: Session[], memberId: string): TimelineE
       if (!isA && !isB) continue
       const score = isA ? game.scoreA : game.scoreB
       const handicap = isA ? game.handicapA : game.handicapB
+      const opponentScore = isA ? game.scoreB : game.scoreA
+      const opponentHandicap = isA ? game.handicapB : game.handicapA
       const opponentId = isA ? game.playerBId : game.playerAId
       const win = winnerId(game)
       const result: GameResult = win === null ? 'D' : win === memberId ? 'W' : 'L'
@@ -117,6 +122,8 @@ export function memberTimeline(sessions: Session[], memberId: string): TimelineE
         opponentId,
         score,
         handicap,
+        opponentScore,
+        opponentHandicap,
         rate: rate(score, handicap),
         result,
       })
