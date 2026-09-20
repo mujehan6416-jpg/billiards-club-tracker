@@ -258,6 +258,45 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // ── 홈 공지 게시판 ───────────────────────────────────────────────
+    // 기존 경로(members·sessions·games·ledger·config)를 전혀 건드리지 않는 새 경로 두 개다.
+    //
+    // 공지를 만들고 고치고 지우고 고정하는 일은 전부 관리자만 한다. 회원이 글을 올리고
+    // 관리자가 승인하는 기능은 이번 범위에 없으므로, 회원에게 쓰기를 여는 조건도 두지 않는다.
+    // 회원이 서버에서 할 수 있는 일은 "공개된 공지 읽기"뿐이다.
+
+    match /clubs/{clubId}/notices/{noticeId} {
+      // 목록: 관리자는 제한 없음. 연결된 회원은 "공개된 글"만 —
+      // 이 조건 때문에 목록 쿼리에 status == 'published' 제약이 없으면 쿼리 자체가 거부된다.
+      // 공개 값이 아닌 문서가 어떤 이유로 생기더라도 회원 목록에 섞여 나올 수 없다.
+      allow list: if isAdmin()
+        || (hasActiveMemberLink(clubId) && resource.data.status == 'published');
+
+      // 개별 조회: 같은 기준. 공개 값이 아닌 문서는 회원이 직접 지목해도 읽을 수 없다.
+      allow get: if isAdmin()
+        || (hasActiveMemberLink(clubId) && resource.data.status == 'published');
+
+      // 쓰기는 전부 관리자만. 연결된 활성 회원이라도 공지를 직접 만들거나 고치거나 지울 수
+      // 없다(화면에 버튼이 없는 것과 별개로 여기서 서버가 막는다).
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 회원별 "읽은 글" 기록. 문서 ID가 memberId라, 연결된 본인 문서 하나만 읽고 쓸 수 있다
+    // (남의 읽음 상태를 고치는 일은 여기서 막힌다). 관리자도 이 기록을 대신 쓰지는 못하고
+    // 정리(삭제)만 할 수 있다 — 읽음 여부는 그 회원 본인만 남기는 기록이기 때문이다.
+    match /clubs/{clubId}/noticeReads/{memberId} {
+      allow get: if isAdmin()
+        || (hasActiveMemberLink(clubId) && linkedMemberId(clubId) == memberId);
+      allow list: if isAdmin();
+      allow create, update: if hasActiveMemberLink(clubId)
+        && linkedMemberId(clubId) == memberId
+        && request.resource.data.keys().hasOnly(['memberId', 'readNoticeIds'])
+        && request.resource.data.memberId == memberId
+        && request.resource.data.readNoticeIds is list
+        && request.resource.data.readNoticeIds.size() <= 500;
+      allow delete: if isAdmin();
+    }
+
     // ── 대회 토너먼트 ────────────────────────────────────────────────
     // 기존 일반 경기(sessions/games)와 완전히 분리된 독립 기능이다. 위의 어떤 규칙도
     // 바꾸지 않고 새 경로만 추가한다.
