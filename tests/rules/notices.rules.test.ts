@@ -19,6 +19,10 @@ import {
 
 const testEnv: RulesTestEnvironment | null = await createRulesTestEnv()
 
+afterAll(async () => {
+  await testEnv?.cleanup()
+})
+
 // 아래 이름·ID·내용은 전부 테스트용 가상 데이터이며 실제 회원 정보나 운영 공지가 아니다.
 //
 // 이 기능의 권한 모델은 단순하다.
@@ -26,10 +30,6 @@ const testEnv: RulesTestEnvironment | null = await createRulesTestEnv()
 //   읽기 = 연결된 활성 회원 + 관리자, 그것도 status가 'published'인 문서만
 
 describe.skipIf(!testEnv)('firestore.rules — clubs/{clubId}/notices (관리자 전용 공지)', () => {
-  afterAll(async () => {
-    await testEnv!.cleanup()
-  })
-
   beforeEach(async () => {
     await testEnv!.clearFirestore()
   })
@@ -234,10 +234,6 @@ describe.skipIf(!testEnv)('firestore.rules — clubs/{clubId}/notices (관리자
 })
 
 describe.skipIf(!testEnv)('firestore.rules — clubs/{clubId}/noticeReads (회원별 읽음 기록)', () => {
-  afterAll(async () => {
-    await testEnv!.cleanup()
-  })
-
   beforeEach(async () => {
     await testEnv!.clearFirestore()
   })
