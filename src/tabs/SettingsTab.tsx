@@ -3,15 +3,14 @@ import { useApp } from '../store/appStore'
 import { useAdmin } from '../store/adminStore'
 import { useAuth } from '../store/authStore'
 import { exportCsv, exportHandicapCsv, exportJson, exportMemberCsv, importHandicapCsv, importJson, importMemberCsv, importGameCsv } from '../lib/backup'
-import { uploadToCloud, downloadFromCloud, markSynced, UploadCancelledError } from '../lib/cloudSync'
+import { uploadToCloud } from '../lib/cloudSync'
 import { saveToServer } from '../lib/autoSave'
 import { USE_SPLIT_FIRESTORE, syncSplitChanges, deleteSplitSession } from '../lib/splitFirestore'
 import { DeviceLinkCard } from '../components/memberLink/DeviceLinkCard'
 import { DeviceLinkAdminCard } from '../components/memberLink/DeviceLinkAdminCard'
-import { SplitMigrationCard } from '../components/admin/SplitMigrationCard'
-import { MemberIndexBackfillCard } from '../components/admin/MemberIndexBackfillCard'
-import { TournamentApr18ImportCard } from '../components/admin/TournamentApr18ImportCard'
-import { TournamentNov29ImportCard } from '../components/admin/TournamentNov29ImportCard'
+// SplitMigrationCard·MemberIndexBackfillCard·TournamentApr18ImportCard·TournamentNov29ImportCard는
+// 이미 끝난 작업이라 화면에서 내렸다(2026-09 화면 정리). 컴포넌트 파일은 그대로 남겨 두었으므로,
+// 다시 필요해지면 여기서 import해 아래 관리자 영역에 놓으면 된다.
 import { todayStr } from '../lib/date'
 import { winnerId } from '../logic/game'
 import { fmtScore } from '../lib/format'
@@ -419,7 +418,6 @@ export function SettingsTab() {
   const memberFileRef = useRef<HTMLInputElement>(null)
   const gameFileRef = useRef<HTMLInputElement>(null)
   const [msg, setMsg] = useState('')
-  const [syncing, setSyncing] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
 
   const onExportJson = () => {
@@ -495,31 +493,8 @@ export function SettingsTab() {
     }
   }
 
-  const onUploadCloud = async () => {
-    if (!confirm('이 기기의 내용을 서버에 올립니다. 계속할까요?')) return
-    setSyncing(true)
-    try {
-      await uploadToCloud({ members, sessions, settings, ledger })
-      setMsg('서버에 올렸습니다.')
-    } catch (e) {
-      if (e instanceof UploadCancelledError) setMsg('서버에 올리기를 취소했습니다.')
-      else setMsg('서버에 올리지 못했습니다: ' + (e instanceof Error ? e.message : String(e)))
-    } finally { setSyncing(false) }
-  }
-
-  const onDownloadCloud = async () => {
-    if (!confirm('서버에 저장된 내용으로 이 기기의 현재 내용을 바꿉니다. 계속할까요?')) return
-    setSyncing(true)
-    try {
-      const cloud = await downloadFromCloud()
-      if (!cloud) { setMsg('서버에 저장된 내용이 없습니다.'); return }
-      replaceAll(cloud.state)
-      markSynced(cloud.updatedAt)
-      setMsg('서버 내용을 이 기기로 받았습니다.')
-    } catch (e) {
-      setMsg('서버 내용을 받지 못했습니다: ' + (e instanceof Error ? e.message : String(e)))
-    } finally { setSyncing(false) }
-  }
+  // 수동 "서버 내용 받기 / 이 기기 내용 올리기" 처리는 데이터 관리 카드와 함께 화면에서
+  // 내렸다(2026-09 화면 정리). 기반 함수는 lib/cloudSync.ts에 그대로 있다.
 
   return (
     <div className="tab">
@@ -559,58 +534,14 @@ export function SettingsTab() {
           {/* 3-1. 회원 관리 — 기기 연결 승인 (Firebase 관리자 인증 필요) */}
           <DeviceLinkAdminCard />
 
-          {/* 3-2. 새 기기가 이름을 고를 수 있게 하는 이름 목록 만들기 (Firebase 관리자 인증 필요).
-              바로 아래 "전체 복사"와 달리 이름 목록만 만든다 — 회원·모임·경기·회계는 안 건드린다. */}
-          <MemberIndexBackfillCard />
-
-          {/* 4-2. 새 저장 구조로 데이터 복사 (Firebase 관리자 인증 필요).
-              기존 데이터는 그대로 두고 같은 내용을 한 벌 더 복사만 한다. */}
-          <SplitMigrationCard />
-
-          {/* 4-3. 2026-04-18 과거 대회(제2회 회장배 당구대회·챌린전) 가져오기 (Firebase 관리자
-              인증 필요). 이번 단계는 dry-run까지만 — 실제 적용 버튼은 비활성화돼 있다. */}
-          <TournamentApr18ImportCard />
-
-          {/* 4-4. 2025-11-29 과거 대회(제1회 성균관대학교 부산동문 회장배 당구대회·개인전)
-              가져오기 (Firebase 관리자 인증 필요). 실제 적용은 관리자가 dry-run 확인 후
-              직접 버튼을 눌러야만 실행된다. */}
-          <TournamentNov29ImportCard />
-
-          {/* 5. 데이터 관리 — 회원·경기·모임·회계 변경은 이제 자동으로 서버에 저장되므로,
-              평소에 눌러야 하는 버튼은 "서버 내용 받기"뿐이다. 수동 올리기는 지우지 않고 남겨
-              두되(전체 복원 후·저장 실패 후에는 여전히 필요하다) 언제 쓰는지 함께 설명한다. */}
-          <div className="card col-card">
-            <span style={{ fontWeight: 600, fontSize: 14 }}>💾 데이터 관리</span>
-            <span className="muted" style={{ lineHeight: 1.5 }}>
-              회원·모임·경기·회계 변경 내용은 자동으로 서버에 저장됩니다.
-            </span>
-            {USE_SPLIT_FIRESTORE ? (
-              <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
-                지금은 앱을 새로고침하면 항상 서버의 최신 내용을 자동으로 받아오므로, 아래
-                수동 받기/올리기 버튼은 막아 두었습니다(잘못 누르면 여러 기기의 최신 기록이
-                한쪽으로 덮어써질 위험이 있어, 안전한 방식을 다시 만들기 전까지 비활성화).
-              </span>
-            ) : (
-              <>
-                <span className="muted" style={{ lineHeight: 1.5 }}>
-                  PC와 휴대폰에서 같은 내용을 보려면 아래에서 서버 내용을 받아오세요.
-                </span>
-                <button className="primary block" disabled={syncing} onClick={onDownloadCloud}>
-                  {syncing ? '처리 중...' : '서버 내용을 이 기기로 받기'}
-                </button>
-                <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
-                  서버에 저장된 내용으로 이 기기의 현재 내용을 바꿉니다.
-                </span>
-                <button className="block" disabled={syncing} onClick={onUploadCloud}>
-                  {syncing ? '처리 중...' : '이 기기 내용을 서버에 올리기'}
-                </button>
-                <span className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
-                  평소에는 누르지 않아도 됩니다. 아래에서 "보관한 파일로 되돌리기"를 했거나,
-                  저장하지 못했다는 안내를 봤을 때만 사용하세요.
-                </span>
-              </>
-            )}
-          </div>
+          {/* 아래 다섯 가지는 이미 끝난 작업이라 화면에서 내렸다(2026-09 화면 정리).
+              기능과 데이터는 그대로 남아 있고, 보여주기만 멈춘 것이다.
+                · 이름 찾기 목록 만들기      → components/admin/MemberIndexBackfillCard.tsx
+                · 새 구조로 데이터 복사      → components/admin/SplitMigrationCard.tsx
+                · 2026-04-18 과거 대회 가져오기 → components/admin/TournamentApr18ImportCard.tsx
+                · 2025-11-29 과거 대회 가져오기 → components/admin/TournamentNov29ImportCard.tsx
+                · 데이터 관리(수동 받기/올리기) → lib/cloudSync.ts
+              다시 필요해지면 해당 컴포넌트를 여기에 다시 놓으면 된다. */}
 
           {/* 6. 파일로 보관/불러오기 — 핸디 이력 CSV */}
           <div className="card col-card">

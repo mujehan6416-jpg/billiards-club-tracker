@@ -51,12 +51,15 @@ body {
   box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.10);
   padding-bottom: env(safe-area-inset-bottom);
 }
+/* 탭이 6개(홈·회원·모임·대회·통계·설정)라 좁은 폰에서도 글자가 겹치거나 밀려나지 않도록
+   min-width:0으로 균등 분할을 보장하고, 라벨은 줄바꿈 없이 한 줄로 유지한다. */
 .bottom-nav button {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 58px;
   border: none;
   background: none;
-  padding: 8px 0 10px;
+  padding: 8px 2px 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -72,6 +75,16 @@ body {
 .nav-icon {
   font-size: 24px;
   line-height: 1;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-label {
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* common */
