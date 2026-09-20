@@ -466,7 +466,10 @@ export function App() {
           한 번 더 누르면 종료됩니다
         </div>
       )}
-      <main className="app-main">
+      {/* 홈에서만 'home'을 덧붙인다 — 홈은 본문이 흰 영역으로 꽉 차서 종료 버튼이 그 모서리에
+          붙어 보이므로, 홈에서만 버튼을 조금 안쪽으로 들여 놓는다(.app-main.home .screen-exit).
+          다른 탭은 이 클래스가 없어 버튼 위치와 제목 정렬이 기존 그대로다. */}
+      <main className={'app-main' + (tab === 'home' ? ' home' : '')}>
         {/* 하단 탭에 해당하는 화면에서만 종료 버튼을 보여준다. 정산(settlement)처럼 자체
             "뒤로" 흐름이 있는 화면에는 붙이지 않는다. 본문 맨 위 오른쪽에 겹쳐 놓아 화면
             제목과 같은 줄에 보이게 한다(.screen-exit). */}
