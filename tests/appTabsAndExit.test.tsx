@@ -147,6 +147,28 @@ describe('App 공통 종료 버튼', () => {
     expect(document.querySelector('nav.bottom-nav')!.contains(exit)).toBe(false)
   })
 
+  // 종료 버튼이 자기 줄을 따로 차지하지 않고 본문 맨 위에 겹쳐 놓이도록, 본문(main) 안의
+  // .screen-exit로 한 번만 그려져야 한다(화면마다 복제하지 않는다).
+  it('종료 버튼은 본문 안에 .screen-exit 하나로만 그려진다', async () => {
+    await renderApp()
+    const main = document.querySelector('main.app-main') as HTMLElement
+    const exits = document.querySelectorAll('.screen-exit')
+    expect(exits).toHaveLength(1)
+    expect(main.contains(exits[0])).toBe(true)
+  })
+
+  it('제목이 있는 탭에서 제목과 종료 버튼이 모두 본문 맨 위에 있다', async () => {
+    await renderApp()
+    const nav = document.querySelector('nav.bottom-nav')!
+    const membersBtn = Array.from(nav.querySelectorAll('button'))
+      .find((b) => b.querySelector('.nav-label')?.textContent === '회원')!
+    fireEvent.click(membersBtn)
+    await waitFor(() => expect(document.querySelector('.tab-title')).toBeTruthy())
+    const main = document.querySelector('main.app-main') as HTMLElement
+    expect(main.querySelector('.tab-title')!.textContent).toBe('회원')
+    expect(main.querySelector('.screen-exit')).toBeTruthy()
+  })
+
   it('한 번 누르면 한번더!로 바뀌고 로그아웃되지 않는다', async () => {
     await renderApp()
     fireEvent.click(screen.getByRole('button', { name: /종료/ }))

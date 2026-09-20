@@ -31,6 +31,29 @@ body {
 .app-main {
   flex: 1;
   padding: 12px 14px calc(96px + env(safe-area-inset-bottom));
+  /* 아래 .screen-exit(종료 버튼)의 기준 상자 */
+  position: relative;
+}
+
+/* 공통 종료 버튼 — 본문 맨 위 오른쪽에 겹쳐 놓는다.
+   자기 줄을 따로 차지하지 않으므로 화면 제목이 같은 가로줄 왼쪽에 그대로 남고, 홈처럼
+   제목이 없는 화면에도 빈 줄이 생기지 않는다.
+   위치 기준은 .app-main의 padding 안쪽이라 top/right를 padding과 같은 값으로 맞춘다. */
+.screen-exit {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
 }
 
 /* bottom nav — 완전 불투명 배경 + 그림자로 본문과 확실히 구분 (본문 카드가 절대 비쳐 보이지 않게) */
@@ -88,9 +111,20 @@ body {
 }
 
 /* common */
+/* 화면 제목 — 오른쪽 위 종료 버튼(.screen-exit)과 같은 가로줄에 나란히 보이게 한다.
+   · height 36px: 종료 버튼과 높이를 같게 맞춘다.
+   · margin-top 0: 본문 맨 위에서 버튼과 같은 지점에서 시작하게 한다.
+     두 상자가 같은 y에서 시작하고 높이도 같으므로 세로 중심이 정확히 맞는다.
+   · display:flex + align-items:center: 글자를 상자 한가운데 둔다.
+   · padding-right: 제목이 길어져도 버튼 아래로 파고들지 않도록 자리를 비워 둔다
+     (버튼 폭 + 여유. 좁은 화면에서 겹치거나 잘리지 않게 하려는 것이다). */
 .tab-title {
   font-size: 18px;
-  margin: 4px 0 12px;
+  margin: 0 0 12px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding-right: 88px;
 }
 .muted {
   color: var(--muted);

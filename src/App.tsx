@@ -60,13 +60,18 @@ const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
 /**
  * 모든 탭 화면의 오른쪽 위에 공통으로 놓는 종료 버튼.
  *
- * 예전에는 하단 탭바 맨 끝에 있었지만, 탭이 6개가 되면서 자리를 내주고 위로 올라왔다.
- * 동작은 그대로다 — 한 번 누르면 '한번더!'로 바뀌고, 2초 안에 다시 누르면 로그아웃된다.
+ * 예전에는 하단 탭바 맨 끝에 있었고, 그 다음에는 본문 위 "자기 줄"을 따로 차지했다. 그러면
+ * 종료 버튼이 한 줄, 화면 제목(회원·모임 시작·대회 …)이 그 아래 한 줄로 두 줄이 되어 위쪽이
+ * 비어 보였다. 지금은 본문 맨 위 오른쪽에 겹쳐 놓아(.screen-exit는 position:absolute) 화면
+ * 제목과 같은 가로줄에 나란히 보이게 한다 — 줄을 새로 만들지 않으므로 빈 줄도 생기지 않는다.
  *
- * 관리자 상단 바(정산·PIN·관리자 해제)와 겹치지 않도록 그 아래 별도 줄에 놓는다. 본문 위에
- * 떠 있지 않고 자기 자리를 차지하므로 내용도 가리지 않는다.
+ * 세로 중심은 CSS에서 맞춘다: 이 버튼과 .tab-title이 둘 다 본문 위쪽 같은 지점에서 시작하는
+ * 36px 높이 상자라, 두 상자의 중심이 정확히 같은 높이에 온다(index.css 참고).
+ *
+ * 버튼은 App에 이 하나만 두고 각 탭에 복제하지 않는다. 동작도 그대로다 — 한 번 누르면
+ * '한번더!'로 바뀌고, 2초 안에 다시 누르면 로그아웃된다.
  */
-function ExitBar({ onExit }: { onExit: () => void }) {
+function ExitButton({ onExit }: { onExit: () => void }) {
   const [exitReady, setExitReady] = useState(false)
 
   useEffect(() => {
@@ -76,28 +81,22 @@ function ExitBar({ onExit }: { onExit: () => void }) {
   }, [exitReady])
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 14px 0' }}>
-      <button
-        onClick={() => { if (exitReady) onExit(); else setExitReady(true) }}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          minHeight: 36, padding: '6px 12px',
-          border: '1px solid ' + (exitReady ? '#c0392b' : '#d1d5db'),
-          borderRadius: 999,
-          background: '#fff',
-          color: exitReady ? '#c0392b' : '#6b6b6b',
-          fontSize: 13,
-          fontWeight: exitReady ? 700 : 500,
-        }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 2v10" />
-          <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
-        </svg>
-        {exitReady ? '한번더!' : '종료'}
-      </button>
-    </div>
+    <button
+      className="screen-exit"
+      onClick={() => { if (exitReady) onExit(); else setExitReady(true) }}
+      style={{
+        border: '1px solid ' + (exitReady ? '#c0392b' : '#d1d5db'),
+        color: exitReady ? '#c0392b' : '#6b6b6b',
+        fontWeight: exitReady ? 700 : 500,
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 2v10" />
+        <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
+      </svg>
+      {exitReady ? '한번더!' : '종료'}
+    </button>
   )
 }
 
@@ -467,10 +466,11 @@ export function App() {
           한 번 더 누르면 종료됩니다
         </div>
       )}
-      {/* 하단 탭에 해당하는 화면에서만 종료 버튼을 보여준다. 정산(settlement)처럼 자체
-          "뒤로" 흐름이 있는 화면에는 붙이지 않는다. */}
-      {TABS.some((t) => t.key === tab) && <ExitBar onExit={memberLogout} />}
       <main className="app-main">
+        {/* 하단 탭에 해당하는 화면에서만 종료 버튼을 보여준다. 정산(settlement)처럼 자체
+            "뒤로" 흐름이 있는 화면에는 붙이지 않는다. 본문 맨 위 오른쪽에 겹쳐 놓아 화면
+            제목과 같은 줄에 보이게 한다(.screen-exit). */}
+        {TABS.some((t) => t.key === tab) && <ExitButton onExit={memberLogout} />}
         {tab === 'home'      && <HomeTab onNavigate={setTab} />}
         {tab === 'members'   && <MembersTab />}
         {tab === 'meeting'   && <MeetingTab />}
