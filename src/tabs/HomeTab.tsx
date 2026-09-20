@@ -1,4 +1,6 @@
+import type { ReactNode } from 'react'
 import { NoticeBoard } from '../components/notice/NoticeBoard'
+import { BilliardBall } from '../components/BilliardBall'
 
 type Tab = 'members' | 'meeting' | 'dashboard' | 'settings' | 'tournament'
 
@@ -7,11 +9,13 @@ interface Props {
 }
 
 export function HomeTab({ onNavigate }: Props) {
-  const menus: { tab: Tab; icon: string; label: string; desc: string }[] = [
-    { tab: 'members',    icon: '👥', label: '회원',      desc: '에버리지 및 순위 조회' },
-    { tab: 'meeting',    icon: '🎱', label: '모임',      desc: '경기 기록 및 결과 입력' },
-    { tab: 'dashboard',  icon: '📊', label: '통계',      desc: '승률 및 통계' },
-    { tab: 'tournament', icon: '🏆', label: '대회',      desc: '대회 참가 및 관리' },
+  // 모임·대회 아이콘은 하단 탭과 같은 당구공을 쓴다(모임=검은 공, 대회=노란 공).
+  // 아이콘은 장식이라 읽어주지 않고(aria-hidden), 버튼 이름은 아래 label 글자가 담당한다.
+  const menus: { tab: Tab; icon: ReactNode; label: string; desc: string }[] = [
+    { tab: 'members',    icon: '👥', label: '회원', desc: '에버리지 및 순위 조회' },
+    { tab: 'meeting',    icon: <BilliardBall color="black" size={30} />,  label: '모임', desc: '경기 기록 및 결과 입력' },
+    { tab: 'dashboard',  icon: '📊', label: '통계', desc: '승률 및 통계' },
+    { tab: 'tournament', icon: <BilliardBall color="yellow" size={30} />, label: '대회', desc: '대회 참가 및 관리' },
   ]
 
   return (
@@ -49,11 +53,11 @@ export function HomeTab({ onNavigate }: Props) {
                 textAlign: 'center',
               }}
             >
-              <div style={{
+              <div aria-hidden="true" style={{
                 width: 52, height: 52, borderRadius: '50%',
                 background: '#E1F5EE',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 26,
+                fontSize: 26, lineHeight: 1,
               }}>{icon}</div>
               <div style={{ fontWeight: 500, fontSize: 15, color: '#072B61' }}>{label}</div>
               <div style={{ fontSize: 11, color: '#888', lineHeight: 1.3 }}>{desc}</div>

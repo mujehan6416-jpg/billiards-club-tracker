@@ -116,21 +116,54 @@ describe('SettingsTab — 파일 불러오기 후 자동 서버 저장', () => {
   })
 })
 
-// 최종 보안 마감: split 모드(운영 기본값)에서는 수동 "서버 내용 받기/올리기"가 여러 기기의
-// 최신 기록을 한쪽으로 덮어쓸 위험이 있어 막아 두었다 — legacy 전용 코드 경로 자체는 rollback을
-// 위해 남겨 두지만(코드에서 지우지 않음), 화면에는 노출하지 않는다.
-describe('SettingsTab — 데이터 관리 메뉴 (split 모드에서는 수동 받기/올리기를 막아둔다)', () => {
-  it('자동 저장 안내만 보이고, 수동 받기·올리기 버튼은 보이지 않는다', () => {
+// 화면 정리(2026-09): 이미 끝난 작업의 관리자 카드 다섯 개를 설정 탭에서 내렸다.
+// 기능·데이터·컴포넌트 파일은 그대로 두고 보여주기만 멈춘 것이라, 여기서는 "화면에
+// 나타나지 않는다"만 확인한다.
+describe('SettingsTab — 끝난 작업 카드는 화면에 나타나지 않는다', () => {
+  it('데이터 관리 카드와 수동 받기·올리기 버튼이 없다', () => {
     render(<SettingsTab />)
-    expect(screen.getByText(/자동으로 서버에 저장됩니다/)).toBeInTheDocument()
-    expect(screen.getByText(/수동 받기\/올리기 버튼은 막아 두었습니다/)).toBeInTheDocument()
+    expect(screen.queryByText(/💾 데이터 관리/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/자동으로 서버에 저장됩니다/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '서버 내용을 이 기기로 받기' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '이 기기 내용을 서버에 올리기' })).not.toBeInTheDocument()
+  })
+
+  it('이름 찾기 목록·새 구조 복사·과거 대회 가져오기 카드가 없다', () => {
+    render(<SettingsTab />)
+    expect(screen.queryByText(/이름 찾기 목록/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/새 구조로 데이터 복사/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/2026-04-18/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/2025-11-29/)).not.toBeInTheDocument()
   })
 
   it('legacy 함수 자체는 이 화면 어디에서도 호출되지 않는다', () => {
     render(<SettingsTab />)
     expect(downloadFromCloudMock).not.toHaveBeenCalled()
     expect(uploadToCloudMock).not.toHaveBeenCalled()
+  })
+})
+
+// 화면에서 내린 카드와 무관하게, 남겨 두기로 한 설정 기능은 그대로 보여야 한다.
+describe('SettingsTab — 남겨 둔 설정 기능은 그대로 보인다', () => {
+  it('핸디 이력 파일 카드와 그 아래 파일 기능이 그대로 있다', () => {
+    render(<SettingsTab />)
+    expect(screen.getByText('핸디 이력 파일')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '핸디 이력 파일 받기 (CSV)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '핸디 이력 파일 올리기 (CSV)' })).toBeInTheDocument()
+  })
+
+  it('회원명부·경기 기록·전체 보관 카드가 그대로 있다', () => {
+    render(<SettingsTab />)
+    expect(screen.getByText('👥 회원명부 파일')).toBeInTheDocument()
+    expect(screen.getByText('🎱 경기 기록 파일')).toBeInTheDocument()
+    expect(screen.getByText('🗄️ 전체 데이터 보관하기')).toBeInTheDocument()
+  })
+
+  // 경기결과·번개모임 승인 카드는 대기 건수가 0이면 원래부터 렌더되지 않으므로
+  // (PendingGamesCard / PendingFlashCard의 early return), 여기서는 항상 보이는
+  // 핸디 관리 카드로 "위쪽 관리자 기능이 남아 있다"를 확인한다.
+  it('위쪽 관리자 기능(핸디 관리)이 그대로 있다', () => {
+    render(<SettingsTab />)
+    expect(screen.getByText('🎯 에버리지(핸디) 수정')).toBeInTheDocument()
   })
 })

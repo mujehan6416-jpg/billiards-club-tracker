@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { MembersTab } from './tabs/MembersTab'
 import { MeetingTab } from './tabs/MeetingTab'
 import { DashboardTab } from './tabs/DashboardTab'
@@ -19,6 +19,7 @@ import { ensureAppAuth, keepAppAuthAlive, currentAuthUid } from './lib/appAuth'
 import { fetchMyLink } from './lib/memberLink'
 import { AdminAuthLogin } from './components/admin/AdminAuthLogin'
 import { PendingLinkRequestBanner, scrollToDeviceLinkAdminCard } from './components/memberLink/PendingLinkRequestBanner'
+import { BilliardBall } from './components/BilliardBall'
 import type { AppState } from './types'
 
 /** Firebase 요청이 권한 거부(permission-denied)로 실패했는지 — 연결 안 된 기기의 정상적인 상태다. */
@@ -44,13 +45,61 @@ function isLocalAheadOf(local: AppState, remote: AppState): boolean {
 // 아래 TopBar의 관리자 모드(PIN) 전용 버튼으로만 진입 가능하다.
 type Tab = 'home' | 'members' | 'meeting' | 'dashboard' | 'settings' | 'ledger' | 'settlement' | 'tournament'
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'home',      label: '홈',   icon: '🏠' },
-  { key: 'members',   label: '회원', icon: '👥' },
-  { key: 'meeting',   label: '모임', icon: '🎱' },
-  { key: 'dashboard', label: '통계', icon: '📊' },
-  { key: 'settings',  label: '설정', icon: '⚙️' },
+// 하단 탭 순서: 홈 → 회원 → 모임 → 대회 → 통계 → 설정.
+// 모임·대회 아이콘은 이모지 대신 SVG 당구공을 쓴다 — 🎱은 기기마다 모양이 다르고 숫자 8이
+// 그려져 있어서, 숫자 없는 검은 공(모임)·노란 공(대회)으로 직접 그린다.
+const TABS: { key: Tab; label: string; icon: ReactNode }[] = [
+  { key: 'home',       label: '홈',   icon: '🏠' },
+  { key: 'members',    label: '회원', icon: '👥' },
+  { key: 'meeting',    label: '모임', icon: <BilliardBall color="black" size={24} /> },
+  { key: 'tournament', label: '대회', icon: <BilliardBall color="yellow" size={24} /> },
+  { key: 'dashboard',  label: '통계', icon: '📊' },
+  { key: 'settings',   label: '설정', icon: '⚙️' },
 ]
+
+/**
+ * 모든 탭 화면의 오른쪽 위에 공통으로 놓는 종료 버튼.
+ *
+ * 예전에는 하단 탭바 맨 끝에 있었지만, 탭이 6개가 되면서 자리를 내주고 위로 올라왔다.
+ * 동작은 그대로다 — 한 번 누르면 '한번더!'로 바뀌고, 2초 안에 다시 누르면 로그아웃된다.
+ *
+ * 관리자 상단 바(정산·PIN·관리자 해제)와 겹치지 않도록 그 아래 별도 줄에 놓는다. 본문 위에
+ * 떠 있지 않고 자기 자리를 차지하므로 내용도 가리지 않는다.
+ */
+function ExitBar({ onExit }: { onExit: () => void }) {
+  const [exitReady, setExitReady] = useState(false)
+
+  useEffect(() => {
+    if (!exitReady) return
+    const timer = setTimeout(() => setExitReady(false), 2000)
+    return () => clearTimeout(timer)
+  }, [exitReady])
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '6px 14px 0' }}>
+      <button
+        onClick={() => { if (exitReady) onExit(); else setExitReady(true) }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          minHeight: 36, padding: '6px 12px',
+          border: '1px solid ' + (exitReady ? '#c0392b' : '#d1d5db'),
+          borderRadius: 999,
+          background: '#fff',
+          color: exitReady ? '#c0392b' : '#6b6b6b',
+          fontSize: 13,
+          fontWeight: exitReady ? 700 : 500,
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 2v10" />
+          <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
+        </svg>
+        {exitReady ? '한번더!' : '종료'}
+      </button>
+    </div>
+  )
+}
 
 function PinModal({ onClose }: { onClose: () => void }) {
   const { changePin } = useAdmin()
@@ -155,7 +204,7 @@ export function App() {
   // 이 기기가 아직 어느 회원과도 연결되지 않아(permission-denied) 데이터를 전혀 읽을 수 없는 상태.
   const [needsDeviceLink, setNeedsDeviceLink] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
-  const [exitReady, setExitReady] = useState(false)
+  // 종료 버튼의 "한 번 더" 상태는 ExitBar가 스스로 들고 있다(화면마다 복제하지 않는다).
   const [backToast, setBackToast] = useState(false)
   const { memberId, logout: memberLogout } = useAuth()
   const members = useApp((s) => s.members)
@@ -418,6 +467,9 @@ export function App() {
           한 번 더 누르면 종료됩니다
         </div>
       )}
+      {/* 하단 탭에 해당하는 화면에서만 종료 버튼을 보여준다. 정산(settlement)처럼 자체
+          "뒤로" 흐름이 있는 화면에는 붙이지 않는다. */}
+      {TABS.some((t) => t.key === tab) && <ExitBar onExit={memberLogout} />}
       <main className="app-main">
         {tab === 'home'      && <HomeTab onNavigate={setTab} />}
         {tab === 'members'   && <MembersTab />}
@@ -435,19 +487,6 @@ export function App() {
             <span className="nav-label">{t.label}</span>
           </button>
         ))}
-        <button onClick={() => {
-          if (exitReady) { memberLogout(); return }
-          setExitReady(true)
-          setTimeout(() => setExitReady(false), 2000)
-        }} style={exitReady ? { color: '#c0392b' } : undefined}>
-          <span className="nav-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2v10" />
-              <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
-            </svg>
-          </span>
-          <span className="nav-label">{exitReady ? '한번더!' : '종료'}</span>
-        </button>
       </nav>
     </div>
   )
