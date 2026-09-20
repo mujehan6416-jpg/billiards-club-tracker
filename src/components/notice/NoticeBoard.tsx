@@ -83,18 +83,25 @@ export function NoticeBoard() {
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
+    let linked: string | null = null
     try {
       const uid = currentAuthUid()
-      const linked = uid ? await getLinkedMemberId(uid).catch(() => null) : null
+      linked = uid ? await getLinkedMemberId(uid).catch(() => null) : null
       setLinkedMemberId(linked)
       setNotices(await fetchNotices())
       setReadIds(linked ? await fetchMyReadNoticeIds(linked).catch(() => []) : [])
-    } catch {
-      setError('공지를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.')
+    } catch (cause) {
+      setNotices([])
+      setReadIds([])
+      const permissionDenied = typeof cause === 'object' && cause !== null
+        && 'code' in cause && cause.code === 'permission-denied'
+      setError(permissionDenied && !linked && !isAdmin
+        ? '공지를 보려면 회원 연결 승인이 필요합니다.'
+        : '공지를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [isAdmin])
 
   useEffect(() => { void load() }, [load])
 

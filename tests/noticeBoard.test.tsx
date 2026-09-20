@@ -142,14 +142,12 @@ describe('NoticeBoard — 회원 화면(읽기 전용)', () => {
     expect(titles[1]).toContain('고정 공지')
   })
 
-  it('기기가 회원으로 연결되지 않아도 공지는 읽을 수 있다', async () => {
+  it('회원으로 연결되지 않은 기기의 조회가 거부되면 승인 안내를 보여준다', async () => {
     getLinkedMemberIdMock.mockResolvedValue(null)
-    fetchNoticesMock.mockResolvedValue([notice({ id: 'n1', title: '공개 공지' })])
+    fetchNoticesMock.mockRejectedValue({ code: 'permission-denied' })
     render(<NoticeBoard />)
-    await waitFor(() => expect(screen.getByText('공개 공지')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('공개 공지'))
-    await waitFor(() => expect(screen.getByText('내용 n1')).toBeInTheDocument())
-    // 연결이 없으면 읽음 기록을 남길 곳이 없으므로 서버에 보내지 않는다
+    await waitFor(() => expect(screen.getByText('공지를 보려면 회원 연결 승인이 필요합니다.')).toBeInTheDocument())
+    expect(screen.queryByText('공개 공지')).not.toBeInTheDocument()
     expect(markNoticeReadMock).not.toHaveBeenCalled()
   })
 
