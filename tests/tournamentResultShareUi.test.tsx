@@ -240,20 +240,45 @@ describe('결과 이미지 카드 — 순위와 이름을 한 줄로, 리스타�
       const nameEl = within(row as HTMLElement).getByText(name)
       expect(nameEl.style.textAlign).toBe('left')
     })
-    // 하이런상: 제목 아래에 이름만(왼쪽 정렬, 제목과 같은 줄 시작 위치)
+    // 하이런상: 제목 아래에 이름만(왼쪽 정렬)
     const high = screen.getByTestId('result-highrun')
     expect(high.textContent).toBe('🎯 하이런상가상하이런')
     expect(within(high).getByText('가상하이런').style.textAlign).toBe('left')
   })
 
-  it('모든 줄의 이름 시작 위치가 세로로 가지런하다 — 순위 칸 폭이 같고 줄어들지 않는다', async () => {
+  /** 이름 시작 위치를 정하는 값: 행의 간격 + 순위 칸 폭(줄어들지 않음, 줄바꿈 없음). 모두 같으면 이름이 같은 세로선에서 시작한다. */
+  const nameStart = (row: HTMLElement) => {
+    const rank = row.firstElementChild as HTMLElement
+    return `${row.style.gap}|${rank.style.width}/${rank.style.flexShrink}/${rank.style.whiteSpace}`
+  }
+
+  it('모든 줄의 이름 시작 위치가 세로로 가지런하다 — 순위 칸 폭·간격이 같고, "1위" 폭에 맞춰 좁게(64px) 둔다', async () => {
     await openCard()
-    const widths = screen.getAllByTestId('result-row').map((r) => {
-      const rank = r.firstElementChild as HTMLElement
-      return `${rank.style.width}/${rank.style.flexShrink}/${rank.style.whiteSpace}`
-    })
-    expect(new Set(widths).size).toBe(1)
-    expect(widths[0]).toBe('92px/0/nowrap')
+    const starts = screen.getAllByTestId('result-row').map(nameStart)
+    expect(new Set(starts).size).toBe(1)
+    expect(starts[0]).toBe('14px|64px/0/nowrap')
+  })
+
+  it('하이런상 이름도 위 결과 이름들과 같은 시작선에 놓인다 — 순위 칸 자리를 비워 둔 같은 행 구조', async () => {
+    await openCard()
+    const highRow = within(screen.getByTestId('result-highrun')).getByTestId('result-highrun-row')
+    expect(nameStart(highRow)).toBe(nameStart(screen.getAllByTestId('result-row')[0]))
+    expect(highRow.firstElementChild!.textContent).toBe('') // 순위 칸은 비어 있다
+    expect(highRow.lastElementChild!.textContent).toBe('가상하이런')
+  })
+
+  it('"공동 3위"가 있는 대회는 순위 칸을 넓혀(100px) 라벨이 줄바꿈되지 않고, 리스타트·하이런상도 같은 폭으로 맞춘다', async () => {
+    asAdmin()
+    serve({ main: playMain8(false) }) // 3·4위전이 없는 대진 → 마스터즈 공동 3위
+    await openMain()
+    fireEvent.click(screen.getByText('경기결과 공유'))
+    await waitFor(() => expect(card().getByText(nameOfRestart(champion))).toBeInTheDocument())
+    fireEvent.change(screen.getByPlaceholderText('하이런상 이름'), { target: { value: '가상하이런' } })
+    expect(card().getByText('공동 3위')).toBeInTheDocument()
+    const rows = [...screen.getAllByTestId('result-row'), screen.getByTestId('result-highrun-row')]
+    const starts = rows.map(nameStart)
+    expect(new Set(starts).size).toBe(1)
+    expect(starts[0]).toBe('14px|100px/0/nowrap')
   })
 
   it('구역 제목에 마스터즈·리스타트 이름이 있고, 줄에는 "1위"처럼 순위만 쓴다(중복 표기 없음)', async () => {
