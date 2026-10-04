@@ -11,24 +11,32 @@ export interface RestartResult {
   nameOf: ParticipantNameOf
 }
 
-const rankText = (label: string) => label.replace(/^(마스터스|리스타트) /, '')
+/** "마스터즈 1위" → "1위" (부문 이름은 구역 제목에 이미 있다) */
+const rankText = (label: string) => label.replace(/^(마스터즈|리스타트) /, '')
 
-/**
- * 한 부문(마스터스/리스타트)의 결과. 모든 글씨를 가운데 정렬하고, 순위 라벨을 이름 위에 작게 두고 이름을 크게 보여준다
- * ("1위는 왼쪽, 이름은 오른쪽"처럼 갈라져 보이지 않게). 공동 순위는 이름을 한 줄에 한 명씩 쌓는다.
- */
+/** 순위 칸 폭 — 모든 줄의 이름 시작 위치가 세로로 가지런하도록 고정한다("공동 3위"도 들어가는 폭). */
+const RANK_WIDTH = 92
+
+/** 순위 + 이름이 같은 줄에 놓이는 한 행. 공동 순위는 이름을 같은 칸 안에서 한 줄에 한 명씩 쌓는다. */
+function ResultRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div data-testid="result-row" style={{ display: 'flex', alignItems: 'baseline', gap: 10, width: '100%' }}>
+      <span style={{ fontSize: 21, fontWeight: 700, color: '#444', width: RANK_WIDTH, flexShrink: 0, whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+        {value.split(', ').map((name) => (
+          <span key={name} style={{ fontSize: 27, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', textAlign: 'left' }}>{name}</span>
+        ))}
+      </span>
+    </div>
+  )
+}
+
+/** 한 부문(마스터즈/리스타트)의 결과: 구역 제목 아래에 "1위  이름" 줄이 순서대로 이어진다. */
 function CardSection({ section }: { section: ResultSection }) {
   return (
-    <div data-testid="result-section" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
-      <div style={{ fontSize: 21, fontWeight: 800, color: '#0f6e56' }}>🏆 {section.title}</div>
-      {section.lines.map((l) => (
-        <div key={l.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%' }}>
-          <span style={{ fontSize: 17, fontWeight: 700, color: '#555' }}>{rankText(l.label)}</span>
-          {l.value.split(', ').map((name) => (
-            <span key={name} style={{ fontSize: 28, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', maxWidth: '100%', textAlign: 'center' }}>{name}</span>
-          ))}
-        </div>
-      ))}
+    <div data-testid="result-section" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: '#0f6e56' }}>🏆 {section.title}</div>
+      {section.lines.map((l) => <ResultRow key={l.label} label={rankText(l.label)} value={l.value} />)}
       {section.notice && (
         <div style={{ fontSize: 18, fontWeight: 600, color: section.status === 'pending' ? '#856404' : '#555' }}>{section.notice}</div>
       )}
@@ -40,7 +48,8 @@ const divider = <div aria-hidden="true" style={{ height: 1, background: '#e3e3e3
 
 /**
  * 결과 이미지 카드 — 스마트폰 카카오톡용 세로형, 흰 배경, 큰 글씨. 이 DOM 그대로를 이미지로 만든다
- * (기존 정기모임 공유와 같은 shareImage). 이름이 길어도 줄바꿈되어 잘리지 않는다.
+ * (기존 정기모임 공유와 같은 shareImage). 위쪽 제목만 가운데 정렬하고, 결과는 "1위  이름"처럼 순위와 이름을 같은 줄에
+ * 왼쪽부터 가지런히 놓는다. 이름이 길어도 줄바꿈되어 잘리지 않는다.
  */
 export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tournament; data: TournamentResultShareData }>(
   function TournamentResultCard({ tournament, data }, ref) {
@@ -49,9 +58,8 @@ export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tou
         ref={ref}
         data-testid="result-card"
         style={{
-          width: 340, boxSizing: 'border-box', margin: '0 auto', padding: '24px 22px', background: '#fff', wordBreak: 'keep-all',
-          border: '1px solid #ddd', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
-          textAlign: 'center',
+          width: 340, boxSizing: 'border-box', margin: '0 auto', padding: '24px 22px', background: '#fff',
+          border: '1px solid #ddd', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 18, wordBreak: 'keep-all',
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, textAlign: 'center', width: '100%' }}>
@@ -67,9 +75,9 @@ export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tou
         {data.highRun && (
           <>
             {divider}
-            <div data-testid="result-highrun" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, textAlign: 'center', width: '100%' }}>
-              <div style={{ fontSize: 21, fontWeight: 800, color: '#0f6e56' }}>🎯 하이런상</div>
-              <div style={{ fontSize: 28, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', maxWidth: '100%', textAlign: 'center' }}>{data.highRun}</div>
+            <div data-testid="result-highrun" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#0f6e56' }}>🎯 하이런상</div>
+              <span style={{ fontSize: 27, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', textAlign: 'left' }}>{data.highRun}</span>
             </div>
           </>
         )}
@@ -79,7 +87,7 @@ export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tou
 )
 
 /**
- * [경기결과 공유] — 관리자 전용. 본선(마스터스)·리스타트 최종 순위와 직접 입력한 하이런상으로
+ * [경기결과 공유] — 관리자 전용. 마스터즈(본선)·리스타트 최종 순위와 직접 입력한 하이런상, 그리고 본선 경기 상세로
  * ① 카카오톡에 붙여넣을 문구 ② 결과 이미지 카드를 만든다. 아무것도 저장하지 않는다
  * (하이런상 이름은 새로고침하면 사라져도 된다). 순위는 호출하는 쪽이 넘긴 경기 결과로 앱의 기존 순위 계산을 그대로 쓴다.
  */
@@ -130,7 +138,7 @@ export function TournamentResultShare({
       const copied = await shareText(text)
       setMsg(copied ? '복사했습니다. 카톡에 붙여넣어 주세요.' : '공유 창을 열었습니다. 카카오톡을 선택해 주세요.')
     } catch {
-      setMsg('복사하지 못했습니다. 아래 미리보기를 길게 눌러 직접 복사해 주세요.')
+      setMsg('복사하지 못했습니다. 아래 문구 미리보기를 길게 눌러 직접 복사해 주세요.')
     }
   }
 
@@ -193,6 +201,19 @@ export function TournamentResultShare({
         </button>
       )}
       {msg && <p className="info-msg" style={{ fontSize: 15, margin: 0 }}>{msg}</p>}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>카톡 문구 미리보기</span>
+        <pre
+          data-testid="result-text-preview"
+          style={{
+            margin: 0, padding: 12, background: '#fafafa', border: '1px solid #e3e3e3', borderRadius: 8,
+            fontSize: 15, lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'inherit',
+          }}
+        >
+          {text}
+        </pre>
+      </div>
     </div>
   )
 }

@@ -10,7 +10,7 @@ import type { Tournament, TournamentMatch } from '../../types/tournament'
  * 보고 눌러야 나오는 별도 동작이다(마감 전에도 결과는 이미 사실이다).
  */
 export function TournamentFinalResults({
-  tournament, matches, nameOf, isAdmin, busy, onFinish,
+  tournament, matches, nameOf, isAdmin, busy, onFinish, hideThirdPlace = false,
 }: {
   tournament: Tournament
   matches: TournamentMatch[]
@@ -18,6 +18,8 @@ export function TournamentFinalResults({
   isAdmin: boolean
   busy?: boolean
   onFinish: () => void
+  /** 리스타트 대회는 1위(우승)·2위(준우승)만 보여 준다 — 3위·4위·공동 3위는 표시하지 않는다. */
+  hideThirdPlace?: boolean
 }) {
   const placements = calculateFinalPlacements(matches)
   if (!placements.championParticipantId) return null
@@ -27,7 +29,7 @@ export function TournamentFinalResults({
       <span style={{ fontWeight: 800, fontSize: 19 }}>🏆 대회 최종 결과</span>
       <span style={{ fontSize: 18, fontWeight: 800 }}>우승: {nameOf(placements.championParticipantId)}</span>
       <span style={{ fontSize: 16, fontWeight: 700 }}>준우승: {nameOf(placements.runnerUpParticipantId)}</span>
-      {placements.fourthPlaceParticipantId !== undefined ? (
+      {hideThirdPlace ? null : placements.fourthPlaceParticipantId !== undefined ? (
         <>
           {placements.thirdPlaceParticipantIds.length > 0 && (
             <span style={{ fontSize: 16, fontWeight: 700 }}>3위: {nameOf(placements.thirdPlaceParticipantIds[0])}</span>

@@ -1071,6 +1071,7 @@ export function TournamentTab({
             isAdmin={isAdmin && isAuthorizedAdmin}
             busy={busy}
             onFinish={handleFinishTournament}
+            hideThirdPlace={isRestartBracket}
           />
         )}
 

@@ -78,7 +78,7 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('경기결과 공유 — 관리자 화면', () => {
-  it('관리자 본선 화면에 "경기결과 공유"가 있고, 열면 마스터스 1~4위와 리스타트 1·2위가 카드에 나온다', async () => {
+  it('관리자 본선 화면에 "경기결과 공유"가 있고, 열면 마스터즈 1~4위와 리스타트 1·2위가 카드에 나온다', async () => {
     asAdmin()
     serve()
     await openMain()
@@ -91,7 +91,7 @@ describe('경기결과 공유 — 관리자 화면', () => {
     expect(card().getByText('대회 경기결과')).toBeInTheDocument()
     expect(card().getByText('Test3')).toBeInTheDocument()
     expect(card().getByText('2026-10-05')).toBeInTheDocument()
-    expect(card().getByText('🏆 마스터스 챔피언십 경기결과')).toBeInTheDocument()
+    expect(card().getByText('🏆 마스터즈 챔피언십 경기결과')).toBeInTheDocument()
     expect(card().getByText('🏆 리스타트 챔피언십 경기결과')).toBeInTheDocument()
     for (const [rank, name] of [['1위', '가상선수1'], ['2위', '가상선수5'], ['3위', '가상선수3'], ['4위', '가상선수7']]) {
       expect(card().getAllByText(rank).length).toBeGreaterThan(0)
@@ -106,7 +106,7 @@ describe('경기결과 공유 — 관리자 화면', () => {
     await openMain()
     fireEvent.click(screen.getByText('경기결과 공유'))
     await screen.findByTestId('result-card')
-    expect(card().queryByText('🎯 하이런상')).toBeNull()
+    expect(screen.queryByTestId('result-highrun')).toBeNull()
     expect(screen.getByText('비워 두면 하이런상 줄은 빼고 만듭니다.')).toBeInTheDocument()
 
     fireEvent.change(screen.getByPlaceholderText('하이런상 이름'), { target: { value: '가상하이런' } })
@@ -127,8 +127,9 @@ describe('경기결과 공유 — 관리자 화면', () => {
       mastersMatches: playMain8(true), mastersNameOf: nameOfMain, restartMatches, restartNameOf: nameOfRestart, highRun: '가상하이런',
     }))
     await waitFor(() => expect(shareTextMock).toHaveBeenCalledWith(expected))
-    expect(expected).toContain('마스터스 1위: 가상선수1')
-    expect(expected).toContain('🎯 하이런상: 가상하이런')
+    expect(expected).toContain('마스터즈 1위: 가상선수1')
+    expect(expected).toContain('하이런상: 가상하이런')
+    expect(expected.startsWith('🏆 대회 최종결과')).toBe(true)
     expect(await screen.findByText('복사했습니다. 카톡에 붙여넣어 주세요.')).toBeInTheDocument()
   })
 
@@ -157,7 +158,7 @@ describe('경기결과 공유 — 관리자 화면', () => {
     expect(filename).toBe('대회결과_2026-10-05.png')
     expect(title).toBe('당신회 대회 경기결과')
     const text = node.textContent ?? ''
-    for (const s of ['당신회', '대회 경기결과', '마스터스 챔피언십 경기결과', '가상선수1', '가상선수5', '가상선수3', '가상선수7',
+    for (const s of ['당신회', '대회 경기결과', '마스터즈 챔피언십 경기결과', '가상선수1', '가상선수5', '가상선수3', '가상선수7',
       '리스타트 챔피언십 경기결과', nameOfRestart(champion), nameOfRestart(runnerUp), '하이런상', '가상하이런']) {
       expect(text).toContain(s)
     }
@@ -177,12 +178,12 @@ describe('경기결과 공유 — 관리자 화면', () => {
     expect(el.style.whiteSpace).not.toBe('nowrap')
   })
 
-  it('마스터스 결승이 끝나지 않았으면 순위 대신 미확정 안내가 나온다', async () => {
+  it('마스터즈 결승이 끝나지 않았으면 순위 대신 미확정 안내가 나온다', async () => {
     asAdmin()
     serve({ main: playMain8(true, 'before-final') })
     await openMain()
     fireEvent.click(screen.getByText('경기결과 공유'))
-    expect(await card().findByText('마스터스 결과가 아직 확정되지 않았습니다.')).toBeInTheDocument()
+    expect(await card().findByText('마스터즈 결과가 아직 확정되지 않았습니다.')).toBeInTheDocument()
     expect(card().queryByText('가상선수1', { selector: 'span' })).toBeNull()
   })
 
@@ -210,7 +211,7 @@ describe('경기결과 공유 — 관리자 화면', () => {
   })
 })
 
-describe('결과 이미지 카드 — 가운데 정렬과 리스타트 1·2위만', () => {
+describe('결과 이미지 카드 — 순위와 이름을 한 줄로, 리스타트는 1·2위만', () => {
   async function openCard() {
     asAdmin()
     serve()
@@ -220,31 +221,48 @@ describe('결과 이미지 카드 — 가운데 정렬과 리스타트 1·2위�
     fireEvent.change(screen.getByPlaceholderText('하이런상 이름'), { target: { value: '가상하이런' } })
   }
 
-  it('수상자 이름(마스터스 1~4위·리스타트 1·2위·하이런상)은 모두 가운데 정렬이다', async () => {
+  it('순위와 이름은 같은 줄에 놓인다 — "1위  이름"이 한 행(가로 배치)이고 이름은 가운데 정렬이 아니다', async () => {
     await openCard()
-    const names = ['가상선수1', '가상선수5', '가상선수3', '가상선수7', nameOfRestart(champion), nameOfRestart(runnerUp), '가상하이런']
-    for (const n of names) {
-      const el = card().getByText(n)
-      expect(el.style.textAlign, n).toBe('center')
-      // 이름을 담은 줄은 세로 쌓기(순위 라벨이 위, 이름이 아래) + 가운데 맞춤이라 "왼쪽 라벨 / 오른쪽 이름"으로 갈라지지 않는다
-      const row = el.parentElement as HTMLElement
-      expect(row.style.flexDirection === 'column' || row.style.alignItems === 'center', n).toBe(true)
-    }
-    for (const section of screen.getAllByTestId('result-section')) {
-      expect(section.style.alignItems).toBe('center')
-      expect(section.style.textAlign).toBe('center')
-    }
-    expect(screen.getByTestId('result-card').style.alignItems).toBe('center')
-    expect(screen.getByTestId('result-highrun').style.alignItems).toBe('center')
+    const expected: [string, string][] = [
+      ['1위', '가상선수1'], ['2위', '가상선수5'], ['3위', '가상선수3'], ['4위', '가상선수7'],
+      ['1위', nameOfRestart(champion)], ['2위', nameOfRestart(runnerUp)],
+    ]
+    const rows = screen.getAllByTestId('result-row')
+    expect(rows).toHaveLength(expected.length)
+    rows.forEach((row, i) => {
+      const [rank, name] = expected[i]
+      // 한 행 안에 순위와 이름이 함께 있고, 행은 가로(flex row)로 이어진다
+      expect(row.style.display).toBe('flex')
+      expect(row.style.flexDirection).toBe('') // 기본 = row
+      expect(row.firstElementChild!.textContent).toBe(rank)
+      expect(row.textContent).toBe(`${rank}${name}`)
+      // 이름은 왼쪽 정렬(가운데 정렬 아님)
+      const nameEl = within(row as HTMLElement).getByText(name)
+      expect(nameEl.style.textAlign).toBe('left')
+    })
+    // 하이런상: 제목 아래에 이름만(왼쪽 정렬, 제목과 같은 줄 시작 위치)
+    const high = screen.getByTestId('result-highrun')
+    expect(high.textContent).toBe('🎯 하이런상가상하이런')
+    expect(within(high).getByText('가상하이런').style.textAlign).toBe('left')
   })
 
-  it('순위 라벨은 이름과 같은 가로줄의 왼쪽 칸이 아니라 이름 위쪽에 놓인다(이름 줄이 가로 배치가 아님)', async () => {
+  it('모든 줄의 이름 시작 위치가 세로로 가지런하다 — 순위 칸 폭이 같고 줄어들지 않는다', async () => {
     await openCard()
-    for (const el of card().getAllByText('1위')) {
-      const entry = el.parentElement as HTMLElement
-      expect(entry.style.flexDirection).toBe('column')
-      expect(entry.style.alignItems).toBe('center')
-    }
+    const widths = screen.getAllByTestId('result-row').map((r) => {
+      const rank = r.firstElementChild as HTMLElement
+      return `${rank.style.width}/${rank.style.flexShrink}/${rank.style.whiteSpace}`
+    })
+    expect(new Set(widths).size).toBe(1)
+    expect(widths[0]).toBe('92px/0/nowrap')
+  })
+
+  it('구역 제목에 마스터즈·리스타트 이름이 있고, 줄에는 "1위"처럼 순위만 쓴다(중복 표기 없음)', async () => {
+    await openCard()
+    const sections = screen.getAllByTestId('result-section')
+    expect(sections[0].textContent).toContain('마스터즈 챔피언십 경기결과')
+    expect(sections[1].textContent).toContain('리스타트 챔피언십 경기결과')
+    expect(within(sections[0]).getAllByTestId('result-row')).toHaveLength(4)
+    expect(within(sections[1]).getAllByTestId('result-row')).toHaveLength(2)
   })
 
   it('이미지 카드의 리스타트 부분에는 1위·2위만 있고 3위·4위는 없다(리스타트 대회에 3·4위전 결과가 있어도)', async () => {
@@ -271,6 +289,17 @@ describe('결과 이미지 카드 — 가운데 정렬과 리스타트 1·2위�
       expect(cardText).toContain(n)
     }
     expect(text).not.toMatch(/리스타트 3위|리스타트 4위/)
+  })
+
+  it('"카톡 문구 미리보기"에 복사될 문구와 같은 내용(최종결과 → 경기 상세)이 보인다', async () => {
+    await openCard()
+    const preview = screen.getByTestId('result-text-preview').textContent ?? ''
+    expect(preview.startsWith('🏆 대회 최종결과')).toBe(true)
+    expect(preview).toContain('하이런상: 가상하이런')
+    expect(preview).toContain('▶ 결승전')
+    fireEvent.click(screen.getByText('카톡용 결과 복사'))
+    await waitFor(() => expect(shareTextMock).toHaveBeenCalled())
+    expect(shareTextMock.mock.calls[0][0]).toBe(preview)
   })
 })
 
