@@ -14,8 +14,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       scope: base,
       manifest: {
-        name: '당구 동호회 기록',
-        short_name: '당구기록',
+        name: '당신회앱',
+        short_name: '당신회앱',
         theme_color: '#1d9e75',
         background_color: '#ffffff',
         display: 'standalone',

@@ -25,7 +25,7 @@ vi.mock('../src/lib/tournamentSync', () => ({
 import { TournamentTab } from '../src/tabs/TournamentTab'
 import { TournamentBracketView } from '../src/components/tournament/TournamentBracketView'
 import { TournamentBracketVisual } from '../src/components/tournament/TournamentBracketVisual'
-import { nameEmphasis, WINNER_NAME_COLOR } from '../src/components/tournament/tournamentDisplay'
+import { LOSER_NAME_COLOR, nameEmphasis, WINNER_NAME_BG, WINNER_NAME_COLOR } from '../src/components/tournament/tournamentDisplay'
 import { useApp } from '../src/store/appStore'
 import { useAuth } from '../src/store/authStore'
 import { useAdmin } from '../src/store/adminStore'
@@ -42,9 +42,11 @@ describe('B. 승자 이름 강조 (승패 판정은 그대로, 표시만)', () =
   const official = decide(fullMain(8), 'r1m1') // 승자 p1, 패자 p2
   const pending = fullMain(8)
 
-  it('nameEmphasis: 확정된 경기에서 승자는 800 + 초록, 패자는 일반 굵기(400)로 대비를 크게 벌린다', () => {
-    expect(nameEmphasis(true, true)).toEqual({ fontWeight: 800, color: WINNER_NAME_COLOR })
-    expect(nameEmphasis(true, false)).toEqual({ fontWeight: 400 })
+  it('nameEmphasis: 확정된 경기에서 승자는 800 + 진한 초록 글자 + 연한 초록 배경, 패자는 400 + 진회색으로 대비를 크게 벌린다', () => {
+    expect(nameEmphasis(true, true)).toEqual({
+      fontWeight: 800, color: WINNER_NAME_COLOR, background: WINNER_NAME_BG, padding: '3px 10px', borderRadius: 8,
+    })
+    expect(nameEmphasis(true, false)).toEqual({ fontWeight: 400, color: LOSER_NAME_COLOR })
     expect(nameEmphasis(false, false)).toEqual({ fontWeight: 600 }) // 승패 전에는 기존 굵기
     expect(nameEmphasis(false, true)).toEqual({ fontWeight: 600 })
   })
@@ -54,10 +56,10 @@ describe('B. 승자 이름 강조 (승패 판정은 그대로, 표시만)', () =
     const winner = screen.getAllByText('가상선수1').find((e) => e.hasAttribute('data-winner'))!
     const loser = screen.getAllByText('가상선수2').find((e) => e.hasAttribute('data-winner'))!
     expect(winner.dataset.winner).toBe('true')
-    expect(winner).toHaveStyle({ fontWeight: '800', color: WINNER_NAME_COLOR })
+    expect(winner).toHaveStyle({ fontWeight: '800', color: WINNER_NAME_COLOR, background: WINNER_NAME_BG })
     expect(loser.dataset.winner).toBe('false')
-    expect(loser).toHaveStyle({ fontWeight: '400' })
-    expect(loser.style.color).toBe('')
+    expect(loser).toHaveStyle({ fontWeight: '400', color: LOSER_NAME_COLOR })
+    expect(loser.style.background).toBe('') // 패자에는 배경 칠이 없다
   })
 
   it('아직 승패가 없는 경기는 두 이름 모두 강조하지 않는다(data-winner 없음, 기존 굵기)', () => {
@@ -65,15 +67,20 @@ describe('B. 승자 이름 강조 (승패 판정은 그대로, 표시만)', () =
     expect(document.querySelectorAll('[data-winner]')).toHaveLength(0)
   })
 
-  it('전체 대진표(그림): 승자는 800 + 초록 글자, 패자는 500이고, 배경·테두리는 넣지 않는다(기존 결정 유지)', () => {
+  it('전체 대진표(그림): 승자 칸은 연한 초록 배경 + 800 + 진한 초록 글자, 패자는 500 + 진회색이고 승패 전에는 기존 모양이다', () => {
     render(<TournamentBracketVisual matches={official} nameOf={nameOf} />)
     const winner = screen.getAllByText('가상선수1').find((e) => e.hasAttribute('data-winner'))!
     const loser = screen.getAllByText('가상선수2').find((e) => e.hasAttribute('data-winner'))!
     expect(winner.dataset.winner).toBe('true')
     expect(winner).toHaveStyle({ fontWeight: '800', color: WINNER_NAME_COLOR })
     expect(loser.dataset.winner).toBe('false')
-    expect(loser).toHaveStyle({ fontWeight: '500' })
-    expect(winner.closest('div')!.style.background).not.toMatch(/eafaf3|0f6e56/)
+    expect(loser).toHaveStyle({ fontWeight: '500', color: LOSER_NAME_COLOR })
+    expect(winner.closest('div')!.style.background).toBe('rgb(214, 240, 227)') // WINNER_NAME_BG
+    expect(loser.closest('div')!.style.background).not.toBe('rgb(214, 240, 227)')
+    // 아직 승패가 없는 경기는 칠하지 않고 글자색도 바꾸지 않는다
+    const { unmount } = render(<TournamentBracketVisual matches={pending} nameOf={nameOf} />)
+    expect(screen.getAllByText('가상선수3')[1].style.color).toBe('')
+    unmount()
   })
 
   it('화면 폭(폰·태블릿·PC)이 달라져도 같은 스타일이 유지된다 — 폭에 따라 바뀌는 규칙이 없다', () => {
@@ -87,7 +94,7 @@ describe('B. 승자 이름 강조 (승패 판정은 그대로, 표시만)', () =
       unmount()
     }
     expect(new Set(results).size).toBe(1)
-    expect(results[0]).toBe('true/800/rgb(15, 110, 86)')
+    expect(results[0]).toBe('true/800/rgb(11, 90, 69)')
   })
 
   it('부전승 경기는 승자 강조 대상이 아니다(점수 없는 진출이라 기존 표시 그대로)', () => {

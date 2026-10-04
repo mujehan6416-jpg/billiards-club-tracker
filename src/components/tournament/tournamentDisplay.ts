@@ -54,20 +54,27 @@ export function roundLabel(playerCountInRound: number): string {
   return `${playerCountInRound}강`
 }
 
-/** 승자 이름 강조 색(앱의 기존 "확정/승" 초록과 같은 색). */
-export const WINNER_NAME_COLOR = '#0f6e56'
+/** 승자 이름 글자 색(진한 초록) · 승자 이름 배경(연한 초록) · 패자 이름 글자 색(차분한 진회색). */
+export const WINNER_NAME_COLOR = '#0b5a45'
+export const WINNER_NAME_BG = '#d6f0e3'
+export const LOSER_NAME_COLOR = '#6b6b6b'
 
 /**
- * 이름 한 칸의 굵기·색 — 승패 판정에는 관여하지 않고 표시만 정한다.
+ * 이름 한 칸의 굵기·색·배경 — 승패 판정에는 관여하지 않고 표시만 정한다.
  *
- * iPad(Safari)의 한글 시스템 글꼴은 굵기 600과 800의 차이가 작아서 "승자 800 / 그 외 600"으로는 승자가
- * 눈에 띄게 구분되지 않았다. 그래서 결과가 확정된 경기에서는 승자를 800 + 진한 초록색, 패자를 일반 굵기(400)로
- * 크게 벌린다(굵기만이 아니라 색도 함께 달라서 글꼴이 굵기를 흐리게 그려도 구분된다).
- * 아직 승패가 없는 경기는 두 이름 모두 기존 굵기(fallback)를 유지한다.
+ * iPad(Safari)에서는 굵기(600↔800)와 초록 글자색만으로는 승자가 거의 구분되지 않았다(한글 시스템 글꼴이 굵기 차이를
+ * 약하게 그리고, 진한 초록은 검정과 비슷해 보인다). 그래서 글꼴에 기대지 않는 차이를 함께 쓴다.
+ *  - 승자: 연한 초록 배경 칠 + 진한 초록 글자 + 굵기 800  → 한눈에 "칠해진 이름"으로 보인다.
+ *  - 패자: 굵기 400 + 차분한 진회색 → 상대적으로 물러나 보인다.
+ * 아직 승패가 없는 경기는 두 이름 모두 기존 모양(fallback 굵기)을 유지한다.
  */
-export function nameEmphasis(decided: boolean, isWinner: boolean, fallbackWeight = 600): { fontWeight: number; color?: string } {
+export function nameEmphasis(
+  decided: boolean, isWinner: boolean, fallbackWeight = 600,
+): { fontWeight: number; color?: string; background?: string; padding?: string; borderRadius?: number } {
   if (!decided) return { fontWeight: fallbackWeight }
-  return isWinner ? { fontWeight: 800, color: WINNER_NAME_COLOR } : { fontWeight: 400 }
+  return isWinner
+    ? { fontWeight: 800, color: WINNER_NAME_COLOR, background: WINNER_NAME_BG, padding: '3px 10px', borderRadius: 8 }
+    : { fontWeight: 400, color: LOSER_NAME_COLOR }
 }
 
 /**
