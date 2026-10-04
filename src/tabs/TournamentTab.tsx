@@ -16,9 +16,9 @@ import { TournamentBracketVisual } from '../components/tournament/TournamentBrac
 import { TournamentMatchPanel } from '../components/tournament/TournamentMatchPanel'
 import { TournamentFinalResults } from '../components/tournament/TournamentFinalResults'
 import { TournamentRestartSender, type RestartBracketPlan, type RestartSendResult } from '../components/tournament/TournamentRestartSender'
-import { planRestartTransfer, restartCandidates } from '../logic/tournamentRestart'
+import { findRestartTarget, planRestartTransfer, restartCandidates } from '../logic/tournamentRestart'
 import {
-  analyzeRestartSource, buildRestartBracket, restartFirstRoundStatus, restartJoinProgress,
+  analyzeRestartSource, buildRestartBracket, restartFirstRoundStatus, restartJoinProgress, restartJoinRows,
 } from '../logic/tournamentRestartBracket'
 import { roundLabel } from '../components/tournament/tournamentDisplay'
 import { createTournamentParticipant, createDrawMapping, buildSeatsFromDraw } from '../logic/tournamentDraw'
@@ -450,7 +450,10 @@ export function TournamentTab({
   const syncLinkedRestarts = async (sourceId: string) => {
     if (previewMode) return
     const linked = tournaments.filter((t) => t.restartSourceTournamentId === sourceId && t.status === 'bracketFixed')
-    for (const t of linked) await syncRestartJoiners(t.id, clubId)
+    for (const t of linked) {
+      await syncRestartJoiners(t.id, clubId)
+      await reloadMatches(t.id) // 본선 화면의 "합류 완료" 표시가 바로 바뀌도록 리스타트 경기 목록을 새로 읽는다
+    }
   }
 
   const handleCreateRestartBracket = async (targetId: string): Promise<string> => {
@@ -681,15 +684,36 @@ export function TournamentTab({
   // 리스타트 대진(합류 예약 자리가 있는 대진)인지 — 맞으면 전체 대진표 그림 대신 라운드별 보기만 쓴다.
   const isRestartBracket = !!selectedMatches?.some((m) => m.playerBJoinFrom)
   const restartJoin = selectedMatches && isRestartBracket ? restartJoinProgress(selectedMatches) : undefined
+  // 리스타트 대회는 현재 본선 이름 + " 리스타트전"으로 자동 연결한다(운영진이 고르지 않는다).
+  const restartLookup = selected && selectedMatches && selectedMatches.length > 0 && !isRestartBracket
+    ? findRestartTarget(selected, tournaments) : null
+  const restartTargetId = restartLookup?.kind === 'found' && restartLookup.tournament.status === 'bracketFixed'
+    ? restartLookup.tournament.id : null
+  const restartTargetMatches = restartTargetId ? matchesByTournamentId[restartTargetId] : undefined
   const restartPlan: RestartBracketPlan | undefined = (() => {
     if (!selectedMatches || isRestartBracket) return undefined
     const analysis = analyzeRestartSource(selectedMatches)
     if (!analysis.ok) return { ok: false, message: analysis.message }
+    const status = restartFirstRoundStatus(analysis.value)
     return {
-      ok: true, status: restartFirstRoundStatus(analysis.value), w: analysis.value.w, entrants: analysis.value.entrantCount,
+      ok: true, status, w: analysis.value.w, entrants: analysis.value.entrantCount,
       joinLabel: `본선 ${roundLabel(analysis.value.secondRound[0].playerCountInRound)} 탈락자 합류 예정`,
+      firstRoundLosers: status.losers.map((l) => ({ memberId: l.memberId, name: nameOf(l.participantId) })),
+      joinRows: restartJoinRows(analysis.value.secondRound, restartTargetMatches).map((row) => ({
+        key: row.sourceMatchId, matchNumber: row.matchNumber, status: row.status,
+        name: row.loserParticipantId ? nameOf(row.loserParticipantId) : null,
+      })),
     }
   })()
+
+  // 리스타트 대진이 이미 만들어졌다면 본선 화면의 합류 현황에 쓸 리스타트 경기 목록을 한 번 읽어 둔다.
+  const restartTargetLoaded = restartTargetMatches !== undefined
+  useEffect(() => {
+    if (previewMode || !isAuthorizedAdmin || !restartTargetId || restartTargetLoaded) return
+    void reloadMatches(restartTargetId).catch(() => { /* 합류 현황 표시만 못 하는 것이라 조용히 넘어간다 */ })
+    // reloadMatches는 매 렌더마다 새로 만들어지므로 의존성에서 뺀다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewMode, isAuthorizedAdmin, restartTargetId, restartTargetLoaded])
 
   const nowIso = () => new Date().toISOString()
 
@@ -1011,13 +1035,14 @@ export function TournamentTab({
           && selectedMatches && selectedMatches.length > 0 && !isRestartBracket && (
           <TournamentRestartSender
             key={selected.id}
-            currentTournamentId={selected.id}
+            currentTournament={selected}
             candidates={restartCandidates(selectedMatches, selectedParticipants)}
             tournaments={tournaments}
             loadTargetParticipants={loadRestartTarget}
             onSend={handleSendToRestart}
             bracketPlan={restartPlan}
             onCreateBracket={previewMode ? undefined : handleCreateRestartBracket}
+            onRefreshTournaments={previewMode ? undefined : async () => { setTournaments(await fetchTournaments(clubId)) }}
           />
         )}
 

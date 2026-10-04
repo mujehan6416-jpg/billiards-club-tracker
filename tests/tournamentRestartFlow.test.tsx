@@ -57,7 +57,7 @@ const mainTournament: Tournament = {
   id: MAIN_ID, name: '가상 본선', date: '2026-10-05', timeLimitMinutes: 50, status: 'bracketFixed', bracketSize: 16,
   createdAt: '2026-10-01T00:00:00.000Z',
 }
-const restartDraft: Tournament = { ...mainTournament, id: RESTART_ID, name: '가상 리스타트', status: 'draft', bracketSize: undefined }
+const restartDraft: Tournament = { ...mainTournament, id: RESTART_ID, name: '가상 본선 리스타트전', status: 'draft', bracketSize: undefined }
 
 const mainR1 = decideRound(fullMain(16), 1)
 const losers = [2, 4, 6, 8, 10, 12, 14, 16]
@@ -73,7 +73,7 @@ function restartMatchesFrom(source: TournamentMatch[]) {
 }
 const restartMatches = restartMatchesFrom(mainR1)
 const restartFixed: Tournament = {
-  ...mainTournament, id: RESTART_ID, name: '가상 리스타트', bracketSize: 16, restartSourceTournamentId: MAIN_ID,
+  ...mainTournament, id: RESTART_ID, name: '가상 본선 리스타트전', bracketSize: 16, restartSourceTournamentId: MAIN_ID,
 }
 
 const nameOf = (id: string | null) => (id ? `가상선수${id.slice(1)}` : '')
@@ -174,13 +174,12 @@ describe('리스타트 대진 자동 생성 (본선 화면, 관리자)', () => {
     fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
   }
 
-  it('본선 1차가 모두 승인되면 대상 대회를 고른 뒤 자동 생성할 수 있고, 1차 탈락자 8명으로 11경기가 만들어진다', async () => {
+  it('본선 1차가 모두 승인되면 리스타트 대회가 자동 연결되어 곧바로 생성할 수 있고, 1차 탈락자 8명으로 11경기가 만들어진다', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     await openCreate()
     expect(screen.getByText('본선 1차 경기 8 / 8 최종 승인')).toBeInTheDocument()
+    expect(screen.getByText('가상 본선 리스타트전')).toBeInTheDocument() // 대상 대회를 고르지 않아도 이름으로 자동 연결
     const button = screen.getByText('리스타트 대진 자동 생성').closest('button')!
-    expect(button).toBeDisabled() // 대상 대회를 아직 고르지 않음
-    fireEvent.click(screen.getByText('가상 리스타트'))
     await waitFor(() => expect(button).not.toBeDisabled())
     fireEvent.click(button)
 
@@ -200,7 +199,6 @@ describe('리스타트 대진 자동 생성 (본선 화면, 관리자)', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     await openCreate()
     const button = screen.getByText('리스타트 대진 자동 생성').closest('button')!
-    fireEvent.click(screen.getByText('가상 리스타트'))
     await waitFor(() => expect(button).not.toBeDisabled())
     fireEvent.click(button)
     expect(createRestartBracketMock).not.toHaveBeenCalled()
@@ -211,8 +209,7 @@ describe('리스타트 대진 자동 생성 (본선 화면, 관리자)', () => {
     let partial = fullMain(16)
     for (let i = 1; i <= 7; i++) partial = decide(partial, `r1m${i}`)
     await openCreate(partial)
-    expect(screen.getByText('본선 1차 경기 7 / 8 최종 승인')).toBeInTheDocument()
-    expect(screen.getByText('본선 1차 경기가 모두 최종 승인되면 만들 수 있습니다.')).toBeInTheDocument()
+    expect(screen.getByText(/본선 1차 경기 7 \/ 8 최종 승인 — 모두 승인되면 대진을 만들 수 있습니다/)).toBeInTheDocument()
     expect(screen.getByText('리스타트 대진 자동 생성').closest('button')).toBeDisabled()
   })
 
@@ -221,7 +218,6 @@ describe('리스타트 대진 자동 생성 (본선 화면, 관리자)', () => {
     restartPeople = restartPeople.map((p) => (p.id === 'm1' ? { ...p, entryStatus: 'entered' as const } : p)) // 1차 승자인 가상선수1
     await openCreate()
     const button = screen.getByText('리스타트 대진 자동 생성').closest('button')!
-    fireEvent.click(screen.getByText('가상 리스타트'))
     await waitFor(() => expect(button).not.toBeDisabled())
     fireEvent.click(button)
     expect(await screen.findByText(/본선 1차 탈락자가 아닌 참가자가 있습니다/)).toBeInTheDocument()
@@ -271,7 +267,7 @@ describe('리스타트 대회 화면', () => {
   it('관리자가 열면 합류 자리 자동 배치를 한 번 확인하고, 합류 현황·수동 확인 버튼을 보여주며, 전체 대진표 그림 토글과 보내기 UI는 없다', async () => {
     asAdmin()
     serve({ tournaments: [mainTournament, restartFixed], restartMatches })
-    await openTournament('가상 리스타트')
+    await openTournament('가상 본선 리스타트전')
     await waitFor(() => expect(syncRestartJoinersMock).toHaveBeenCalledWith(RESTART_ID, 'skkubc'))
     expect(syncRestartJoinersMock).toHaveBeenCalledTimes(1)
     expect(screen.getByText('본선 탈락자 합류 0 / 4자리 확정')).toBeInTheDocument()
@@ -286,7 +282,7 @@ describe('리스타트 대회 화면', () => {
   it('일반 회원이 열면 배치를 시도하지 않고 수동 확인 버튼도 없다(읽기만 한다)', async () => {
     asMember(2)
     serve({ tournaments: [mainTournament, restartFixed], restartMatches })
-    await openTournament('가상 리스타트')
+    await openTournament('가상 본선 리스타트전')
     expect(syncRestartJoinersMock).not.toHaveBeenCalled()
     expect(screen.queryByText('합류자 자동 배치 확인')).toBeNull()
     expect(screen.getByText('본선 탈락자 합류 0 / 4자리 확정')).toBeInTheDocument()
@@ -295,7 +291,7 @@ describe('리스타트 대회 화면', () => {
   it('실시간: 합류자가 배치되면 새로고침 없이 합류 현황과 이름이 바뀐다', async () => {
     asMember(2)
     serve({ tournaments: [mainTournament, restartFixed], restartMatches })
-    await openTournament('가상 리스타트')
+    await openTournament('가상 본선 리스타트전')
     expect(subscribers.has(RESTART_ID)).toBe(true)
     act(() => subscribers.get(RESTART_ID)!(fillJoiner(restartMatches, 'r2m1', 3), { fromCache: false, hasPendingWrites: false }))
     expect(screen.getByText('본선 탈락자 합류 1 / 4자리 확정')).toBeInTheDocument()
@@ -320,12 +316,14 @@ describe('15명 본선(부전승 1명) — 화면 흐름', () => {
     await openTournament('가상 본선')
     fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
     expect(screen.getByText('본선 1차 경기 7 / 7 최종 승인')).toBeInTheDocument()
-    expect(screen.getByText(/1차 탈락자 7명으로 1차전을 자동으로 만들고\(부전승 1명은 추첨으로 자동 배정\)/)).toBeInTheDocument()
-    // 본선 부전승 선수(가상선수15)는 보내기 후보에도 없다
-    expect(screen.getAllByRole('checkbox')).toHaveLength(7)
+    expect(screen.getByText('리스타트 1차전 대상자 (7명)')).toBeInTheDocument()
+    expect(screen.getByText(/이 7명으로 1차전을 자동으로 만들고\(부전승 1명은 추첨으로 자동 배정\)/)).toBeInTheDocument()
+    // 본선 부전승 선수(가상선수15)는 1차전 대상자 목록에 없다(본선 대진표에는 원래 보이므로 목록 영역만 확인)
+    const list = screen.getByText('리스타트 1차전 대상자 (7명)').parentElement!
+    expect(list.textContent).not.toContain('가상선수15')
+    expect(list.textContent).toContain('가상선수14')
 
     const button = screen.getByText('리스타트 대진 자동 생성').closest('button')!
-    fireEvent.click(screen.getByText('가상 리스타트'))
     await waitFor(() => expect(button).not.toBeDisabled())
     fireEvent.click(button)
 

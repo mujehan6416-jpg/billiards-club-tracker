@@ -36,8 +36,8 @@ const main: Tournament = {
   id: 'main', name: '가상 본선', date: '2026-10-05', timeLimitMinutes: 50, status: 'bracketFixed', bracketSize: 4,
   createdAt: '2026-10-01T00:00:00.000Z',
 }
-const restart: Tournament = { ...main, id: 'restart', name: '가상 리스타트', status: 'draft', bracketSize: undefined }
-const fixedOther: Tournament = { ...main, id: 'fixed', name: '가상 확정된 대회' }
+const restart: Tournament = { ...main, id: 'restart', name: '가상 본선 리스타트전', status: 'draft', bracketSize: undefined }
+const fixedOther: Tournament = { ...main, id: 'fixed', name: '가상 다른 대회' }
 
 const mainParticipants: TournamentParticipant[] = [1, 2, 3, 4].map((n) => ({
   id: `p${n}`, memberId: `m${n}`, displayNameSnapshot: `가상선수${n}`,
@@ -118,14 +118,23 @@ describe('후보 표시와 대상 대회 선택', () => {
     expect(screen.getByText('아직 리스타트 대상이 되는 확정 탈락자가 없습니다.')).toBeInTheDocument()
   })
 
-  it('대진 확정된 대회는 선택할 수 없고 안내가 나오며, 자기 자신은 목록에 없다', async () => {
+  it('리스타트 대회는 이름으로 자동 연결되고(목록에서 고르지 않음), 이름이 다른 대회·본선 자신은 대상이 아니다', async () => {
     asAdmin()
     await openMain()
     fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
-    expect(screen.getByText('가상 확정된 대회').closest('button')).toBeDisabled()
-    expect(screen.getByText('이미 대진이 확정된 대회에는 참가자를 추가할 수 없습니다.')).toBeInTheDocument()
+    expect(screen.getByText('가상 본선 리스타트전')).toBeInTheDocument()
+    expect(screen.queryByText('가상 다른 대회')).toBeNull()
     expect(screen.queryByRole('button', { name: '가상 본선' })).toBeNull()
-    expect(screen.getByText('가상 리스타트').closest('button')).not.toBeDisabled()
+    expect(screen.getByRole('checkbox')).not.toBeDisabled()
+  })
+
+  it('연결된 리스타트 대회가 이미 대진 확정 상태면 안내가 나오고 추가할 수 없다', async () => {
+    asAdmin()
+    fetchTournamentsMock.mockResolvedValue([main, { ...restart, status: 'bracketFixed' }])
+    await openMain()
+    fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
+    expect(screen.getByText('이미 대진이 확정된 대회에는 참가자를 추가할 수 없습니다.')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox')).toBeDisabled()
   })
 })
 
@@ -136,7 +145,6 @@ describe('참가자 추가', () => {
     await openMain()
     fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByText('가상 리스타트'))
     await waitFor(() => expect(fetchTournamentParticipantsMock).toHaveBeenCalledWith('restart', 'skkubc'))
     expect(await screen.findByText('이미 참가 중')).toBeInTheDocument()
     expect(screen.getByRole('checkbox')).toBeDisabled()
@@ -152,7 +160,6 @@ describe('참가자 추가', () => {
     ])
     await openMain()
     fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
-    fireEvent.click(screen.getByText('가상 리스타트'))
     expect(await screen.findByText('이미 참가 중')).toBeInTheDocument()
     const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[]
     expect(boxes.filter((b) => b.disabled)).toHaveLength(1) // 이미 참가 중인 가상선수2는 선택 불가
@@ -174,7 +181,6 @@ describe('참가자 추가', () => {
     await openMain()
     fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByText('가상 리스타트'))
     await waitFor(() => expect(screen.getByText('1명 보내기', { exact: false })).not.toBeDisabled())
     fireEvent.click(screen.getByText(/명 보내기$/))
     await waitFor(() => expect(writeTournamentParticipantMock).toHaveBeenCalledTimes(1))
@@ -191,7 +197,6 @@ describe('참가자 추가', () => {
     await openMain()
     fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByText('가상 리스타트'))
     await waitFor(() => expect(screen.getByText(/명 보내기$/)).not.toBeDisabled())
     fireEvent.click(screen.getByText(/명 보내기$/))
     expect(window.confirm).toHaveBeenCalled()
@@ -203,9 +208,8 @@ describe('참가자 추가', () => {
     asAdmin()
     await openMain()
     fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
-    fireEvent.click(screen.getByText('가상 리스타트'))
     await waitFor(() => expect(fetchTournamentParticipantsMock).toHaveBeenCalledWith('restart', 'skkubc'))
-    expect(screen.getByText('보낼 사람과 대회를 선택해 주세요').closest('button')).toBeDisabled()
+    expect(screen.getByText('보낼 사람을 선택해 주세요').closest('button')).toBeDisabled()
     expect(writeTournamentParticipantMock).not.toHaveBeenCalled()
     expect(setParticipantEntryStatusMock).not.toHaveBeenCalled()
   })
@@ -217,7 +221,6 @@ describe('참가자 추가', () => {
     await openMain()
     fireEvent.click(screen.getByText('리스타트 참가자 보내기'))
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByText('가상 리스타트'))
     await waitFor(() => expect(screen.getByText(/명 보내기$/)).not.toBeDisabled())
     fetchTournamentsMock.mockResolvedValue([main, { ...restart, status: 'bracketFixed' }, fixedOther])
     fireEvent.click(screen.getByText(/명 보내기$/))
