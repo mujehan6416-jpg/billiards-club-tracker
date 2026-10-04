@@ -16,7 +16,7 @@ import { TournamentBracketVisual } from '../components/tournament/TournamentBrac
 import { TournamentMatchPanel } from '../components/tournament/TournamentMatchPanel'
 import { TournamentFinalResults } from '../components/tournament/TournamentFinalResults'
 import { TournamentRestartSender, type RestartBracketPlan, type RestartSendResult } from '../components/tournament/TournamentRestartSender'
-import { findRestartTarget, planRestartTransfer, restartCandidates } from '../logic/tournamentRestart'
+import { buildRestartTournament, findRestartTarget, planRestartTransfer, restartCandidates } from '../logic/tournamentRestart'
 import {
   analyzeRestartSource, buildRestartBracket, restartFirstRoundStatus, restartJoinProgress, restartJoinRows,
 } from '../logic/tournamentRestartBracket'
@@ -57,6 +57,7 @@ import {
   fetchTournamentMatches,
   subscribeTournamentMatches,
   createRestartBracket,
+  ensureTournamentDoc,
   syncRestartJoiners,
   adminEntersTournamentMatchResult,
   submitTournamentMatchResult,
@@ -445,6 +446,30 @@ export function TournamentTab({
   // ── 리스타트 대진 자동 생성 · 합류 자리 자동 배치 ──
   // 대진·합류 위치는 프로그램이 정한다(운영진이 고르지 않는다). 한 번 만든 대진은 저장되어 다시 섞이지 않고,
   // 본선 결과를 나중에 정정해도 이미 배치된 합류자·리스타트 경기는 자동으로 바뀌지 않는다(운영진이 직접 조정).
+
+  /**
+   * 리스타트 대회를 준비한다(관리자만). 대회 목록을 서버에서 새로 읽어 이름(`본선 이름 + " 리스타트전"`) 또는
+   * 이 본선의 고정 id로 이미 있는 대회가 하나면 그대로 쓰고, 둘 이상이면 아무것도 만들지 않고 중단하며, 없으면
+   * 자동으로 만든다. 만들 때는 고정 id + "없을 때만 생성" 트랜잭션이라 패널을 여러 번 열거나 두 기기가 동시에
+   * 열어도 한 개만 생긴다. 참가자 문서는 만들지 않는다(본선 참가자를 복사하지 않음).
+   */
+  const handlePrepareRestartTarget = async (): Promise<{ created: boolean }> => {
+    if (!selected || !isAuthorizedAdmin) {
+      throw new Error('관리자 로그인 상태에서만 리스타트 대회를 준비할 수 있습니다.')
+    }
+    const latest = await fetchTournaments(clubId)
+    setTournaments(latest)
+    const lookup = findRestartTarget(selected, latest)
+    if (lookup.kind === 'found') return { created: false }
+    if (lookup.kind === 'ambiguous') throw new Error(lookup.message)
+    try {
+      const { created } = await ensureTournamentDoc(buildRestartTournament(selected, new Date().toISOString(), adminUid), clubId)
+      setTournaments(await fetchTournaments(clubId))
+      return { created }
+    } catch {
+      throw new Error('리스타트 대회를 자동으로 만들지 못했습니다. 다시 시도해 주세요.')
+    }
+  }
 
   /** 이 대회를 본선으로 삼는(대진이 만들어진) 리스타트 대회마다 합류 자리를 채운다. */
   const syncLinkedRestarts = async (sourceId: string) => {
@@ -1042,7 +1067,7 @@ export function TournamentTab({
             onSend={handleSendToRestart}
             bracketPlan={restartPlan}
             onCreateBracket={previewMode ? undefined : handleCreateRestartBracket}
-            onRefreshTournaments={previewMode ? undefined : async () => { setTournaments(await fetchTournaments(clubId)) }}
+            onPrepareTarget={previewMode ? undefined : handlePrepareRestartTarget}
           />
         )}
 

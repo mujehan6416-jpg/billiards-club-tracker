@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const getDocMock = vi.fn()
 const getDocsMock = vi.fn()
+const runTransactionMock = vi.fn()
 
 interface FakeBatchOp { kind: 'set' | 'update' | 'delete'; path: string; data?: Record<string, unknown> }
 interface FakeBatch {
@@ -22,6 +23,7 @@ vi.mock('firebase/firestore', () => ({
   getDoc: (...args: unknown[]) => getDocMock(...args),
   getDocs: (...args: unknown[]) => getDocsMock(...args),
   onSnapshot: vi.fn(),
+  runTransaction: (...args: unknown[]) => runTransactionMock(...args),
   setDoc: vi.fn(),
   updateDoc: vi.fn(),
   deleteDoc: vi.fn(),
@@ -40,7 +42,7 @@ vi.mock('firebase/firestore', () => ({
 }))
 vi.mock('../src/lib/firebase', () => ({ db: {} }))
 
-import { createRestartBracket, placeRestartJoiner, syncRestartJoiners } from '../src/lib/tournamentSync'
+import { createRestartBracket, ensureTournamentDoc, placeRestartJoiner, syncRestartJoiners } from '../src/lib/tournamentSync'
 import { analyzeRestartSource, buildRestartBracket } from '../src/logic/tournamentRestartBracket'
 import type { Tournament, TournamentMatch, TournamentParticipant } from '../src/types/tournament'
 import { decide, decideRound, fullMain, mainWithByes, seededRng } from './fixtures/restartMain'
@@ -250,5 +252,54 @@ describe('15명 본선(부전승 1명) — 저장', () => {
       const update = b.ops[b.ops.length - 1]
       expect(Object.keys(update.data!)).toEqual(['playerBParticipantId', 'playerBMemberId', 'playerBHandicapSnapshot'])
     }
+  })
+})
+
+describe('ensureTournamentDoc — 없을 때만 만드는 트랜잭션(자동 생성 리스타트 대회의 중복 방지)', () => {
+  /** 서버를 흉내 낸 저장소 + 트랜잭션은 한 번에 하나씩 실행(Firestore가 충돌하는 트랜잭션을 직렬로 처리하는 것과 같은 결과). */
+  function installFakeTransaction(initial: Record<string, unknown> = {}) {
+    const store = new Map<string, unknown>(Object.entries(initial))
+    const sets: { path: string; data: unknown }[] = []
+    let queue: Promise<unknown> = Promise.resolve()
+    runTransactionMock.mockImplementation((_db: unknown, fn: (tx: unknown) => Promise<unknown>) => {
+      const run = queue.then(() => fn({
+        get: async (ref: { path: string }) => ({ exists: () => store.has(ref.path), data: () => store.get(ref.path) }),
+        set: (ref: { path: string }, data: unknown) => { store.set(ref.path, data); sets.push({ path: ref.path, data }) },
+      }))
+      queue = run.then(() => undefined, () => undefined)
+      return run
+    })
+    return { store, sets }
+  }
+  const auto: Tournament = tournament({ id: `restart-${TID}`, name: '가상 본선 리스타트전' })
+  const PATH = `${BASE.replace(TID, `restart-${TID}`)}`
+
+  it('없으면 만들고(created: true) 이름·날짜 등 대회 필드만 저장한다(참가자 문서 없음)', async () => {
+    const { sets } = installFakeTransaction()
+    expect(await ensureTournamentDoc(auto, CLUB)).toEqual({ created: true })
+    expect(sets).toHaveLength(1)
+    expect(sets[0].path).toBe(PATH)
+    expect(sets[0].data).toMatchObject({ id: `restart-${TID}`, name: '가상 본선 리스타트전', status: 'draft' })
+    expect(sets.every((x) => !x.path.includes('/participants/'))).toBe(true)
+  })
+
+  it('이미 있으면 아무것도 쓰지 않는다 — 진행 중인 대회를 덮어쓰지 않음(created: false)', async () => {
+    const progressed = { ...auto, status: 'bracketFixed' as const, restartSourceTournamentId: TID }
+    const { sets, store } = installFakeTransaction({ [PATH]: progressed })
+    expect(await ensureTournamentDoc(auto, CLUB)).toEqual({ created: false })
+    expect(sets).toHaveLength(0)
+    expect(store.get(PATH)).toEqual(progressed)
+  })
+
+  it('두 기기가 동시에 만들려 해도 한 번만 만들어진다(경쟁 조건)', async () => {
+    const { sets } = installFakeTransaction()
+    const results = await Promise.all([ensureTournamentDoc(auto, CLUB), ensureTournamentDoc(auto, CLUB), ensureTournamentDoc(auto, CLUB)])
+    expect(results.filter((r) => r.created)).toHaveLength(1)
+    expect(sets).toHaveLength(1)
+  })
+
+  it('저장에 실패하면 오류를 올린다(화면에서 "다시 준비"를 안내)', async () => {
+    runTransactionMock.mockRejectedValue(new Error('offline'))
+    await expect(ensureTournamentDoc(auto, CLUB)).rejects.toBeTruthy()
   })
 })

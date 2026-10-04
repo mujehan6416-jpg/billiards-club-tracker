@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { findRestartTarget, normalizeTournamentName, restartTournamentName } from '../src/logic/tournamentRestart'
+import {
+  buildRestartTournament, findRestartTarget, normalizeTournamentName, restartTournamentId, restartTournamentName,
+} from '../src/logic/tournamentRestart'
 import { restartJoinRows } from '../src/logic/tournamentRestartBracket'
 import { analyzeRestartSource, buildRestartBracket } from '../src/logic/tournamentRestartBracket'
 import type { Tournament } from '../src/types/tournament'
@@ -29,7 +31,7 @@ describe('findRestartTarget — 리스타트 대회 자동 결정', () => {
     const r = findRestartTarget(main, [main, named('x', '리스타트전'), named('y', '제28차 부산동문회장배 리스타트')])
     expect(r).toEqual({
       kind: 'missing', expectedName: '제28차 부산동문회장배 리스타트전',
-      message: "'제28차 부산동문회장배 리스타트전' 대회를 먼저 만들어 주세요.",
+      message: "'제28차 부산동문회장배 리스타트전' 대회가 아직 없습니다.",
     })
   })
 
@@ -124,5 +126,45 @@ describe('restartJoinRows — 본선 8강 탈락자 합류 현황', () => {
     let r = restart
     for (const row of rows(all, restart)) r = fillJoiner(r, `r2m${row.matchNumber}`, Number(row.loserParticipantId!.slice(1)))
     expect(rows(all, r).map((x) => x.status)).toEqual(['joined', 'joined', 'joined', 'joined'])
+  })
+})
+
+describe('자동 생성 리스타트 대회 — 고정 id와 생성 필드', () => {
+  const main = { ...named('main-1', '  Test3  '), date: '2026-10-05', timeLimitMinutes: 45 }
+
+  it('문서 id는 본선 id에서 정해진다(난수 아님 — 같은 본선이면 항상 같은 id)', () => {
+    expect(restartTournamentId('main-1')).toBe('restart-main-1')
+    expect(restartTournamentId('main-1')).toBe(restartTournamentId('main-1'))
+  })
+
+  it('이름 = 정규화한 본선 이름 + " 리스타트전", 날짜·제한시간은 본선과 같고, 참가 신청 전(draft) 상태다', () => {
+    const t = buildRestartTournament(main, '2026-10-05T01:00:00.000Z', 'uid-admin')
+    expect(t).toEqual({
+      id: 'restart-main-1', name: 'Test3 리스타트전', date: '2026-10-05', timeLimitMinutes: 45,
+      status: 'draft', createdAt: '2026-10-05T01:00:00.000Z', createdByAdminUid: 'uid-admin',
+    })
+  })
+
+  it('참가자 확정·대진·종료 관련 값과 연결 정보는 만들 때 넣지 않는다', () => {
+    const t = buildRestartTournament(main, '2026-10-05T01:00:00.000Z')
+    for (const key of ['participantCount', 'bracketSize', 'drawConfirmedAt', 'completedAt', 'championParticipantId', 'restartSourceTournamentId', 'createdByAdminUid']) {
+      expect(key in t, key).toBe(false)
+    }
+  })
+
+  it('자동 생성된 문서는 방금 만든 직후의 목록에서 바로 연결된다(자동 생성 이름과 검색 이름이 같은 규칙)', () => {
+    const created = buildRestartTournament(main, '2026-10-05T01:00:00.000Z')
+    expect(findRestartTarget(main, [main, created])).toEqual({ kind: 'found', tournament: created })
+  })
+
+  it('이름이 바뀌어도 고정 id 대회는 같은 대회로 연결된다, 이름이 같은 다른 대회가 또 있으면 중단한다', () => {
+    const renamed = { ...buildRestartTournament(main, '2026-10-05T01:00:00.000Z'), name: '이름을 고친 대회' }
+    expect(findRestartTarget(main, [main, renamed]).kind).toBe('found')
+    const manual = named('manual', 'Test3 리스타트전')
+    expect(findRestartTarget(main, [main, renamed, manual]).kind).toBe('ambiguous')
+  })
+
+  it('같은 본선에서 두 번 만들어도 id가 같아 문서 하나로 합쳐진다', () => {
+    expect(buildRestartTournament(main, 'a').id).toBe(buildRestartTournament(main, 'b').id)
   })
 })

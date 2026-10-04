@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Tournament, TournamentParticipant } from '../../types/tournament'
 import {
-  findRestartTarget, isAlreadyInTarget, planRestartTransfer, restartTargetState, restartTournamentName,
-  type RestartCandidate,
+  findRestartTarget, isAlreadyInTarget, normalizeTournamentName, planRestartTransfer, restartTargetState,
+  restartTournamentName, type RestartCandidate,
 } from '../../logic/tournamentRestart'
 import type { RestartFirstRoundStatus, RestartJoinStatus } from '../../logic/tournamentRestartBracket'
 
@@ -27,6 +27,30 @@ export interface RestartSendResult {
   failed: number
 }
 
+// ── 관리자 진단용: 지금 이 폰이 실행 중인 앱 버전과 서버의 최신 버전 비교 ──
+// 홈 화면 앱(PWA)은 서비스워커가 옛 화면을 먼저 보여 주고 새 버전은 백그라운드에서 받아 두었다가 앱을 다시 열어야
+// 적용된다. 그래서 새로 배포했는데도 폰이 옛 버전을 쓰고 있는 일이 생길 수 있다. 번들 파일 이름의 해시가 버전이다.
+function runningBuildId(): string {
+  try {
+    const src = Array.from(document.scripts).map((s) => s.src).find((s) => /\/assets\/index-.+\.js/.test(s))
+    return src?.match(/index-(.+?)\.js/)?.[1] ?? '개발 실행'
+  } catch {
+    return '알 수 없음'
+  }
+}
+
+async function fetchLatestBuildId(): Promise<string | null> {
+  try {
+    if (typeof fetch !== 'function') return null
+    // 주소에 값을 붙여 서비스워커·브라우저 캐시를 거치지 않고 서버의 index.html을 읽는다.
+    const res = await fetch(new URL(`index.html?check=${Date.now()}`, document.baseURI).toString(), { cache: 'no-store' })
+    const html = await res.text()
+    return html.match(/assets\/index-(.+?)\.js/)?.[1] ?? null
+  } catch {
+    return null
+  }
+}
+
 const JOIN_STATUS_TEXT: Record<RestartJoinStatus, { text: string; color: string }> = {
   pending: { text: '승인 대기', color: '#856404' },
   waiting: { text: '합류 대기', color: '#1a56db' },
@@ -49,7 +73,7 @@ const JOIN_STATUS_TEXT: Record<RestartJoinStatus, { text: string; color: string 
  */
 export function TournamentRestartSender({
   currentTournament, candidates, tournaments, loadTargetParticipants, onSend, bracketPlan, onCreateBracket,
-  onRefreshTournaments,
+  onPrepareTarget,
 }: {
   currentTournament: Tournament
   candidates: RestartCandidate[]
@@ -61,19 +85,27 @@ export function TournamentRestartSender({
   /** 대상 대회의 리스타트 대진을 자동 생성하고 완료 안내 문구를 돌려준다. 실패하면 Error를 던진다. */
   onCreateBracket?: (targetId: string) => Promise<string>
   /**
-   * 대회 목록을 서버에서 다시 읽는다. 화면을 연 뒤 다른 기기에서 리스타트 대회를 만들었어도 찾을 수 있게,
-   * 이 패널을 열 때와 "연결 다시 확인"을 누를 때 부른다(대상 대회를 고르는 기능이 아니다).
+   * 리스타트 대회를 준비한다 — 대회 목록을 서버에서 새로 읽어 `본선 이름 + " 리스타트전"` 대회가 있으면 그대로
+   * 쓰고, 없으면 자동으로 만든다(없을 때만 생성하는 트랜잭션이라 여러 번·여러 기기에서 열어도 한 개뿐이다).
+   * 이 패널을 열 때와 "리스타트 대회 다시 준비"를 누를 때 부른다. 대상 대회를 고르는 기능이 아니다.
+   * 실패하면 Error(화면에 그대로 보여줄 문장)를 던진다.
    */
-  onRefreshTournaments?: () => Promise<void>
+  onPrepareTarget?: () => Promise<{ created: boolean }>
 }) {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [targetParticipants, setTargetParticipants] = useState<TournamentParticipant[] | null>(null)
   const [working, setWorking] = useState(false)
   const [message, setMessage] = useState('')
-  const [checking, setChecking] = useState(false)
+  const [preparing, setPreparing] = useState(false)
+  const [prepareError, setPrepareError] = useState('')
+  const [autoCreated, setAutoCreated] = useState(false)
+  const prepareInFlight = useRef(false)
+  const [latestBuildId, setLatestBuildId] = useState<string | null>(null)
 
   const lookup = findRestartTarget(currentTournament, tournaments)
+  const others = tournaments.filter((t) => t.id !== currentTournament.id)
+  const buildId = runningBuildId()
   const target = lookup.kind === 'found' ? lookup.tournament : null
   const targetState = target ? restartTargetState(target, currentTournament.id) : null
   const created = !!target && target.status === 'bracketFixed' && target.restartSourceTournamentId === currentTournament.id
@@ -98,21 +130,28 @@ export function TournamentRestartSender({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, targetId, canAdd])
 
-  const refreshTournaments = async () => {
-    if (!onRefreshTournaments || checking) return
-    setChecking(true)
+  const prepareTarget = async () => {
+    if (!onPrepareTarget || prepareInFlight.current) return // 같은 화면에서 여러 번 눌러도 한 번만 처리한다
+    prepareInFlight.current = true
+    setPreparing(true)
+    setPrepareError('')
     try {
-      await onRefreshTournaments()
-    } catch {
-      setMessage('대회 목록을 다시 읽지 못했습니다. 인터넷 연결을 확인해 주세요.')
+      const result = await onPrepareTarget()
+      if (result.created) setAutoCreated(true)
+    } catch (e) {
+      setPrepareError(e instanceof Error && e.message ? e.message : '리스타트 대회를 자동으로 만들지 못했습니다. 다시 시도해 주세요.')
     } finally {
-      setChecking(false)
+      prepareInFlight.current = false
+      setPreparing(false)
     }
   }
 
-  // 패널을 열 때 대회 목록을 한 번 새로 읽는다(처음 화면을 연 뒤 만들어진 리스타트 대회도 찾도록).
+  // 패널을 열면 리스타트 대회를 준비한다(있으면 연결, 없으면 자동 생성 후 연결).
   useEffect(() => {
-    if (open) void refreshTournaments()
+    if (open) {
+      void prepareTarget()
+      void fetchLatestBuildId().then(setLatestBuildId)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -183,22 +222,46 @@ export function TournamentRestartSender({
       {/* ── 리스타트 대회(자동 연결): 찾는 이름과 연결 결과를 항상 보여준다 ── */}
       {heading('리스타트 대회 (자동 연결)')}
       <span className="muted" style={{ fontSize: 15, overflowWrap: 'anywhere' }}>
-        필요한 이름: {lookup.kind === 'found' ? restartTournamentName(currentTournament.name) : lookup.expectedName}
+        리스타트 대회 이름: {restartTournamentName(currentTournament.name)}
       </span>
-      {lookup.kind !== 'found' ? (
+      {/* 진단 정보(관리자 전용): 연결이 안 될 때 원인(구버전·이름 불일치)을 바로 구분하기 위한 최소 정보 */}
+      <div className="muted" style={{ fontSize: 14, display: 'flex', flexDirection: 'column', gap: 2, overflowWrap: 'anywhere' }}>
+        <span>
+          앱 버전: {buildId}
+          {latestBuildId && buildId !== '개발 실행' && (buildId === latestBuildId ? ' (최신 버전)' : ` — 새 버전(${latestBuildId})이 있습니다. 앱을 완전히 종료한 뒤 다시 열어 주세요.`)}
+        </span>
+        <span>읽은 대회 {tournaments.length}개</span>
+        {lookup.kind === 'missing' && !preparing && prepareError && others.length > 0 && (
+          <>
+            <span>읽은 다른 대회 이름:</span>
+            {others.slice(0, 10).map((t) => (
+              <span key={t.id}>
+                「{t.name}」{normalizeTournamentName(t.name) !== t.name ? ' ※ 앞뒤 공백·눈에 안 보이는 문자가 있어 정리해서 비교함' : ''}
+              </span>
+            ))}
+          </>
+        )}
+      </div>
+      {lookup.kind === 'ambiguous' ? (
         <>
-          <p style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#c0392b' }}>
-            {lookup.kind === 'missing' ? '리스타트 대회를 찾지 못했습니다.' : '같은 이름의 리스타트 대회가 여러 개 있습니다.'}
-          </p>
-          <span style={{ fontSize: 15 }}>
-            {lookup.kind === 'missing'
-              ? `위 이름과 똑같은 대회를 먼저 만들어 주세요. (대회 이름: ${lookup.expectedName})`
-              : '불필요한 대회를 정리한 뒤 다시 확인해 주세요.'}
-          </span>
+          <p style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#c0392b' }}>같은 이름의 리스타트 대회가 여러 개 있습니다.</p>
+          <span style={{ fontSize: 15 }}>불필요한 대회를 정리한 뒤 다시 시도해 주세요. (새 대회는 만들지 않았습니다)</span>
         </>
+      ) : lookup.kind === 'missing' ? (
+        // 없으면 앱이 자동으로 만든다. 운영자가 만들어야 한다는 안내는 하지 않는다.
+        prepareError && !preparing ? (
+          <>
+            <p style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#c0392b' }}>{prepareError}</p>
+            <button type="button" className="primary" style={{ fontSize: 16, padding: '12px 14px', minHeight: 48 }} onClick={() => void prepareTarget()}>
+              리스타트 대회 다시 준비
+            </button>
+          </>
+        ) : (
+          <span style={{ fontSize: 16, fontWeight: 700 }}>리스타트 대회를 준비하고 있습니다.</span>
+        )
       ) : (
         <>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#0f6e56' }}>연결된 리스타트 대회</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#0f6e56' }}>연결된 리스타트 대회{autoCreated ? ' (자동 생성됨)' : ''}</span>
           <span style={{ fontSize: 17, fontWeight: 700, overflowWrap: 'anywhere' }}>{lookup.tournament.name}</span>
           {created ? (
             <span style={{ fontSize: 15, fontWeight: 700, color: '#0f6e56' }}>
@@ -208,12 +271,6 @@ export function TournamentRestartSender({
             targetState && !targetState.selectable && <span className="muted" style={{ fontSize: 15 }}>{targetState.reason}</span>
           )}
         </>
-      )}
-
-      {onRefreshTournaments && (
-        <button type="button" style={{ fontSize: 15, padding: '10px 14px', minHeight: 44 }} disabled={checking} onClick={() => void refreshTournaments()}>
-          {checking ? '확인 중...' : '연결 다시 확인'}
-        </button>
       )}
 
       {lookup.kind === 'found' && auto && bracketPlan.ok && (
