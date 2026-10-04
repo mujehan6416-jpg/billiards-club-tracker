@@ -4,17 +4,18 @@ import { useSettlementStore, isLocked } from '../../store/settlementStore'
 import { useAuth } from '../../store/authStore'
 import {
   buildIncomeTableRows, calcIncomeTableSummary, parseTableAmount, planAddTableRow, planDeleteTableRow, searchAddableMembers, planClearAmount,
+  duesEntriesOf, donationEntriesOf,
 } from '../../logic/settlement'
-import type { IncomeRowCategory, IncomeRowMethod } from '../../logic/settlement'
+import type { IncomeRowCategory, IncomeRowMethod, IncomeTableRow } from '../../logic/settlement'
 import type { Member } from '../../types'
 import type { DuesStatus, DonationStatus } from '../../types/settlement'
 import { compactMoneyInputStyle } from './moneyInputStyle'
 import { MoneyInput } from '../MoneyInput'
 
 // 정산 "참가자" 탭의 회비·찬조 입력표. 기존 카드형 SettlementParticipantForm을 대체한다.
-// 데이터는 여전히 SettlementParticipant.dues/donation(참가자 1명당 회비 1개·찬조 1개)에 그대로
-// 저장한다 — 표는 그 값을 "이름·구분·금액·결제수단" 행으로 펼쳐 보여줄 뿐, 새 컬렉션/필드를
-// 만들지 않는다. 입력은 다른 정산 화면과 동일하게 즉시 로컬 반영되고(자동 서버 저장 아님),
+// 한 사람이 회비·찬조를 여러 번(또는 여러 결제수단으로) 나눠 낼 수 있어 각각 여러 행이 될 수 있다
+// (SettlementParticipant.duesPayments/donationPayments — 예전 정산은 dues/donation 하나가 1행으로 보인다).
+// 새 컬렉션은 만들지 않는다. 입력은 다른 정산 화면과 동일하게 즉시 로컬 반영되고(자동 서버 저장 아님),
 // 아래 "임시저장"/"최종 게시" 버튼을 눌러야 Firestore에 실제로 반영된다(기존 saveDraft/
 // confirmSettlement 액션을 그대로 재사용 — 동작·상태값 변경 없음).
 //
@@ -27,6 +28,11 @@ const DEFAULT_DUES_STATUS: DuesStatus = '미납'
 const DEFAULT_DONATION_STATUS: DonationStatus = '미확인'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
+
+/** 행 추가·삭제 버튼 — 폰에서 누르기 쉽게 높이 44px 이상 */
+const rowButtonStyle: CSSProperties = { fontSize: 13, padding: '10px 12px', minHeight: 44, whiteSpace: 'nowrap' }
+/** 행 삭제 버튼 — 결제수단 칸 아래 줄에 들어가도록 좌우 여백만 줄인다(높이 44px 유지) */
+const deleteButtonStyle: CSSProperties = { ...rowButtonStyle, padding: '10px 8px' }
 
 const cellStyle: CSSProperties = { padding: '7px 6px', borderBottom: '1px solid var(--border)', verticalAlign: 'middle' }
 const thStyle: CSSProperties = { ...cellStyle, fontWeight: 700, fontSize: 12, textAlign: 'left', whiteSpace: 'nowrap', background: '#f4f5f3' }
@@ -70,7 +76,7 @@ function MethodSelect({ value, disabled, onChange, ariaLabel }: {
       disabled={disabled}
       value={value ?? ''}
       onChange={(e) => onChange(e.target.value as IncomeRowMethod)}
-      style={{ minWidth: 80, fontSize: 14, padding: '6px 2px' }}
+      style={{ minWidth: 80, minHeight: 44, fontSize: 14, padding: '6px 2px' }}
     >
       <option value="" disabled>선택</option>
       <option value="현금">현금</option>
@@ -98,7 +104,7 @@ function StatusSelect<T extends string>({ value, options, disabled, onChange, ar
       disabled={disabled}
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
-      style={{ minWidth: 80, fontSize: 12, padding: '4px 2px' }}
+      style={{ width: 78, minHeight: 44, fontSize: 13, padding: '4px 2px' }}
     >
       {options.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
@@ -116,6 +122,8 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
   const addGuestParticipant = useSettlementStore((s) => s.addGuestParticipant)
   const updateDues = useSettlementStore((s) => s.updateDues)
   const updateDonation = useSettlementStore((s) => s.updateDonation)
+  const updatePaymentRow = useSettlementStore((s) => s.updatePaymentRow)
+  const removePaymentRow = useSettlementStore((s) => s.removePaymentRow)
   const removeParticipant = useSettlementStore((s) => s.removeParticipant)
   const saveDraft = useSettlementStore((s) => s.saveDraft)
   const confirmSettlement = useSettlementStore((s) => s.confirmSettlement)
@@ -125,9 +133,12 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
   // override는 개발 미리보기에서 가상 회원으로 회원 검색 흐름을 테스트할 때만 쓰인다(실제 useApp 데이터는 안 건드림).
   const members = membersOverride ?? realMembers
 
-  // 아직 저장된 donation이 없는 참가자라도 "+찬조 추가"를 누르면 빈 찬조 행을 화면에 보여주기
-  // 위한 화면 전용 상태(저장되지 않음 — 실제 donation은 금액을 입력해야 생긴다).
-  const [openDonationIds, setOpenDonationIds] = useState<Set<string>>(new Set())
+  // "+ 회비 추가"/"+ 찬조 추가"로 연 빈 행 개수(화면 전용 — 저장되지 않는다). 빈 행에 금액이나 결제수단을
+  // 입력하는 순간 실제 행이 하나 생기고 빈 행 수는 줄어든다 → 빈 행은 저장되지 않는다.
+  const [blankRows, setBlankRows] = useState<Record<string, number>>({})
+  const blankKey = (participantId: string, category: IncomeRowCategory) => `${participantId}:${category}`
+  const changeBlank = (participantId: string, category: IncomeRowCategory, delta: number) =>
+    setBlankRows((b) => ({ ...b, [blankKey(participantId, category)]: Math.max(0, (b[blankKey(participantId, category)] ?? 0) + delta) }))
   const [memberSearch, setMemberSearch] = useState('')
   const [addForm, setAddForm] = useState<{ name: string; category: IncomeRowCategory; amount: string; method: IncomeRowMethod | '' }>(
     { name: '', category: 'dues', amount: '', method: '' },
@@ -143,32 +154,53 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
 
   const participantOf = (id: string) => settlement.participants.find((p) => p.id === id)!
 
-  // 금액을 빈칸으로 지웠을 때: status/note/paidAt 같은 기존 메타데이터가 있으면 객체를 통째로
-  // 지우지 않고 금액만 0으로 바꿔 나머지 값을 보존한다. 메타데이터가 전혀 없는(=방금 만들어졌거나
-  // 기본값 그대로인) 신규 행만 완전히 지운다(null). 기존 amount:number 타입은 바꾸지 않는다.
-  const commitDues = (participantId: string, v: number | null) => {
-    if (v === null) {
-      const plan = planClearAmount(participantOf(participantId).dues, DEFAULT_DUES_STATUS)
-      updateDues(settlementId, participantId, plan.action === 'set-zero' ? { amount: 0 } : null)
-    } else {
-      updateDues(settlementId, participantId, { amount: v })
+  const entriesOf = (participantId: string, category: IncomeRowCategory) =>
+    category === 'dues' ? duesEntriesOf(participantOf(participantId)) : donationEntriesOf(participantOf(participantId))
+
+  // 금액 입력. 빈 행(아직 저장 안 된 행)에 금액을 넣으면 그 사람의 그 구분 맨 뒤에 새 행이 생긴다.
+  // 저장된 행의 금액을 빈칸으로 지웠을 때: status/note/paidAt 같은 기존 메타데이터가 있으면 행을 지우지 않고
+  // 금액만 0으로 바꿔 나머지 값을 보존한다. 메타데이터가 전혀 없는(=방금 만들어졌거나 기본값 그대로인) 행만 지운다.
+  const commitAmount = (row: IncomeTableRow, blank: boolean, v: number | null) => {
+    const { participantId, category } = row
+    if (!row.saved) {
+      if (v === null) return
+      updatePaymentRow(settlementId, participantId, category, entriesOf(participantId, category).length, { amount: v })
+      if (blank) changeBlank(participantId, category, -1)
+      return
     }
-  }
-  const commitDonation = (participantId: string, v: number | null) => {
-    if (v === null) {
-      const plan = planClearAmount(participantOf(participantId).donation, DEFAULT_DONATION_STATUS)
-      updateDonation(settlementId, participantId, plan.action === 'set-zero' ? { amount: 0 } : null)
-    } else {
-      updateDonation(settlementId, participantId, { amount: v })
+    if (v !== null) {
+      updatePaymentRow(settlementId, participantId, category, row.index, { amount: v })
+      return
     }
+    const entry = entriesOf(participantId, category)[row.index]
+    const plan = planClearAmount(entry, category === 'dues' ? DEFAULT_DUES_STATUS : DEFAULT_DONATION_STATUS)
+    if (plan.action === 'set-zero') updatePaymentRow(settlementId, participantId, category, row.index, { amount: 0 })
+    else removePaymentRow(settlementId, participantId, category, row.index)
   }
 
-  const deleteDonationRow = (participantId: string) => {
-    const p = participantOf(participantId)
-    const plan = planDeleteTableRow(p, 'donation')
+  // 결제수단 선택. 빈 행이면 새 행을 만든다(금액 0원 — 금액을 이어서 입력하면 된다). 현금→입금확인, 계좌이체→미확인은 store가 정규화.
+  const changeMethod = (row: IncomeTableRow, blank: boolean, method: IncomeRowMethod) => {
+    const { participantId, category } = row
+    if (!row.saved) {
+      updatePaymentRow(settlementId, participantId, category, entriesOf(participantId, category).length, { method })
+      if (blank) changeBlank(participantId, category, -1)
+      return
+    }
+    updatePaymentRow(settlementId, participantId, category, row.index, { method })
+  }
+
+  // 행 삭제 — 그 행 하나만 지운다. 정산에만 추가한 사람(비회원 등)이 지운 뒤 남는 회비·찬조가 없으면 참가자 자체를 지운다.
+  // 금액이 들어 있는 행은 실수로 지우지 않도록 한 번 더 묻는다(빈 행·0원 행은 바로 지운다).
+  const deleteRow = (row: IncomeTableRow, blank: boolean) => {
+    const { participantId, category } = row
+    if (blank) { changeBlank(participantId, category, -1); return }
+    if ((row.amount ?? 0) > 0) {
+      const what = `${row.displayName}님 ${category === 'dues' ? '회비' : '찬조'} ${fmt(row.amount!)}원${row.method ? `(${row.method})` : ''}`
+      if (!window.confirm(`${what} 행을 지울까요?`)) return
+    }
+    const plan = planDeleteTableRow(participantOf(participantId), category, row.index)
     if (plan.action === 'remove-participant') removeParticipant(settlementId, participantId)
-    else updateDonation(settlementId, participantId, null)
-    setOpenDonationIds((s) => { const next = new Set(s); next.delete(participantId); return next })
+    else removePaymentRow(settlementId, participantId, category, row.index)
   }
 
   // 회원 검색으로 추가 — 이미 정산 참가자에 있는 회원은 검색 결과에서 제외한다(중복 추가 자체가
@@ -192,8 +224,9 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
       if (addForm.category === 'dues') updateDues(settlementId, created.id, patch)
       else updateDonation(settlementId, created.id, patch)
     } else {
-      if (addForm.category === 'dues') updateDues(settlementId, plan.participantId, patch)
-      else updateDonation(settlementId, plan.participantId, patch)
+      // 이미 있는 사람이면 그 구분의 행을 하나 더 붙인다(이미 값이 있어도 덮어쓰지 않는다).
+      const at = entriesOf(plan.participantId, addForm.category).length
+      updatePaymentRow(settlementId, plan.participantId, addForm.category, at, patch)
     }
     setAddForm({ name: '', category: 'dues', amount: '', method: '' })
   }
@@ -219,101 +252,113 @@ export function DuesTable({ settlementId, previewMode = false, membersOverride }
       )}
 
       <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-        <table style={{ width: '100%', minWidth: 394, borderCollapse: 'collapse' }}>
+        {/* 4열(이름·구분·금액·결제수단). 한 행은 2줄: [금액][결제수단] / [확인상태][삭제] — 390px 폰에서 가로 스크롤 없이 들어간다 */}
+        <table style={{ width: '100%', minWidth: 330, borderCollapse: 'collapse' }}>
           <thead>
             <tr>
               <th style={{ ...thStyle, minWidth: 92, textAlign: 'center', position: 'sticky', left: 0, background: '#f4f5f3', zIndex: 1 }}>이름</th>
               <th style={{ ...thStyle, minWidth: 58, textAlign: 'center' }}>구분</th>
               <th style={{ ...thStyle, minWidth: 90, textAlign: 'center' }}>금액</th>
               <th style={{ ...thStyle, minWidth: 98, textAlign: 'center' }}>결제수단</th>
-              <th style={{ ...thStyle, minWidth: 56 }}></th>
             </tr>
           </thead>
           <tbody>
             {settlement.participants.length === 0 && (
-              <tr><td colSpan={5} style={{ ...cellStyle, textAlign: 'center' }} className="muted">아직 정산 대상자가 없습니다.</td></tr>
+              <tr><td colSpan={4} style={{ ...cellStyle, textAlign: 'center' }} className="muted">아직 정산 대상자가 없습니다.</td></tr>
             )}
             {settlement.participants.map((p) => {
-              const duesRow = rows.find((r) => r.participantId === p.id && r.category === 'dues')!
-              const donationRow = rows.find((r) => r.participantId === p.id && r.category === 'donation')
-              const showDonation = !!donationRow || openDonationIds.has(p.id)
+              // 이 사람의 표 행: 회비 행들(+ 빈 회비 행) 다음 찬조 행들(+ 빈 찬조 행). 회비가 없으면 기본 빈 회비 행 1개가 있다.
+              const own = rows.filter((r) => r.participantId === p.id)
+              const blanks = (category: IncomeRowCategory) =>
+                Array.from({ length: blankRows[blankKey(p.id, category)] ?? 0 }, (_, k): { row: IncomeTableRow; blank: boolean; key: string } => ({
+                  row: { participantId: p.id, category, index: -1, saved: false, displayName: p.displayName, amount: undefined, method: undefined, status: undefined },
+                  blank: true, key: `${category}-blank-${k}`,
+                }))
+              const asItem = (r: IncomeTableRow) => ({
+                row: r, blank: false,
+                // 행 내용이 바뀌거나 앞 행이 지워지면 새로 그려서, 금액 입력칸이 지워진 행의 값을 들고 있지 않게 한다.
+                key: r.saved ? `${r.category}-${r.index}-${r.amount}-${r.method}-${r.status}` : `${r.category}-empty`,
+              })
+              const items = [
+                ...own.filter((r) => r.category === 'dues').map(asItem), ...blanks('dues'),
+                ...own.filter((r) => r.category === 'donation').map(asItem), ...blanks('donation'),
+              ]
               return (
                 <Fragment key={p.id}>
-                  <tr>
-                    <td style={{
-                      ...cellStyle, fontWeight: 600, whiteSpace: 'nowrap', textAlign: 'center', position: 'sticky', left: 0, background: '#fff',
-                      maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}>
-                      {p.displayName}{p.participantType === 'guest' && <span className="muted" style={{ fontSize: 11 }}> (비회원)</span>}
-                    </td>
-                    <td style={{ ...cellStyle, whiteSpace: 'nowrap', textAlign: 'center' }}>회비</td>
-                    <td style={{ ...cellStyle, textAlign: 'center' }}>
-                      <AmountInput
-                        value={duesRow.amount} disabled={locked}
-                        onCommit={(v) => commitDues(p.id, v)}
-                        ariaLabel={`${p.displayName} 회비 금액`}
-                      />
-                    </td>
-                    <td style={{ ...cellStyle, textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                        <MethodSelect
-                          value={duesRow.method as IncomeRowMethod | undefined} disabled={locked}
-                          onChange={(v) => updateDues(settlementId, p.id, { method: v })}
-                          ariaLabel={`${p.displayName} 회비 결제수단`}
-                        />
-                        {duesRow.method === '계좌이체' && (
-                          <StatusSelect
-                            value={(duesRow.status as DuesStatus | undefined) ?? '미확인'} options={DUES_STATUS_OPTIONS} disabled={locked}
-                            onChange={(v) => updateDues(settlementId, p.id, { status: v })}
-                            ariaLabel={`${p.displayName} 회비 확인상태`}
-                          />
-                        )}
-                      </div>
-                    </td>
-                    <td style={cellStyle}>
-                      {!showDonation && !locked && (
-                        <button type="button" onClick={() => setOpenDonationIds((s) => new Set(s).add(p.id))}
-                          style={{ fontSize: 12, padding: '9px 10px', minHeight: 36, whiteSpace: 'nowrap' }}>
-                          + 찬조
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                  {showDonation && (
+                  {items.map(({ row, blank, key }, i) => {
+                    const label = row.category === 'dues' ? '회비' : '찬조'
+                    // 접근성 이름: 같은 구분 안의 순서. 첫 행은 예전과 같은 "○○ 회비 금액", 둘째 행부터 "○○ 회비 2 금액"(빈 행 포함).
+                    const pos = items.slice(0, i).filter((it) => it.row.category === row.category).length
+                    const nth = pos > 0 ? ` ${pos + 1}` : ''
+                    return (
+                      <tr key={key} data-testid="income-row" data-category={row.category} data-saved={row.saved ? 'true' : 'false'}>
+                        <td style={{
+                          ...cellStyle, fontWeight: 600, whiteSpace: 'nowrap', textAlign: 'center', position: 'sticky', left: 0, background: '#fff',
+                          maxWidth: 92, overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>
+                          {i === 0 && <>{p.displayName}{p.participantType === 'guest' && <span className="muted" style={{ fontSize: 11 }}> (비회원)</span>}</>}
+                        </td>
+                        <td style={{ ...cellStyle, whiteSpace: 'nowrap', textAlign: 'center' }}>{label}</td>
+                        <td style={{ ...cellStyle, textAlign: 'center' }}>
+                          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                            <AmountInput
+                              value={row.amount} disabled={locked}
+                              onCommit={(v) => commitAmount(row, blank, v)}
+                              ariaLabel={`${p.displayName} ${label}${nth} 금액`}
+                            />
+                            {/* 둘째 줄 왼쪽: 확인상태 — 계좌이체는 선택칸, 현금은 "입금확인" 글자 */}
+                            {row.saved && row.method === '계좌이체' && (
+                              row.category === 'dues' ? (
+                                <StatusSelect
+                                  value={(row.status as DuesStatus | undefined) ?? '미확인'} options={DUES_STATUS_OPTIONS} disabled={locked}
+                                  onChange={(v) => updatePaymentRow(settlementId, p.id, 'dues', row.index, { status: v })}
+                                  ariaLabel={`${p.displayName} ${label}${nth} 확인상태`}
+                                />
+                              ) : (
+                                <StatusSelect
+                                  value={(row.status as DonationStatus | undefined) ?? '미확인'} options={DONATION_STATUS_OPTIONS} disabled={locked}
+                                  onChange={(v) => updatePaymentRow(settlementId, p.id, 'donation', row.index, { status: v })}
+                                  ariaLabel={`${p.displayName} ${label}${nth} 확인상태`}
+                                />
+                              )
+                            )}
+                            {row.saved && row.method === '현금' && (
+                              <span data-testid="cash-status" className="muted" style={{ fontSize: 12 }}>입금확인</span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ ...cellStyle, textAlign: 'center' }}>
+                          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                            <MethodSelect
+                              value={row.method} disabled={locked}
+                              onChange={(v) => changeMethod(row, blank, v)}
+                              ariaLabel={`${p.displayName} ${label}${nth} 결제수단`}
+                            />
+                            {/* 둘째 줄 오른쪽: 삭제 */}
+                            {!locked && (row.saved || blank) && (
+                              <button type="button" className="danger" onClick={() => deleteRow(row, blank)}
+                                aria-label={`${p.displayName} ${label}${nth} 삭제`}
+                                style={deleteButtonStyle}>
+                                삭제
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {!locked && (
                     <tr>
                       <td style={{ ...cellStyle, position: 'sticky', left: 0, background: '#fff' }}></td>
-                      <td style={{ ...cellStyle, whiteSpace: 'nowrap', textAlign: 'center' }}>찬조</td>
-                      <td style={{ ...cellStyle, textAlign: 'center' }}>
-                        <AmountInput
-                          value={donationRow?.amount} disabled={locked}
-                          onCommit={(v) => commitDonation(p.id, v)}
-                          ariaLabel={`${p.displayName} 찬조 금액`}
-                        />
-                      </td>
-                      <td style={{ ...cellStyle, textAlign: 'center' }}>
-                        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                          <MethodSelect
-                            value={donationRow?.method as IncomeRowMethod | undefined} disabled={locked}
-                            onChange={(v) => updateDonation(settlementId, p.id, { method: v })}
-                            ariaLabel={`${p.displayName} 찬조 결제수단`}
-                          />
-                          {donationRow?.method === '계좌이체' && (
-                            <StatusSelect
-                              value={(donationRow?.status as DonationStatus | undefined) ?? '미확인'} options={DONATION_STATUS_OPTIONS} disabled={locked}
-                              onChange={(v) => updateDonation(settlementId, p.id, { status: v })}
-                              ariaLabel={`${p.displayName} 찬조 확인상태`}
-                            />
-                          )}
-                        </div>
-                      </td>
-                      <td style={cellStyle}>
-                        {!locked && (
-                          <button type="button" className="danger" onClick={() => deleteDonationRow(p.id)}
-                            aria-label={`${p.displayName} 찬조 삭제`}
-                            style={{ fontSize: 12, padding: '9px 10px', minHeight: 36, whiteSpace: 'nowrap' }}>
-                            삭제
+                      <td colSpan={3} style={cellStyle}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => changeBlank(p.id, 'dues', 1)} aria-label={`${p.displayName} 회비 추가`} style={rowButtonStyle}>
+                            + 회비 추가
                           </button>
-                        )}
+                          <button type="button" onClick={() => changeBlank(p.id, 'donation', 1)} aria-label={`${p.displayName} 찬조 추가`} style={rowButtonStyle}>
+                            + 찬조 추가
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )}
