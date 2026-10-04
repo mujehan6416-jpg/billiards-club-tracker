@@ -525,6 +525,16 @@ export function isTournamentRoundOfficial(matches: TournamentMatch[], roundNumbe
 }
 
 /**
+ * 진행률: 실제로 치르는 경기(부전승 제외) 중 공식 확정(official)된 경기 수.
+ * 부전승은 대진을 만든 순간부터 official이라 세면 시작하자마자 진행된 것처럼 보인다 —
+ * 그래서 hasOfficialPlayedMatch와 같은 기준으로 뺀다. 기권승은 실제 결정된 경기이므로 센다.
+ */
+export function countTournamentProgress(matches: TournamentMatch[]): { done: number; total: number } {
+  const played = matches.filter((m) => m.resultType !== 'bye')
+  return { done: played.filter((m) => m.status === 'official').length, total: played.length }
+}
+
+/**
  * 최종 순위.
  *
  * 3·4위전이 없는 대회(대부분)는 기존 그대로 준결승에서 진 두 명이 공동 3위다.
