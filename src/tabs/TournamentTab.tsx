@@ -15,6 +15,8 @@ import { TournamentBracketView } from '../components/tournament/TournamentBracke
 import { TournamentBracketVisual } from '../components/tournament/TournamentBracketVisual'
 import { TournamentMatchPanel } from '../components/tournament/TournamentMatchPanel'
 import { TournamentFinalResults } from '../components/tournament/TournamentFinalResults'
+import { TournamentRestartSender, type RestartSendResult } from '../components/tournament/TournamentRestartSender'
+import { planRestartTransfer, restartCandidates } from '../logic/tournamentRestart'
 import { createTournamentParticipant, createDrawMapping, buildSeatsFromDraw } from '../logic/tournamentDraw'
 import { buildEmptyBracket, buildTournamentMatches } from '../logic/tournamentBracket'
 import {
@@ -366,6 +368,61 @@ export function TournamentTab({
       }
       await reloadParticipants(selected.id)
     })
+  }
+
+  // ── 리스타트 참가자 보내기 (본선 탈락자 → 다른 대회 참가자) ──
+  // 새 저장 방식을 만들지 않고 위 handleAddMember와 같은 기존 함수(setParticipantEntryStatus·
+  // writeTournamentParticipant·createTournamentParticipant)만 쓴다. 회원 원본은 읽기만 한다.
+  // 이미 보낸 뒤 본선 결과를 정정해도 리스타트 참가자는 자동으로 바뀌지 않는다(운영진이 직접 조정).
+  const loadRestartTarget = async (targetId: string): Promise<TournamentParticipant[]> => {
+    if (previewMode) return participantsByTournamentId[targetId] ?? []
+    return fetchTournamentParticipants(targetId, clubId)
+  }
+
+  const handleSendToRestart = async (targetId: string, memberIds: string[]): Promise<RestartSendResult> => {
+    // 목록이 오래됐을 수 있으므로 저장 직전에 대상 대회가 아직 참가자 수정 가능한 상태인지 다시 확인한다.
+    const latest = previewMode ? tournaments : await fetchTournaments(clubId)
+    if (!previewMode) setTournaments(latest)
+    if (latest.find((t) => t.id === targetId)?.status !== 'draft') {
+      throw new Error('대상 대회에 더 이상 참가자를 추가할 수 없습니다.')
+    }
+    const fresh = await loadRestartTarget(targetId)
+    const { toAdd, alreadyIn } = planRestartTransfer(memberIds, fresh)
+    let added = 0
+    let failed = 0
+    for (const memberId of toAdd) {
+      const existing = fresh.find((p) => p.memberId === memberId)
+      const member = members.find((m: Member) => m.id === memberId)
+      try {
+        if (previewMode) {
+          setParticipantsByTournamentId((prev) => {
+            const list = prev[targetId] ?? []
+            return {
+              ...prev,
+              [targetId]: existing
+                ? list.map((p) => (p.id === existing.id ? { ...p, entryStatus: 'entered' } : p))
+                : [...list, createTournamentParticipant(member!, { participantId: member!.id, entryStatus: 'entered' })],
+            }
+          })
+        } else if (existing) {
+          await setParticipantEntryStatus(targetId, existing.id, 'entered', clubId)
+        } else if (member) {
+          await writeTournamentParticipant(
+            targetId,
+            createTournamentParticipant(member, { participantId: member.id, entryStatus: 'entered' }),
+            clubId,
+          )
+        } else {
+          throw new Error('회원을 찾을 수 없습니다.')
+        }
+        added += 1
+      } catch {
+        failed += 1
+      }
+    }
+    // 대상 대회를 열었을 때 방금 추가한 참가자가 바로 보이도록 화면에 들고 있는 목록을 갱신한다.
+    if (!previewMode) await reloadParticipants(targetId)
+    return { added, alreadyIn: alreadyIn.length, failed }
   }
 
   const handleConfirmEntries = () => {
@@ -827,6 +884,19 @@ export function TournamentTab({
             isAdmin={isAdmin && isAuthorizedAdmin}
             busy={busy}
             onFinish={handleFinishTournament}
+          />
+        )}
+
+        {/* 리스타트 참가자 보내기 — 관리자 전용. 대진이 확정된 본선 대회에서만, 최종 승인된 탈락자를 후보로 보여준다. */}
+        {isAdmin && isAuthorizedAdmin && (selected.status === 'bracketFixed' || selected.status === 'finished')
+          && selectedMatches && selectedMatches.length > 0 && (
+          <TournamentRestartSender
+            key={selected.id}
+            currentTournamentId={selected.id}
+            candidates={restartCandidates(selectedMatches, selectedParticipants)}
+            tournaments={tournaments}
+            loadTargetParticipants={loadRestartTarget}
+            onSend={handleSendToRestart}
           />
         )}
 
