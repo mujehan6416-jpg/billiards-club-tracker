@@ -112,6 +112,8 @@ export function TournamentBracketView({
           const loserScore = winnerIsA ? m.scoreB : m.scoreA
           const loserHandicap = winnerIsA ? m.playerBHandicapSnapshot : m.playerAHandicapSnapshot
           const selected = selectedMatchId === m.id
+          // 리스타트 대회의 합류 예약 자리: 아직 선수가 없는 B 자리를 빈 이름 대신 안내 문구로 보여준다.
+          const waitingJoin = !m.playerBParticipantId && !!m.playerBJoinLabel
           return (
             <div key={m.id} style={{ display: 'flex', flexDirection: 'column' }}>
               <div
@@ -139,9 +141,15 @@ export function TournamentBracketView({
                         {nameOf(m.playerAParticipantId)}
                       </span>
                       <span className="vs">vs</span>
-                      <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerBParticipantId ? 800 : 600, fontSize: 17, textAlign: 'right' }}>
-                        {nameOf(m.playerBParticipantId)}
-                      </span>
+                      {waitingJoin ? (
+                        <span style={{ fontWeight: 700, fontSize: 16, textAlign: 'right', color: '#856404', flex: '0 1 55%', overflowWrap: 'anywhere' }}>
+                          {m.playerBJoinLabel}
+                        </span>
+                      ) : (
+                        <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerBParticipantId ? 800 : 600, fontSize: 17, textAlign: 'right' }}>
+                          {nameOf(m.playerBParticipantId)}
+                        </span>
+                      )}
                     </div>
                     {isOfficial ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -156,6 +164,8 @@ export function TournamentBracketView({
                       </div>
                     ) : m.playerAParticipantId && m.playerBParticipantId ? (
                       <span className="muted" style={{ fontSize: 14 }}>{matchMemberStatusMessage(m, highlightMemberId)}</span>
+                    ) : waitingJoin ? (
+                      <span style={{ fontSize: 15, fontWeight: 700, color: '#856404' }}>대기 중 · 합류자가 정해지면 시작합니다</span>
                     ) : (
                       <span className="muted" style={{ fontSize: 14 }}>상대 진출 확정 대기 중</span>
                     )}

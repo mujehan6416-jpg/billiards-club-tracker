@@ -15,8 +15,12 @@ import { TournamentBracketView } from '../components/tournament/TournamentBracke
 import { TournamentBracketVisual } from '../components/tournament/TournamentBracketVisual'
 import { TournamentMatchPanel } from '../components/tournament/TournamentMatchPanel'
 import { TournamentFinalResults } from '../components/tournament/TournamentFinalResults'
-import { TournamentRestartSender, type RestartSendResult } from '../components/tournament/TournamentRestartSender'
+import { TournamentRestartSender, type RestartBracketPlan, type RestartSendResult } from '../components/tournament/TournamentRestartSender'
 import { planRestartTransfer, restartCandidates } from '../logic/tournamentRestart'
+import {
+  analyzeRestartSource, buildRestartBracket, restartFirstRoundStatus, restartJoinProgress,
+} from '../logic/tournamentRestartBracket'
+import { roundLabel } from '../components/tournament/tournamentDisplay'
 import { createTournamentParticipant, createDrawMapping, buildSeatsFromDraw } from '../logic/tournamentDraw'
 import { buildEmptyBracket, buildTournamentMatches } from '../logic/tournamentBracket'
 import {
@@ -52,6 +56,8 @@ import {
   deleteTournament,
   fetchTournamentMatches,
   subscribeTournamentMatches,
+  createRestartBracket,
+  syncRestartJoiners,
   adminEntersTournamentMatchResult,
   submitTournamentMatchResult,
   verifyTournamentMatchResult,
@@ -148,6 +154,7 @@ export function TournamentTab({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
   const [liveBroken, setLiveBroken] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [restartSyncMsg, setRestartSyncMsg] = useState('')
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const activeMembers = useMemo(() => members.filter((m: Member) => m.active), [members])
@@ -223,6 +230,16 @@ export function TournamentTab({
       setLiveToast(false)
     }
   }, [previewMode, liveTournamentId, liveEnabled, clubId])
+
+  /**
+   * 관리자가 리스타트 대회를 열 때 한 번, 본선에서 이미 확정됐지만 아직 배치되지 않은 합류자를 채운다
+   * (다른 기기에서 승인했거나 배치가 실패했던 경우를 보완). 이미 채운 자리는 건드리지 않는다.
+   */
+  const isRestartDetail = view === 'detail' && selected?.status === 'bracketFixed' && !!selected.restartSourceTournamentId
+  useEffect(() => {
+    if (previewMode || !isAuthorizedAdmin || !isRestartDetail || !selectedId) return
+    void syncRestartJoiners(selectedId, clubId).catch(() => { /* 수동 확인 버튼으로 다시 시도할 수 있다 */ })
+  }, [previewMode, isAuthorizedAdmin, isRestartDetail, selectedId, clubId])
 
   /** 보조 기능: 인터넷이 불안정할 때 직접 한 번 더 읽는다. */
   const handleManualRefresh = async () => {
@@ -425,6 +442,76 @@ export function TournamentTab({
     return { added, alreadyIn: alreadyIn.length, failed }
   }
 
+  // ── 리스타트 대진 자동 생성 · 합류 자리 자동 배치 ──
+  // 대진·합류 위치는 프로그램이 정한다(운영진이 고르지 않는다). 한 번 만든 대진은 저장되어 다시 섞이지 않고,
+  // 본선 결과를 나중에 정정해도 이미 배치된 합류자·리스타트 경기는 자동으로 바뀌지 않는다(운영진이 직접 조정).
+
+  /** 이 대회를 본선으로 삼는(대진이 만들어진) 리스타트 대회마다 합류 자리를 채운다. */
+  const syncLinkedRestarts = async (sourceId: string) => {
+    if (previewMode) return
+    const linked = tournaments.filter((t) => t.restartSourceTournamentId === sourceId && t.status === 'bracketFixed')
+    for (const t of linked) await syncRestartJoiners(t.id, clubId)
+  }
+
+  const handleCreateRestartBracket = async (targetId: string): Promise<string> => {
+    if (!selected || !selectedMatches) throw new Error('본선 대진 정보를 찾을 수 없습니다.')
+    const analysis = analyzeRestartSource(selectedMatches)
+    if (!analysis.ok) throw new Error(analysis.message)
+    const status = restartFirstRoundStatus(analysis.value)
+    if (!status.ready) throw new Error('본선 1차 경기가 모두 최종 승인된 뒤에 만들 수 있습니다.')
+
+    // 1차 탈락자를 대상 대회 참가자로 확실히 넣는다(이미 참가 중이면 건너뜀) — 기존 보내기 함수를 그대로 쓴다.
+    const loserMemberIds = status.losers.map((l) => l.memberId)
+    const sent = await handleSendToRestart(targetId, loserMemberIds)
+    if (sent.failed > 0) throw new Error('1차 탈락자 일부를 리스타트 대회에 추가하지 못했습니다. 다시 시도해 주세요.')
+
+    const entered = (await loadRestartTarget(targetId)).filter((p) => p.entryStatus === 'entered')
+    if (entered.some((p) => !loserMemberIds.includes(p.memberId))) {
+      throw new Error('리스타트 대회에 본선 1차 탈락자가 아닌 참가자가 있습니다. 참가자 관리에서 제외한 뒤 다시 시도해 주세요.')
+    }
+    const built = buildRestartBracket({
+      sourceTournamentId: selected.id,
+      analysis: analysis.value,
+      sourceMatches: selectedMatches,
+      entrants: entered.map((p) => ({ participantId: p.id, memberId: p.memberId, handicap: p.tournamentHandicap })),
+    })
+    if (!built.ok) throw new Error(built.message)
+
+    const { w, entrantCount } = analysis.value
+    const byes = w * 2 - entrantCount
+    await createRestartBracket(
+      targetId, built.value.matches,
+      { sourceTournamentId: selected.id, bracketSize: w * 4, participantCount: entrantCount, at: nowIso() },
+      clubId,
+    )
+    // 이미 확정된 본선 2차 패자가 있으면 곧바로 합류 자리에 배치한다.
+    let placed = 0
+    try { placed = await syncRestartJoiners(targetId, clubId) } catch { /* 나중에 다시 확인할 수 있다 */ }
+    setTournaments(await fetchTournaments(clubId))
+    setMatchesByTournamentId((prev) => ({ ...prev, [targetId]: [] }))
+    await reloadMatches(targetId)
+    await reloadParticipants(targetId)
+    return `리스타트 대진을 만들었습니다. 1차전 ${w - byes}경기${byes > 0 ? `(부전승 ${byes}명 자동 배정)` : ''}, 본선 탈락자 합류 예정 자리 ${w}개`
+      + `${placed > 0 ? ` (이미 확정된 ${placed}명은 바로 배치)` : ''}. 리스타트 대회를 열어 확인해 주세요.`
+  }
+
+  const handleManualRestartSync = async () => {
+    if (!selectedId || refreshing) return
+    setRefreshing(true)
+    setRestartSyncMsg('')
+    try {
+      const placed = await syncRestartJoiners(selectedId, clubId)
+      await reloadMatches(selectedId)
+      setRestartSyncMsg(placed > 0
+        ? `본선 탈락자 ${placed}명을 합류 자리에 배치했습니다.`
+        : '새로 배치할 합류자가 없습니다. 본선 경기가 최종 승인되면 자동으로 배치됩니다.')
+    } catch {
+      setRestartSyncMsg('확인하지 못했습니다. 인터넷 연결과 관리자 로그인 상태를 확인해 주세요.')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   const handleConfirmEntries = () => {
     if (!selected) return
     const enteredCount = selectedParticipants.filter((p) => p.entryStatus === 'entered').length
@@ -591,6 +678,19 @@ export function TournamentTab({
   const selectedMatch = selectedMatchId ? (selectedMatches?.find((m) => m.id === selectedMatchId) ?? null) : null
   const finalMatch = selectedMatches?.find((m) => m.nextMatchId === null) ?? null
 
+  // 리스타트 대진(합류 예약 자리가 있는 대진)인지 — 맞으면 전체 대진표 그림 대신 라운드별 보기만 쓴다.
+  const isRestartBracket = !!selectedMatches?.some((m) => m.playerBJoinFrom)
+  const restartJoin = selectedMatches && isRestartBracket ? restartJoinProgress(selectedMatches) : undefined
+  const restartPlan: RestartBracketPlan | undefined = (() => {
+    if (!selectedMatches || isRestartBracket) return undefined
+    const analysis = analyzeRestartSource(selectedMatches)
+    if (!analysis.ok) return { ok: false, message: analysis.message }
+    return {
+      ok: true, status: restartFirstRoundStatus(analysis.value), w: analysis.value.w, entrants: analysis.value.entrantCount,
+      joinLabel: `본선 ${roundLabel(analysis.value.secondRound[0].playerCountInRound)} 탈락자 합류 예정`,
+    }
+  })()
+
   const nowIso = () => new Date().toISOString()
 
   const handleSelectMatch = (match: TournamentMatch) => {
@@ -657,6 +757,13 @@ export function TournamentTab({
       } else {
         await serverCall()
         await reloadMatches(selected.id)
+        // 이 대회를 본선으로 삼는 리스타트 대회가 있으면, 방금 확정된 패자를 합류 자리에 자동 배치한다.
+        // 배치에 실패해도 방금 한 최종 승인은 그대로 유효하다(안내만 보여 주고 나중에 다시 확인할 수 있다).
+        try {
+          await syncLinkedRestarts(selected.id)
+        } catch {
+          setMatchError('최종 승인은 저장되었지만 리스타트 대회 합류 자리 배치는 하지 못했습니다. 리스타트 대회 화면에서 "합류자 자동 배치 확인"을 눌러 주세요.')
+        }
       }
     } catch (e) {
       setMatchError(e instanceof Error ? e.message : '처리하지 못했습니다. 인터넷 연결을 확인해 주세요.')
@@ -806,8 +913,20 @@ export function TournamentTab({
             <LiveStatusBar
               matches={selectedMatches} lastUpdatedAt={lastUpdatedAt} broken={liveBroken}
               refreshing={refreshing} onRefresh={previewMode ? undefined : handleManualRefresh}
+              join={restartJoin}
             />
-            <div style={{ display: 'flex', gap: 8 }}>
+            {isRestartBracket && isAuthorizedAdmin && !previewMode && (
+              <div className="card col-card">
+                <span className="muted" style={{ fontSize: 15 }}>
+                  본선 경기가 최종 승인되면 탈락자가 합류 자리에 자동으로 배치됩니다. 배치되지 않았다면 아래 버튼을 눌러 주세요.
+                </span>
+                <button className="block" style={{ fontSize: 16, padding: 12, minHeight: 48 }} disabled={refreshing} onClick={() => void handleManualRestartSync()}>
+                  합류자 자동 배치 확인
+                </button>
+                {restartSyncMsg && <p className="info-msg" style={{ fontSize: 15, margin: 0 }}>{restartSyncMsg}</p>}
+              </div>
+            )}
+            {!isRestartBracket && <div style={{ display: 'flex', gap: 8 }}>
               <button
                 className={bracketViewMode === 'round' ? 'primary grow' : 'grow'} style={{ fontSize: 16, fontWeight: 700, padding: 12 }}
                 onClick={() => setBracketViewMode('round')}
@@ -820,9 +939,9 @@ export function TournamentTab({
               >
                 전체 대진표
               </button>
-            </div>
+            </div>}
 
-            {bracketViewMode === 'round' ? (
+            {bracketViewMode === 'round' || isRestartBracket ? (
               <TournamentBracketView
                 matches={selectedMatches} nameOf={nameOf} highlightMemberId={memberId ?? undefined}
                 onSelectMatch={handleSelectMatch} selectedMatchId={selectedMatchId}
@@ -889,7 +1008,7 @@ export function TournamentTab({
 
         {/* 리스타트 참가자 보내기 — 관리자 전용. 대진이 확정된 본선 대회에서만, 최종 승인된 탈락자를 후보로 보여준다. */}
         {isAdmin && isAuthorizedAdmin && (selected.status === 'bracketFixed' || selected.status === 'finished')
-          && selectedMatches && selectedMatches.length > 0 && (
+          && selectedMatches && selectedMatches.length > 0 && !isRestartBracket && (
           <TournamentRestartSender
             key={selected.id}
             currentTournamentId={selected.id}
@@ -897,6 +1016,8 @@ export function TournamentTab({
             tournaments={tournaments}
             loadTargetParticipants={loadRestartTarget}
             onSend={handleSendToRestart}
+            bracketPlan={restartPlan}
+            onCreateBracket={previewMode ? undefined : handleCreateRestartBracket}
           />
         )}
 
@@ -990,8 +1111,10 @@ export function TournamentTab({
 
 /** 진행률("3 / 8 경기 완료")과 최근 반영 시각, 보조 새로고침 버튼. 실시간 반영이 기본이다. */
 function LiveStatusBar({
-  matches, lastUpdatedAt, broken, refreshing, onRefresh,
+  matches, lastUpdatedAt, broken, refreshing, onRefresh, join,
 }: {
+  /** 리스타트 대진일 때만: 본선 탈락자 합류 자리 확정 현황. */
+  join?: { filled: number; total: number }
   matches: TournamentMatch[]
   lastUpdatedAt: Date | null
   broken: boolean
@@ -1006,6 +1129,9 @@ function LiveStatusBar({
     <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <span style={{ fontSize: 17, fontWeight: 800 }}>{done} / {total} 경기 완료</span>
+        {join && join.total > 0 && (
+          <span style={{ fontSize: 15, fontWeight: 600 }}>본선 탈락자 합류 {join.filled} / {join.total}자리 확정</span>
+        )}
         <span className="muted" style={{ fontSize: 15 }}>
           {broken ? '실시간 연결이 끊겼습니다. 새로고침을 눌러 주세요.' : time ? `최근 업데이트: ${time}` : '최신 결과를 확인하는 중...'}
         </span>

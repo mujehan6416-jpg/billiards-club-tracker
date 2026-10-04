@@ -76,6 +76,11 @@ export function matchMemberStatusMessage(match: TournamentMatch, viewerMemberId:
 
   const isPlayer = !!viewerMemberId && (viewerMemberId === match.playerAMemberId || viewerMemberId === match.playerBMemberId)
 
+  // 리스타트 대회의 합류 예약 자리 — 상대(본선 탈락자)가 정해질 때까지는 시작할 수 없다.
+  if (!match.playerBParticipantId && match.playerBJoinLabel) {
+    return '상대(본선 탈락자)가 정해지면 시작할 수 있습니다. 지금은 대기 중입니다.'
+  }
+
   if (match.status === 'awaitingResult') {
     return isPlayer ? '경기 결과를 입력해 주세요.' : '아직 경기 결과가 입력되지 않았습니다.'
   }

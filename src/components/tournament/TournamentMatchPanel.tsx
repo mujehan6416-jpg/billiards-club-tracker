@@ -44,7 +44,9 @@ export function TournamentMatchPanel({
   const [tieWinnerId, setTieWinnerId] = useState<string | null>(null)
 
   const nameA = nameOf(match.playerAParticipantId)
-  const nameB = nameOf(match.playerBParticipantId)
+  // 리스타트 합류 예약 자리 — 상대가 정해지기 전에는 결과 입력을 열지 않는다(부전승이 아니라 "대기").
+  const waitingJoin = !match.playerBParticipantId && !!match.playerBJoinLabel
+  const nameB = waitingJoin ? match.playerBJoinLabel! : nameOf(match.playerBParticipantId)
   const isPlayer = !!viewerMemberId && (viewerMemberId === match.playerAMemberId || viewerMemberId === match.playerBMemberId)
   const isSubmitter = !!viewerMemberId && viewerMemberId === match.resultLog?.submittedByMemberId
   const correctionRequested = !!match.resultLog?.correctionRequested
@@ -95,7 +97,7 @@ export function TournamentMatchPanel({
       {!isPlayer && !isAdmin && match.status !== 'official' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {handicapLine(nameA, match.playerAHandicapSnapshot)}
-          {handicapLine(nameB, match.playerBHandicapSnapshot)}
+          {!waitingJoin && handicapLine(nameB, match.playerBHandicapSnapshot)}
         </div>
       )}
 
@@ -116,12 +118,12 @@ export function TournamentMatchPanel({
         </div>
       ) : (
         <>
-          {!isAdmin && (
+          {(!isAdmin || waitingJoin) && (
             <span className="muted" style={{ fontSize: 15 }}>{matchMemberStatusMessage(match, viewerMemberId)}</span>
           )}
 
           {/* ── 회원: 결과 입력 ── */}
-          {isPlayer && match.status === 'awaitingResult' && (
+          {isPlayer && match.status === 'awaitingResult' && !waitingJoin && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {playerScoreRow(nameA, match.playerAHandicapSnapshot, scoreA, setScoreA)}
               {playerScoreRow(nameB, match.playerBHandicapSnapshot, scoreB, setScoreB)}
@@ -138,7 +140,7 @@ export function TournamentMatchPanel({
           {/* ── 관리자: 미입력 경기 직접 입력(현장 편의용) ──
               회원 결과 입력과 동시에 보일 수 있다(누가 먼저 입력해도 된다는 기존 원칙과 같다).
               입력해도 곧바로 공식 확정되지 않는다 — 상대 확인 → 관리자 최종 승인이 그대로 남는다. */}
-          {isAdmin && match.status === 'awaitingResult' && (
+          {isAdmin && match.status === 'awaitingResult' && !waitingJoin && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
               <span className="muted" style={{ fontSize: 13 }}>회원이 직접 입력하기 어려우면 관리자가 대신 입력할 수 있습니다. 입력해도 즉시 확정되지 않고 상대 확인·최종 승인이 그대로 남습니다.</span>
               {playerScoreRow(nameA, match.playerAHandicapSnapshot, adminScoreA, setAdminScoreA)}

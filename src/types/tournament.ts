@@ -79,6 +79,11 @@ export interface Tournament {
   completedAt?: string
   championParticipantId?: string | null
   runnerUpParticipantId?: string | null
+  /**
+   * 리스타트 대회에만 있다 — 이 대회의 "합류 예정 자리"를 채워 줄 본선 대회 id.
+   * 리스타트 대진 자동 생성 때 한 번 기록한다. 일반 대회 문서에는 없다(없어도 모든 동작이 그대로다).
+   */
+  restartSourceTournamentId?: string
 }
 
 /**
@@ -184,6 +189,16 @@ export interface TournamentMatch {
    */
   enteredByAdminUid?: string
   enteredAt?: string
+
+  /**
+   * 리스타트 대회 전용 — B 자리가 "다른 대회(본선)의 어떤 경기 패자"로 미리 예약돼 있음을 뜻한다.
+   * 그 패자가 최종 승인(official)되면 프로그램이 이 자리를 자동으로 채운다(운영진이 고르지 않는다).
+   * 채워지기 전에는 playerBParticipantId가 null이고, 부전승이 아니라 "합류 대기"로 다룬다.
+   * 일반 대진의 경기에는 없는 선택 필드라 기존 문서·로직에 영향이 없다.
+   */
+  playerBJoinFrom?: { tournamentId: string; matchId: string }
+  /** 합류 대기 자리에 보여줄 문구. 예: "본선 8강 탈락자 합류 예정". */
+  playerBJoinLabel?: string
 
   /** 이 경기 승자가 갈 다음 경기. 결승이면 둘 다 null. */
   nextMatchId: string | null
