@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { TournamentMatch } from '../../types/tournament'
-import { roundLabel } from './tournamentDisplay'
+import { roundLabel, WINNER_NAME_COLOR } from './tournamentDisplay'
 import { isTournamentRoundOfficial } from '../../logic/tournamentMatch'
 import { calculateBracketLayout, BRACKET_LAYOUT } from '../../logic/tournamentBracketLayout'
 
@@ -146,8 +146,11 @@ export function TournamentBracketVisual({
         }}
       >
         <span
+          data-winner={m.status === 'official' && !!participantId ? String(isWinner) : undefined}
           style={{
-            fontWeight: isWinner ? 800 : 500, opacity: participantId ? 1 : 0.5, fontSize,
+            // 굵기에 더해 글자 색도 다르게(iPad에서 굵기 차이가 약해 보이던 문제). 배경·테두리는 넣지 않는다.
+            fontWeight: isWinner ? 800 : 500, ...(isWinner ? { color: WINNER_NAME_COLOR } : {}),
+            opacity: participantId ? 1 : 0.5, fontSize,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
           }}
         >

@@ -21,6 +21,8 @@ import {
   analyzeRestartSource, buildRestartBracket, restartFirstRoundStatus, restartJoinProgress, restartJoinRows,
 } from '../logic/tournamentRestartBracket'
 import { roundLabel } from '../components/tournament/tournamentDisplay'
+import { TournamentResultShare, type RestartResult } from '../components/tournament/TournamentResultShare'
+import { resolveRestartForResult } from '../logic/tournamentResultShare'
 import { createTournamentParticipant, createDrawMapping, buildSeatsFromDraw } from '../logic/tournamentDraw'
 import { buildEmptyBracket, buildTournamentMatches } from '../logic/tournamentBracket'
 import {
@@ -469,6 +471,23 @@ export function TournamentTab({
     } catch {
       throw new Error('리스타트 대회를 자동으로 만들지 못했습니다. 다시 시도해 주세요.')
     }
+  }
+
+  /**
+   * 경기결과 공유용: 이 본선의 리스타트 대회(고정 id를 먼저, 없으면 이름 규칙)의 경기와 선수 이름을 읽는다.
+   * 읽기만 하며 아무것도 저장하지 않는다. 리스타트 대회가 없거나 여러 개면 null(결과 미확정으로 표시).
+   */
+  const loadRestartResult = async (): Promise<RestartResult | null> => {
+    if (!selected) return null
+    const latest = await fetchTournaments(clubId)
+    const found = resolveRestartForResult(selected, latest)
+    if (found.kind !== 'found') return null
+    const [matches, participants] = await Promise.all([
+      fetchTournamentMatches(found.tournament.id, clubId),
+      fetchTournamentParticipants(found.tournament.id, clubId),
+    ])
+    const names = new Map(participants.map((p) => [p.id, p.displayNameSnapshot]))
+    return { matches, nameOf: (id) => (id ? (names.get(id) ?? '알수없음') : '') }
   }
 
   /** 이 대회를 본선으로 삼는(대진이 만들어진) 리스타트 대회마다 합류 자리를 채운다. */
@@ -1052,6 +1071,18 @@ export function TournamentTab({
             isAdmin={isAdmin && isAuthorizedAdmin}
             busy={busy}
             onFinish={handleFinishTournament}
+          />
+        )}
+
+        {/* 경기결과 공유(카톡 문구·이미지) — 관리자 전용. 리스타트 화면이 아니라 본선 화면에서만 연다. */}
+        {isAdmin && isAuthorizedAdmin && !isRestartBracket && (selected.status === 'bracketFixed' || selected.status === 'finished')
+          && selectedMatches && selectedMatches.length > 0 && (
+          <TournamentResultShare
+            key={`share-${selected.id}`}
+            tournament={selected}
+            mastersMatches={selectedMatches}
+            mastersNameOf={nameOf}
+            loadRestartResult={previewMode ? undefined : loadRestartResult}
           />
         )}
 

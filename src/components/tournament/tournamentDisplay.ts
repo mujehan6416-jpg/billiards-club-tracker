@@ -54,6 +54,22 @@ export function roundLabel(playerCountInRound: number): string {
   return `${playerCountInRound}강`
 }
 
+/** 승자 이름 강조 색(앱의 기존 "확정/승" 초록과 같은 색). */
+export const WINNER_NAME_COLOR = '#0f6e56'
+
+/**
+ * 이름 한 칸의 굵기·색 — 승패 판정에는 관여하지 않고 표시만 정한다.
+ *
+ * iPad(Safari)의 한글 시스템 글꼴은 굵기 600과 800의 차이가 작아서 "승자 800 / 그 외 600"으로는 승자가
+ * 눈에 띄게 구분되지 않았다. 그래서 결과가 확정된 경기에서는 승자를 800 + 진한 초록색, 패자를 일반 굵기(400)로
+ * 크게 벌린다(굵기만이 아니라 색도 함께 달라서 글꼴이 굵기를 흐리게 그려도 구분된다).
+ * 아직 승패가 없는 경기는 두 이름 모두 기존 굵기(fallback)를 유지한다.
+ */
+export function nameEmphasis(decided: boolean, isWinner: boolean, fallbackWeight = 600): { fontWeight: number; color?: string } {
+  if (!decided) return { fontWeight: fallbackWeight }
+  return isWinner ? { fontWeight: 800, color: WINNER_NAME_COLOR } : { fontWeight: 400 }
+}
+
 /**
  * "점수/핸디 (달성률%)" 형태로만 보여준다. 퍼센트만 보여주면 반올림 때문에 실제로는 다른
  * 달성률(예: 15/20=75% vs 17/25=68%)이 같아 보일 수 있어, 분수를 항상 함께 표시한다.

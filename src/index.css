@@ -177,6 +177,12 @@ input[type='number'] {
   width: 64px;
 }
 
+/* 터치 화면(iPad·폰)에서 버튼을 빠르게 연달아 눌러도 더블탭 확대로 먹히지 않고 바로 눌리게 한다. */
+button,
+[role='button'],
+a {
+  touch-action: manipulation;
+}
 button {
   font: inherit;
   padding: 9px 12px;

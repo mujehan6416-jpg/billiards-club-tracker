@@ -8,7 +8,7 @@ interface ShareNav {
 }
 
 /** DOM 노드를 PNG로 만들어 공유(가능 시) 또는 다운로드. */
-export async function shareImage(node: HTMLElement, filename: string) {
+export async function shareImage(node: HTMLElement, filename: string, title = '당구 모임 결과') {
   const dataUrl = await toPng(node, { backgroundColor: '#ffffff', pixelRatio: 2 })
   const nav = navigator as Navigator & ShareNav
   try {
@@ -16,7 +16,7 @@ export async function shareImage(node: HTMLElement, filename: string) {
     const blob = await res.blob()
     const file = new File([blob], filename, { type: 'image/png' })
     if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
-      await nav.share({ files: [file], title: '당구 모임 결과' })
+      await nav.share({ files: [file], title })
       return
     }
   } catch {

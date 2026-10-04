@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { TournamentMatch } from '../../types/tournament'
 import { isTournamentRoundOfficial } from '../../logic/tournamentMatch'
-import { matchMemberStatusMessage, rateDisplay, roundLabel } from './tournamentDisplay'
+import { matchMemberStatusMessage, nameEmphasis, rateDisplay, roundLabel } from './tournamentDisplay'
 
 /**
  * 라운드별 대진표. 대진 미리보기(관리자, 확정 전)와 확정된 공개 대진표(관리자·회원, 확정 후)가
@@ -77,7 +77,10 @@ export function TournamentBracketView({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+      {/* 라운드 탭 줄: 가로 스크롤 컨테이너로 두지 않고 줄바꿈(wrap)한다. iPad(Safari)는 스크롤 컨테이너 안의 터치를
+          "스크롤 시작"과 "탭"으로 가르다가 탭을 놓치는 일이 있고, 탭이 화면 밖으로 밀려나 안 보이기도 했다. 이제 모든 탭이
+          항상 한눈에 보이고 각 버튼은 44px 이상이다. */}
+      <div role="group" aria-label="라운드 선택" data-testid="round-tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {rounds.map((r) => {
           const confirmed = isTournamentRoundOfficial(matches, r.roundNumber)
           return (
@@ -85,7 +88,8 @@ export function TournamentBracketView({
               key={r.roundNumber}
               type="button"
               className={r.roundNumber === activeRound ? 'primary' : ''}
-              style={{ flexShrink: 0, fontSize: 16, padding: '11px 15px', fontWeight: confirmed ? 800 : 500 }}
+              aria-pressed={r.roundNumber === activeRound}
+              style={{ flexShrink: 0, minHeight: 44, fontSize: 16, padding: '11px 15px', fontWeight: confirmed ? 800 : 500 }}
               onClick={() => setActiveRound(r.roundNumber)}
             >
               {confirmed ? `✅ ${r.label}` : r.label}
@@ -114,6 +118,10 @@ export function TournamentBracketView({
           const selected = selectedMatchId === m.id
           // 리스타트 대회의 합류 예약 자리: 아직 선수가 없는 B 자리를 빈 이름 대신 안내 문구로 보여준다.
           const waitingJoin = !m.playerBParticipantId && !!m.playerBJoinLabel
+          // 결과가 확정된 경기에서만 승자를 눈에 띄게(굵기+색) 구분한다. 승패 판정은 건드리지 않는다.
+          const decided = m.status === 'official' && m.resultType !== 'bye' && !!m.officialWinnerParticipantId
+          const aWins = decided && m.officialWinnerParticipantId === m.playerAParticipantId
+          const bWins = decided && m.officialWinnerParticipantId === m.playerBParticipantId
           return (
             <div key={m.id} style={{ display: 'flex', flexDirection: 'column' }}>
               <div
@@ -137,7 +145,7 @@ export function TournamentBracketView({
                 ) : (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerAParticipantId ? 800 : 600, fontSize: 17 }}>
+                      <span data-winner={decided ? String(aWins) : undefined} style={{ ...nameEmphasis(decided, aWins), fontSize: 17 }}>
                         {nameOf(m.playerAParticipantId)}
                       </span>
                       <span className="vs">vs</span>
@@ -146,7 +154,7 @@ export function TournamentBracketView({
                           {m.playerBJoinLabel}
                         </span>
                       ) : (
-                        <span style={{ fontWeight: m.officialWinnerParticipantId === m.playerBParticipantId ? 800 : 600, fontSize: 17, textAlign: 'right' }}>
+                        <span data-winner={decided ? String(bWins) : undefined} style={{ ...nameEmphasis(decided, bWins), fontSize: 17, textAlign: 'right' }}>
                           {nameOf(m.playerBParticipantId)}
                         </span>
                       )}
