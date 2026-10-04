@@ -56,7 +56,7 @@ export function restartTargetState(target: Tournament, currentTournamentId: stri
     case 'cancelled':
       return { selectable: false, reason: '이미 종료된 대회입니다.' }
     default:
-      return { selectable: false, reason: '참가자가 이미 확정된 대회입니다. 참가자 확정을 먼저 취소해야 추가할 수 있습니다.' }
+      return { selectable: false, reason: '연결된 리스타트 대회가 참가자 확정 상태라 추가할 수 없습니다. (리스타트 대회에서 참가자 확정을 취소해야 합니다)' }
   }
 }
 
@@ -76,4 +76,56 @@ export function planRestartTransfer(
     ;(isAlreadyInTarget(id, targetParticipants) ? alreadyIn : toAdd).push(id)
   }
   return { toAdd, alreadyIn }
+}
+
+// ── 리스타트 대상 대회 자동 결정 ─────────────────────────────────────────────
+// 운영진이 "보낼 대회"를 고르지 않는다. 현재 본선 대회 이름 + " 리스타트전"과 이름이 정확히 같은
+// 다른 대회를 찾아 연결한다. 이름에 "리스타트"가 들어 있다는 이유로 아무 대회나 고르지 않는다.
+
+/**
+ * 이름 비교용 정리 — 눈으로 보면 같은 이름이 글자 구성 차이로 다르게 비교되는 일을 막는다.
+ *  - 한글 조합 방식을 통일한다(NFC): 기기·입력기에 따라 "대"가 한 글자로 저장되기도, "ㄷ+ㅐ"로 나뉘어 저장되기도 한다.
+ *  - 보이지 않는 문자(제로폭 공백·BOM 등)를 지운다.
+ *  - 앞뒤 공백을 지우고 연속 공백(전각·줄바꿈 없는 공백 포함)을 일반 공백 하나로 만든다.
+ * 이름이 다른 대회를 느슨하게 맞추지는 않는다(단어·순서·띄어쓰기 위치가 다르면 다른 이름이다).
+ */
+export function normalizeTournamentName(name: string): string {
+  return name
+    .normalize('NFC')
+    .replace(/[​-‍⁠﻿]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** 본선 대회 이름 → 리스타트 대회 이름. 예: "제28차 부산동문회장배" → "제28차 부산동문회장배 리스타트전" */
+export function restartTournamentName(sourceName: string): string {
+  return `${normalizeTournamentName(sourceName)} 리스타트전`
+}
+
+export type RestartTargetLookup =
+  | { kind: 'found'; tournament: Tournament }
+  | { kind: 'missing'; expectedName: string; message: string }
+  | { kind: 'ambiguous'; expectedName: string; message: string }
+
+/**
+ * 현재 본선 대회에 연결할 리스타트 대회를 찾는다.
+ * - 현재 대회 자신은 제외한다.
+ * - 같은 이름이 둘 이상이면 현재 대회와 날짜가 같은 것을 우선하고, 그래도 둘 이상이면 고르지 않고 중단한다
+ *   (운영 데이터 오연결 방지).
+ * - 없으면 만들어 달라는 안내를 돌려준다(여기서 새 대회를 만들지 않는다).
+ */
+export function findRestartTarget(current: Tournament, tournaments: Tournament[]): RestartTargetLookup {
+  const expectedName = restartTournamentName(current.name)
+  const sameName = tournaments.filter((t) => t.id !== current.id && normalizeTournamentName(t.name) === expectedName)
+  if (sameName.length === 0) {
+    return { kind: 'missing', expectedName, message: `'${expectedName}' 대회를 먼저 만들어 주세요.` }
+  }
+  if (sameName.length === 1) return { kind: 'found', tournament: sameName[0] }
+  const sameDate = sameName.filter((t) => t.date === current.date)
+  if (sameDate.length === 1) return { kind: 'found', tournament: sameDate[0] }
+  return {
+    kind: 'ambiguous',
+    expectedName,
+    message: `같은 이름의 리스타트 대회가 여러 개 있습니다. ('${expectedName}') 불필요한 대회를 정리한 뒤 다시 시도해 주세요.`,
+  }
 }

@@ -294,3 +294,39 @@ export function restartJoinProgress(restartMatches: TournamentMatch[]): { filled
   const slots = restartMatches.filter((m) => m.playerBJoinFrom)
   return { filled: slots.filter((m) => m.playerBParticipantId).length, total: slots.length }
 }
+
+export type RestartJoinStatus = 'pending' | 'waiting' | 'joined'
+
+export interface RestartJoinRow {
+  /** 본선 2차 경기(합류 자리에 대응) id와 번호. */
+  sourceMatchId: string
+  matchNumber: number
+  /** 최종 승인된 패자(본선 대회 안의 참가자 id). 승인 전이면 null. */
+  loserParticipantId: string | null
+  /**
+   * pending — 본선 경기 결과가 아직 최종 승인되지 않음(패자 미정)
+   * waiting — 패자는 확정됐지만 리스타트 예약 자리에는 아직 배치되지 않음
+   * joined  — 리스타트 예약 자리에 배치 완료
+   */
+  status: RestartJoinStatus
+}
+
+/**
+ * 본선 2차(예: 8강) 탈락자의 합류 현황. 이름은 표시하는 쪽이 참가자 목록에서 찾는다.
+ * restartMatches가 없으면(리스타트 대진이 아직 없음) 패자가 확정돼도 "합류 대기"다.
+ */
+export function restartJoinRows(
+  secondRound: TournamentMatch[],
+  restartMatches: TournamentMatch[] | undefined,
+): RestartJoinRow[] {
+  return secondRound.map((m) => {
+    const loser = m.status === 'official' && m.resultType !== 'bye' ? m.officialLoserParticipantId ?? null : null
+    const slot = restartMatches?.find((r) => r.playerBJoinFrom?.matchId === m.id)
+    const loserMember = loser === m.playerAParticipantId ? m.playerAMemberId : m.playerBMemberId
+    const joined = !!loser && !!slot?.playerBParticipantId && slot.playerBMemberId === loserMember
+    return {
+      sourceMatchId: m.id, matchNumber: m.matchNumber, loserParticipantId: loser,
+      status: joined ? 'joined' : loser ? 'waiting' : 'pending',
+    }
+  })
+}
