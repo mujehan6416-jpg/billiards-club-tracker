@@ -20,7 +20,34 @@ export const BRACKET_LAYOUT = {
 } as const
 
 const ROUND1_STEP = BRACKET_LAYOUT.CARD_HEIGHT + BRACKET_LAYOUT.ROW_GAP
-const COLUMN_WIDTH = BRACKET_LAYOUT.CARD_WIDTH + BRACKET_LAYOUT.COLUMN_GAP
+
+/** 카드 폭·열 간격(기본값은 BRACKET_LAYOUT). 좁은 화면에서 모든 라운드 열을 한 화면에 넣을 때만 줄여서 쓴다. */
+export interface BracketGeometry {
+  cardWidth: number
+  columnGap: number
+  /** 선수 이름 글자 크기(카드가 좁아진 만큼만 줄인다). */
+  nameFontSize: number
+}
+
+/** 이 폭보다 카드가 좁아지면 이름이 너무 잘리므로 줄이지 않고 기존 가로 스크롤을 유지한다. */
+export const MIN_FIT_CARD_WIDTH = 72
+
+/**
+ * 라운드 열이 화면 폭(availableWidth)보다 넓으면, 열 간격과 카드 폭을 줄여 **모든 라운드 열(8강·4강·결승…)이
+ * 한 화면에 보이게** 하는 값을 계산한다. 기본 크기로 이미 들어가면 null(기본 레이아웃 그대로).
+ * 줄여도 카드가 MIN_FIT_CARD_WIDTH보다 좁아지면(5라운드 이상 등) null — 그때는 기존처럼 가로 스크롤이다.
+ * 글자는 카드가 많이 좁아질 때만 17 → 16 → 14로 조금 줄인다.
+ */
+export function fitBracketGeometry(roundCount: number, availableWidth: number): BracketGeometry | null {
+  if (roundCount < 1 || !(availableWidth > 0)) return null
+  const defaultWidth = roundCount * BRACKET_LAYOUT.CARD_WIDTH + (roundCount - 1) * BRACKET_LAYOUT.COLUMN_GAP
+  if (defaultWidth <= availableWidth) return null
+  const columnGap = roundCount <= 3 ? 20 : 14
+  const cardWidth = Math.floor((availableWidth - (roundCount - 1) * columnGap) / roundCount)
+  if (cardWidth < MIN_FIT_CARD_WIDTH) return null
+  const nameFontSize = cardWidth >= 100 ? 17 : cardWidth >= 84 ? 16 : 14
+  return { cardWidth, columnGap, nameFontSize }
+}
 
 export interface BracketCardPosition {
   round: number
@@ -44,7 +71,11 @@ export interface BracketCardPosition {
  * bracketSize(8/16/32강 등)에 대한 하드코딩이 없다 — 몇 라운드든 이 재귀적 평균 규칙만
  * 그대로 적용된다.
  */
-export function calculateBracketLayout(matches: TournamentMatch[]): Map<string, BracketCardPosition> {
+export function calculateBracketLayout(
+  matches: TournamentMatch[],
+  geometry?: Pick<BracketGeometry, 'cardWidth' | 'columnGap'> | null,
+): Map<string, BracketCardPosition> {
+  const columnWidth = (geometry?.cardWidth ?? BRACKET_LAYOUT.CARD_WIDTH) + (geometry?.columnGap ?? BRACKET_LAYOUT.COLUMN_GAP)
   const byRound = new Map<number, TournamentMatch[]>()
   for (const m of matches) {
     if (!byRound.has(m.roundNumber)) byRound.set(m.roundNumber, [])
@@ -56,7 +87,7 @@ export function calculateBracketLayout(matches: TournamentMatch[]): Map<string, 
 
   roundNumbers.forEach((roundNumber, roundIndex) => {
     const roundMatches = [...byRound.get(roundNumber)!].sort((a, b) => a.matchNumber - b.matchNumber)
-    const x = roundIndex * COLUMN_WIDTH
+    const x = roundIndex * columnWidth
 
     if (roundIndex === 0) {
       roundMatches.forEach((m, i) => {

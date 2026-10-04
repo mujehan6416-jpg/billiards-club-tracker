@@ -210,6 +210,70 @@ describe('경기결과 공유 — 관리자 화면', () => {
   })
 })
 
+describe('결과 이미지 카드 — 가운데 정렬과 리스타트 1·2위만', () => {
+  async function openCard() {
+    asAdmin()
+    serve()
+    await openMain()
+    fireEvent.click(screen.getByText('경기결과 공유'))
+    await waitFor(() => expect(card().getByText(nameOfRestart(champion))).toBeInTheDocument())
+    fireEvent.change(screen.getByPlaceholderText('하이런상 이름'), { target: { value: '가상하이런' } })
+  }
+
+  it('수상자 이름(마스터스 1~4위·리스타트 1·2위·하이런상)은 모두 가운데 정렬이다', async () => {
+    await openCard()
+    const names = ['가상선수1', '가상선수5', '가상선수3', '가상선수7', nameOfRestart(champion), nameOfRestart(runnerUp), '가상하이런']
+    for (const n of names) {
+      const el = card().getByText(n)
+      expect(el.style.textAlign, n).toBe('center')
+      // 이름을 담은 줄은 세로 쌓기(순위 라벨이 위, 이름이 아래) + 가운데 맞춤이라 "왼쪽 라벨 / 오른쪽 이름"으로 갈라지지 않는다
+      const row = el.parentElement as HTMLElement
+      expect(row.style.flexDirection === 'column' || row.style.alignItems === 'center', n).toBe(true)
+    }
+    for (const section of screen.getAllByTestId('result-section')) {
+      expect(section.style.alignItems).toBe('center')
+      expect(section.style.textAlign).toBe('center')
+    }
+    expect(screen.getByTestId('result-card').style.alignItems).toBe('center')
+    expect(screen.getByTestId('result-highrun').style.alignItems).toBe('center')
+  })
+
+  it('순위 라벨은 이름과 같은 가로줄의 왼쪽 칸이 아니라 이름 위쪽에 놓인다(이름 줄이 가로 배치가 아님)', async () => {
+    await openCard()
+    for (const el of card().getAllByText('1위')) {
+      const entry = el.parentElement as HTMLElement
+      expect(entry.style.flexDirection).toBe('column')
+      expect(entry.style.alignItems).toBe('center')
+    }
+  })
+
+  it('이미지 카드의 리스타트 부분에는 1위·2위만 있고 3위·4위는 없다(리스타트 대회에 3·4위전 결과가 있어도)', async () => {
+    asAdmin()
+    serve({ restart: playMain8(true) }) // 3·4위전 결과까지 있는 경기 목록을 리스타트 대회 결과로 읽어 온 상황
+    await openMain()
+    fireEvent.click(screen.getByText('경기결과 공유'))
+    await screen.findByTestId('result-card')
+    await waitFor(() => expect(screen.getAllByTestId('result-section')).toHaveLength(2))
+    const [, restartSection] = screen.getAllByTestId('result-section')
+    await waitFor(() => expect(restartSection.textContent).toContain('1위'))
+    expect(restartSection.textContent).toContain('2위')
+    expect(restartSection.textContent).not.toMatch(/3위|4위/)
+  })
+
+  it('카톡 문구와 카드에 같은 순위가 들어간다(같은 데이터에서 만든다)', async () => {
+    await openCard()
+    fireEvent.click(screen.getByText('카톡용 결과 복사'))
+    await waitFor(() => expect(shareTextMock).toHaveBeenCalled())
+    const text = shareTextMock.mock.calls[0][0] as string
+    const cardText = screen.getByTestId('result-card').textContent ?? ''
+    for (const n of ['가상선수1', '가상선수5', '가상선수3', '가상선수7', nameOfRestart(champion), nameOfRestart(runnerUp), '가상하이런']) {
+      expect(text).toContain(n)
+      expect(cardText).toContain(n)
+    }
+    expect(text).not.toMatch(/리스타트 3위|리스타트 4위/)
+  })
+})
+
 describe('경기결과 공유 — 권한과 범위', () => {
   it('일반 회원에게는 공유 버튼도 편집 입력칸도 보이지 않는다', async () => {
     useAuth.setState({ memberId: 'm2', memberName: '가상선수2', isGuest: false })

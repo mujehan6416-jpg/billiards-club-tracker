@@ -1,8 +1,8 @@
-import { useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { TournamentMatch } from '../../types/tournament'
-import { roundLabel, WINNER_NAME_COLOR } from './tournamentDisplay'
+import { LOSER_NAME_COLOR, roundLabel, WINNER_NAME_BG, WINNER_NAME_COLOR } from './tournamentDisplay'
 import { isTournamentRoundOfficial } from '../../logic/tournamentMatch'
-import { calculateBracketLayout, BRACKET_LAYOUT } from '../../logic/tournamentBracketLayout'
+import { calculateBracketLayout, fitBracketGeometry, BRACKET_LAYOUT } from '../../logic/tournamentBracketLayout'
 
 const { CARD_WIDTH, CARD_HEIGHT } = BRACKET_LAYOUT
 const HEADER_HEIGHT = 28
@@ -47,7 +47,29 @@ export function TournamentBracketVisual({
   onSelectMatch?: (match: TournamentMatch) => void
   selectedMatchId?: string | null
 }) {
-  const layout = useMemo(() => calculateBracketLayout(matches), [matches])
+  // 화면 폭에 맞춘 카드 폭·열 간격. 폰처럼 좁은 화면에서 마지막 열(결승)이 화면 밖으로 밀려 잘리지 않도록, 라운드 열이
+  // 기본 폭으로 안 들어가면 카드 폭과 열 간격을 줄여 모든 열을 한 화면에 넣는다(들어가면 기본 그대로).
+  // 폭을 알 수 없는 환경(테스트 등)이나 너무 큰 대진(카드가 너무 좁아짐)은 기존 가로 스크롤을 그대로 쓴다.
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const [availableWidth, setAvailableWidth] = useState(0)
+  useLayoutEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const measure = () => setAvailableWidth(el.clientWidth)
+    measure()
+    window.addEventListener('resize', measure)
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
+    observer?.observe(el)
+    return () => { window.removeEventListener('resize', measure); observer?.disconnect() }
+  }, [])
+  const roundCount = useMemo(
+    () => new Set(matches.filter((m) => m.playerCountInRound !== 3).map((m) => m.roundNumber)).size,
+    [matches],
+  )
+  const geometry = useMemo(() => fitBracketGeometry(roundCount, availableWidth), [roundCount, availableWidth])
+  const cardW = geometry?.cardWidth ?? CARD_WIDTH
+  const nameSize = geometry?.nameFontSize ?? 17
+  const layout = useMemo(() => calculateBracketLayout(matches, geometry), [matches, geometry])
 
   // 3·4위전(playerCountInRound === 3)은 결승과 같은 컬럼 아래에 별도 카드로 그리므로
   // 공유 라운드 헤더 목록에는 넣지 않는다 — 넣으면 결승 헤더와 같은 x에 두 번째 헤더가
@@ -91,7 +113,7 @@ export function TournamentBracketVisual({
       const points = sources
         .map((s) => layout.get(s.id))
         .filter((p): p is NonNullable<typeof p> => !!p)
-        .map((p) => ({ x: p.x + CARD_WIDTH, y: p.centerY + HEADER_HEIGHT }))
+        .map((p) => ({ x: p.x + cardW, y: p.centerY + HEADER_HEIGHT }))
       if (points.length === 0) continue
 
       const x2 = target.x
@@ -111,7 +133,7 @@ export function TournamentBracketVisual({
       result.push({ key: `${nextMatchId}-in`, d: `M ${midX} ${y2} H ${x2}` })
     }
     return result
-  }, [matches, layout])
+  }, [matches, layout, cardW])
 
   if (rounds.length === 0) {
     return <p className="muted" style={{ textAlign: 'center', padding: '16px 0' }}>대진 정보가 없습니다.</p>
@@ -123,7 +145,7 @@ export function TournamentBracketVisual({
    * "A vs B"를 함께 넣지 않고, 두 칸을 위아래로 붙여 그린다. 칸 테두리도 종이 대진표처럼
    * 각진 사각형(모서리 둥글림 없음)으로 둔다.
    */
-  const slotBox = (m: TournamentMatch, side: 'A' | 'B', rowHeight: number = CARD_HEIGHT / 2, fontSize = 17) => {
+  const slotBox = (m: TournamentMatch, side: 'A' | 'B', rowHeight: number = CARD_HEIGHT / 2, fontSize = nameSize) => {
     const participantId = side === 'A' ? m.playerAParticipantId : m.playerBParticipantId
     // 부전승으로 다음 라운드에 오른 경우도 "승자"다 — officialWinnerParticipantId는
     // 부전승 경기에서도 대진 생성 시점에 이미 채워져 있으므로 별도 분기가 필요 없다.
@@ -138,7 +160,8 @@ export function TournamentBracketVisual({
           border: '1px solid var(--border)',
           borderBottom: side === 'A' ? 'none' : undefined,
           borderRadius: 0,
-          background: 'var(--surface, #fff)',
+          // 승자 칸은 연한 초록으로 칠한다(굵기·글자색만으로는 iPad에서 승자가 잘 안 보였다).
+          background: isWinner ? WINNER_NAME_BG : 'var(--surface, #fff)',
           height: rowHeight,
           boxSizing: 'border-box',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -148,8 +171,9 @@ export function TournamentBracketVisual({
         <span
           data-winner={m.status === 'official' && !!participantId ? String(isWinner) : undefined}
           style={{
-            // 굵기에 더해 글자 색도 다르게(iPad에서 굵기 차이가 약해 보이던 문제). 배경·테두리는 넣지 않는다.
-            fontWeight: isWinner ? 800 : 500, ...(isWinner ? { color: WINNER_NAME_COLOR } : {}),
+            // 승자: 800 + 진한 초록 글자 + 칸 배경 / 확정된 경기의 패자: 차분한 진회색(굵기 500 유지).
+            fontWeight: isWinner ? 800 : 500,
+            ...(isWinner ? { color: WINNER_NAME_COLOR } : (m.status === 'official' && participantId ? { color: LOSER_NAME_COLOR } : {})),
             opacity: participantId ? 1 : 0.5, fontSize,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
           }}
@@ -176,10 +200,10 @@ export function TournamentBracketVisual({
     : 0
   const totalHeight = Math.max(genericBottom, thirdPlaceBottom)
   const lastRoundX = rounds[rounds.length - 1]?.x ?? 0
-  const totalWidth = lastRoundX + CARD_WIDTH
+  const totalWidth = lastRoundX + cardW
 
   return (
-    <div style={{ overflowX: 'auto', paddingBottom: 4 }}>
+    <div ref={scrollerRef} style={{ overflowX: 'auto', paddingBottom: 4 }}>
       <div style={{ position: 'relative', width: totalWidth, height: totalHeight }}>
         <svg
           width={totalWidth} height={totalHeight}
@@ -195,7 +219,7 @@ export function TournamentBracketVisual({
           <span
             key={r.roundNumber}
             style={{
-              position: 'absolute', left: r.x, top: 0, width: CARD_WIDTH, textAlign: 'center',
+              position: 'absolute', left: r.x, top: 0, width: cardW, textAlign: 'center',
               fontWeight: r.confirmed ? 800 : 500, fontSize: 15,
             }}
           >
@@ -217,7 +241,7 @@ export function TournamentBracketVisual({
               onKeyDown={onSelectMatch ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelectMatch(m) } : undefined}
               style={{
                 position: 'absolute',
-                left: pos.x, top: pos.centerY - CARD_HEIGHT / 2 + HEADER_HEIGHT, width: CARD_WIDTH,
+                left: pos.x, top: pos.centerY - CARD_HEIGHT / 2 + HEADER_HEIGHT, width: cardW,
                 display: 'flex', flexDirection: 'column',
                 // ⚠ 예전에는 "내 경기"(mine)에 초록 테두리를 둘렀는데, 우승자 결정 구간에서
                 // 이 테두리가 "선택된 상태"처럼 보여 승자 강조(굵은 글씨)와 헷갈렸다. 지금은
@@ -250,7 +274,7 @@ export function TournamentBracketVisual({
               onKeyDown={onSelectMatch ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelectMatch(thirdPlaceMatch) } : undefined}
               style={{
                 position: 'absolute',
-                left: thirdPlacePos.x, width: THIRD_PLACE_CARD_WIDTH,
+                left: thirdPlacePos.x, width: Math.min(THIRD_PLACE_CARD_WIDTH, cardW),
                 top: thirdPlacePos.centerY - THIRD_PLACE_ROW_HEIGHT + HEADER_HEIGHT,
                 display: 'flex', flexDirection: 'column',
                 outline: selected ? '2px solid #1a56db' : undefined,

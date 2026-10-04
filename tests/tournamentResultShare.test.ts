@@ -80,6 +80,28 @@ describe('리스타트 순위 — 결승 기준 1·2위만', () => {
   })
 })
 
+describe('리스타트는 1위·2위만 — 3·4위 결과가 있어도 표시하지 않는다(카톡 문구와 이미지 카드 공통 기준)', () => {
+  it('리스타트 대회에 3·4위전까지 공식 결과가 있어도 순위 줄은 1위·2위뿐이다', () => {
+    const withThirdPlace = playMain8(true) // 3·4위전 결과까지 있는 대진을 리스타트 대회라고 가정
+    const s = buildRestartSection(withThirdPlace, nameOfMain)
+    expect(s.lines.map((l) => l.label)).toEqual(['리스타트 1위', '리스타트 2위'])
+    expect(s.notice).toBeUndefined()
+  })
+
+  it('카톡 문구의 리스타트 부분에는 3위·4위·공동 3위가 나오지 않는다', () => {
+    const text = buildResultShareText(buildResultShareData({
+      mastersMatches: playMain8(true), mastersNameOf: nameOfMain,
+      restartMatches: playMain8(true), restartNameOf: nameOfMain, highRun: '',
+    }))
+    const restartPart = text.slice(text.indexOf('리스타트 챔피언십 경기결과'))
+    expect(restartPart).toContain('리스타트 1위: 가상선수1')
+    expect(restartPart).toContain('리스타트 2위: 가상선수5')
+    expect(restartPart).not.toMatch(/3위|4위/)
+    // 마스터스 쪽은 3·4위를 그대로 표시한다
+    expect(text.slice(0, text.indexOf('리스타트 챔피언십 경기결과'))).toMatch(/마스터스 3위: 가상선수3[\s\S]*마스터스 4위: 가상선수7/)
+  })
+})
+
 describe('카카오톡 문구', () => {
   const restart = playRestart()
   const { champion, runnerUp } = restartFinalists(restart)

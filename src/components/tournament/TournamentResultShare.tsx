@@ -13,19 +13,20 @@ export interface RestartResult {
 
 const rankText = (label: string) => label.replace(/^(마스터스|리스타트) /, '')
 
+/**
+ * 한 부문(마스터스/리스타트)의 결과. 모든 글씨를 가운데 정렬하고, 순위 라벨을 이름 위에 작게 두고 이름을 크게 보여준다
+ * ("1위는 왼쪽, 이름은 오른쪽"처럼 갈라져 보이지 않게). 공동 순위는 이름을 한 줄에 한 명씩 쌓는다.
+ */
 function CardSection({ section }: { section: ResultSection }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div data-testid="result-section" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, textAlign: 'center' }}>
       <div style={{ fontSize: 21, fontWeight: 800, color: '#0f6e56' }}>🏆 {section.title}</div>
       {section.lines.map((l) => (
-        <div key={l.label} style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-          <span style={{ fontSize: 19, fontWeight: 700, color: '#333', minWidth: 74, flexShrink: 0 }}>{rankText(l.label)}</span>
-          {/* 공동 순위는 한 줄에 한 명씩. 이름이 아주 길면 그때만 글자 단위로 줄바꿈한다. */}
-          <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-            {l.value.split(', ').map((name) => (
-              <span key={name} style={{ fontSize: 26, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', minWidth: 0 }}>{name}</span>
-            ))}
-          </span>
+        <div key={l.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: '100%' }}>
+          <span style={{ fontSize: 17, fontWeight: 700, color: '#555' }}>{rankText(l.label)}</span>
+          {l.value.split(', ').map((name) => (
+            <span key={name} style={{ fontSize: 28, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', maxWidth: '100%', textAlign: 'center' }}>{name}</span>
+          ))}
         </div>
       ))}
       {section.notice && (
@@ -34,6 +35,8 @@ function CardSection({ section }: { section: ResultSection }) {
     </div>
   )
 }
+
+const divider = <div aria-hidden="true" style={{ height: 1, background: '#e3e3e3', width: '100%' }} />
 
 /**
  * 결과 이미지 카드 — 스마트폰 카카오톡용 세로형, 흰 배경, 큰 글씨. 이 DOM 그대로를 이미지로 만든다
@@ -47,22 +50,28 @@ export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tou
         data-testid="result-card"
         style={{
           width: 340, boxSizing: 'border-box', margin: '0 auto', padding: '24px 22px', background: '#fff', wordBreak: 'keep-all',
-          border: '1px solid #ddd', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 22,
+          border: '1px solid #ddd', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
+          textAlign: 'center',
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, textAlign: 'center', width: '100%' }}>
           <span style={{ fontSize: 20, fontWeight: 800, color: '#0f6e56' }}>당신회</span>
           <span style={{ fontSize: 30, fontWeight: 800, color: '#111' }}>대회 경기결과</span>
           <span style={{ fontSize: 18, fontWeight: 600, color: '#333', overflowWrap: 'anywhere' }}>{tournament.name}</span>
           <span style={{ fontSize: 16, color: '#555' }}>{tournament.date}</span>
         </div>
+        {divider}
         <CardSection section={data.masters} />
+        {divider}
         <CardSection section={data.restart} />
         {data.highRun && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ fontSize: 21, fontWeight: 800, color: '#0f6e56' }}>🎯 하이런상</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#111', overflowWrap: 'anywhere' }}>{data.highRun}</div>
-          </div>
+          <>
+            {divider}
+            <div data-testid="result-highrun" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, textAlign: 'center', width: '100%' }}>
+              <div style={{ fontSize: 21, fontWeight: 800, color: '#0f6e56' }}>🎯 하이런상</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', maxWidth: '100%', textAlign: 'center' }}>{data.highRun}</div>
+            </div>
+          </>
         )}
       </div>
     )

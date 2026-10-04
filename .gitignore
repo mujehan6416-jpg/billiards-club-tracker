@@ -12,3 +12,6 @@ billiards-seed-import.json
 
 # 내부 트러블슈팅 메모 (공개 저장소에 올리지 않음)
 TROUBLESHOOTING.md
+
+# 실제 회원 실명·ID·경기 데이터가 하드코딩된 개인용 스크립트 (공개 저장소 제외)
+scripts/
