@@ -119,6 +119,21 @@ describe('대회 경기결과 실시간 반영', () => {
     expect(screen.queryByText(TOAST)).toBeNull()
   })
 
+  it('승인 대기 점수는 알림·진행률·승패를 바꾸지 않고, 최종 승인(official)되는 순간에만 공개된다', async () => {
+    await openDetail()
+    act(() => emit([match('a'), match('b')], SERVER))
+    const pending = match('a', { status: 'awaitingApproval', scoreA: 17, scoreB: 9, calculatedWinnerParticipantId: 'p1' })
+    act(() => emit([pending, match('b')], SERVER))
+    expect(screen.queryByText(TOAST)).toBeNull()
+    expect(screen.getByText('0 / 2 경기 완료')).toBeInTheDocument()
+    expect(screen.queryByText(/승자/)).toBeNull()
+
+    act(() => emit([official('a'), match('b')], SERVER))
+    expect(screen.getByText(TOAST)).toBeInTheDocument()
+    expect(screen.getByText('1 / 2 경기 완료')).toBeInTheDocument()
+    expect(screen.getByText(/승자 가상선수1/)).toBeInTheDocument()
+  })
+
   it('이 기기가 직접 쓴 임시 반영에는 알림을 띄우지 않는다', async () => {
     await openDetail()
     act(() => emit([match('a'), match('b')], SERVER))
