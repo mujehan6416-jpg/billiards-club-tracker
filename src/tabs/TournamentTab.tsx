@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Member } from '../types'
 import type { Tournament, TournamentDrawEntry, TournamentDrawMapping, TournamentMatch, TournamentParticipant } from '../types/tournament'
 import { useApp } from '../store/appStore'
@@ -29,6 +29,7 @@ import {
   promotionFor,
   applyPromotion,
   calculateFinalPlacements,
+  countTournamentProgress,
 } from '../logic/tournamentMatch'
 import {
   createTournament as createTournamentDoc,
@@ -48,6 +49,7 @@ import {
   cancelTournamentBracket,
   deleteTournament,
   fetchTournamentMatches,
+  subscribeTournamentMatches,
   adminEntersTournamentMatchResult,
   submitTournamentMatchResult,
   verifyTournamentMatchResult,
@@ -139,6 +141,12 @@ export function TournamentTab({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [matchError, setMatchError] = useState('')
+  /** 실시간 반영 안내: 작은 알림(자동으로 사라짐)·최근 반영 시각·실시간 연결 끊김 여부. */
+  const [liveToast, setLiveToast] = useState(false)
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null)
+  const [liveBroken, setLiveBroken] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const activeMembers = useMemo(() => members.filter((m: Member) => m.active), [members])
   const selected = tournaments.find((t) => t.id === selectedId) ?? null
@@ -178,6 +186,55 @@ export function TournamentTab({
     if (previewMode) return
     const list = await fetchTournamentMatches(tournamentId, clubId)
     setMatchesByTournamentId((prev) => ({ ...prev, [tournamentId]: list }))
+  }
+
+  /**
+   * 확정된 대진의 경기 결과를 실시간으로 받는다(상세 화면이 열려 있는 동안만).
+   * 화면을 떠나거나 대회가 바뀌면 cleanup이 구독을 끊으므로 구독이 겹쳐 쌓이지 않는다.
+   * 알림은 '공식 확정된 경기 수가 늘었을 때'만, 이 기기가 직접 쓴 변경이 아닐 때만 띄운다.
+   */
+  const liveTournamentId = view === 'detail' ? selectedId : null
+  const liveEnabled = selected?.status === 'bracketFixed' || selected?.status === 'finished'
+  useEffect(() => {
+    if (previewMode || !liveTournamentId || !liveEnabled) return
+    let prevDone: number | null = null
+    setLiveBroken(false)
+    const unsubscribe = subscribeTournamentMatches(
+      liveTournamentId,
+      (list, meta) => {
+        setMatchesByTournamentId((prev) => ({ ...prev, [liveTournamentId]: list }))
+        const { done } = countTournamentProgress(list)
+        if (!meta.fromCache) setLastUpdatedAt(new Date())
+        if (prevDone !== null && done > prevDone && !meta.hasPendingWrites && !meta.fromCache) {
+          setLiveToast(true)
+          if (toastTimer.current) clearTimeout(toastTimer.current)
+          toastTimer.current = setTimeout(() => setLiveToast(false), 3000)
+        }
+        prevDone = done
+      },
+      () => setLiveBroken(true),
+      clubId,
+    )
+    return () => {
+      unsubscribe()
+      if (toastTimer.current) clearTimeout(toastTimer.current)
+      setLiveToast(false)
+    }
+  }, [previewMode, liveTournamentId, liveEnabled, clubId])
+
+  /** 보조 기능: 인터넷이 불안정할 때 직접 한 번 더 읽는다. */
+  const handleManualRefresh = async () => {
+    if (!selectedId || refreshing) return
+    setRefreshing(true)
+    try {
+      await reloadMatches(selectedId)
+      setLastUpdatedAt(new Date())
+      setLiveBroken(false)
+    } catch {
+      setError('새로고침하지 못했습니다. 인터넷 연결을 확인해 주세요.')
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   const openTournament = (id: string) => {
@@ -659,6 +716,16 @@ export function TournamentTab({
   if (view === 'detail' && selected) {
     return (
       <div className="tab">
+        {liveToast && (
+          <div role="status" style={{
+            position: 'fixed', bottom: 72, left: '50%', transform: 'translateX(-50%)',
+            background: 'rgba(0,0,0,0.8)', color: '#fff', borderRadius: 20,
+            padding: '12px 20px', fontSize: 16, fontWeight: 600, zIndex: 9999,
+            maxWidth: 'calc(100vw - 32px)', textAlign: 'center', pointerEvents: 'none',
+          }}>
+            새 경기결과가 반영되었습니다.
+          </div>
+        )}
         <button type="button" onClick={() => setView('list')} style={{ marginBottom: 4 }}>← 대회 목록</button>
         <h2 className="tab-title" style={{ marginBottom: 0 }}>{selected.name}</h2>
         <span className="muted">📅 {selected.date} · 제한시간 {selected.timeLimitMinutes}분</span>
@@ -679,6 +746,10 @@ export function TournamentTab({
             대진표는 계속 볼 수 있어야 하므로 finished도 함께 보여준다. */}
         {(selected.status === 'bracketFixed' || selected.status === 'finished') && selectedMatches && selectedMatches.length > 0 && (
           <>
+            <LiveStatusBar
+              matches={selectedMatches} lastUpdatedAt={lastUpdatedAt} broken={liveBroken}
+              refreshing={refreshing} onRefresh={previewMode ? undefined : handleManualRefresh}
+            />
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 className={bracketViewMode === 'round' ? 'primary grow' : 'grow'} style={{ fontSize: 16, fontWeight: 700, padding: 12 }}
@@ -843,6 +914,37 @@ export function TournamentTab({
       )}
 
       <TournamentList tournaments={tournaments} participantsByTournamentId={participantsByTournamentId} onSelect={openTournament} />
+    </div>
+  )
+}
+
+/** 진행률("3 / 8 경기 완료")과 최근 반영 시각, 보조 새로고침 버튼. 실시간 반영이 기본이다. */
+function LiveStatusBar({
+  matches, lastUpdatedAt, broken, refreshing, onRefresh,
+}: {
+  matches: TournamentMatch[]
+  lastUpdatedAt: Date | null
+  broken: boolean
+  refreshing: boolean
+  onRefresh?: () => void
+}) {
+  const { done, total } = countTournamentProgress(matches)
+  const time = lastUpdatedAt
+    ? lastUpdatedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : null
+  return (
+    <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ fontSize: 17, fontWeight: 800 }}>{done} / {total} 경기 완료</span>
+        <span className="muted" style={{ fontSize: 15 }}>
+          {broken ? '실시간 연결이 끊겼습니다. 새로고침을 눌러 주세요.' : time ? `최근 업데이트: ${time}` : '최신 결과를 확인하는 중...'}
+        </span>
+      </div>
+      {onRefresh && (
+        <button type="button" onClick={onRefresh} disabled={refreshing} style={{ flexShrink: 0, fontSize: 16, padding: '11px 14px', minHeight: 44 }}>
+          {refreshing ? '확인 중...' : '새로고침'}
+        </button>
+      )}
     </div>
   )
 }

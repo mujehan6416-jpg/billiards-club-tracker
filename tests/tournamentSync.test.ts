@@ -10,6 +10,7 @@ const setDocMock = vi.fn()
 const updateDocMock = vi.fn()
 const getDocMock = vi.fn()
 const getDocsMock = vi.fn()
+const onSnapshotMock = vi.fn()
 
 /** deleteField()가 만든 표식 — 테스트에서 "이 필드를 지웠다"를 확인할 때 쓴다. */
 const DELETED = '__deleteField__'
@@ -33,6 +34,7 @@ vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...path: string[]) => ({ path: path.join('/') }),
   getDoc: (...args: unknown[]) => getDocMock(...args),
   getDocs: (...args: unknown[]) => getDocsMock(...args),
+  onSnapshot: (...args: unknown[]) => onSnapshotMock(...args),
   setDoc: (...args: unknown[]) => setDocMock(...args),
   updateDoc: (...args: unknown[]) => updateDocMock(...args),
   deleteDoc: vi.fn(),
@@ -62,7 +64,7 @@ import {
   adminVerifyTournamentMatch, correctTournamentMatchByAdmin,
   approveTournamentMatch, declareTournamentForfeit,
   assertOfficialResultCorrectable, finishTournament,
-  adminEntersTournamentMatchResult,
+  adminEntersTournamentMatchResult, subscribeTournamentMatches,
   deleteTournament,
   TournamentSyncError,
 } from '../src/lib/tournamentSync'
@@ -1182,5 +1184,24 @@ describe('대회 마감', () => {
   it('참가자 확정은 상태와 인원만 남긴다', async () => {
     await confirmTournamentEntries(TID, 11, CLUB)
     expect(updateDocMock.mock.calls[0][1]).toEqual({ status: 'entryClosed', participantCount: 11 })
+  })
+})
+
+describe('subscribeTournamentMatches (실시간 구독)', () => {
+  it('경기 컬렉션 경로를 구독하고, 받은 문서와 메타정보를 넘기며, 해제 함수를 돌려준다', () => {
+    const unsubscribe = vi.fn()
+    onSnapshotMock.mockReturnValue(unsubscribe)
+    const onData = vi.fn()
+    const onError = vi.fn()
+
+    const result = subscribeTournamentMatches('t-live', onData, onError, 'club-live')
+
+    expect(result).toBe(unsubscribe)
+    const [ref, next, fail] = onSnapshotMock.mock.calls[0]
+    expect(ref).toEqual({ path: 'clubs/club-live/tournaments/t-live/matches' })
+    next({ docs: [{ data: () => ({ id: 'm1' }) }], metadata: { fromCache: true, hasPendingWrites: false } })
+    expect(onData).toHaveBeenCalledWith([{ id: 'm1' }], { fromCache: true, hasPendingWrites: false })
+    fail(new Error('permission-denied'))
+    expect(onError).toHaveBeenCalledTimes(1)
   })
 })

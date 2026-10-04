@@ -37,6 +37,7 @@ vi.mock('../src/lib/tournamentSync', () => ({
   confirmTournamentBracket: (...args: unknown[]) => confirmTournamentBracketMock(...args),
   cancelTournamentBracket: (...args: unknown[]) => cancelTournamentBracketMock(...args),
   fetchTournamentMatches: (...args: unknown[]) => fetchTournamentMatchesMock(...args),
+  subscribeTournamentMatches: () => () => {},
   deleteTournament: (...args: unknown[]) => deleteTournamentMock(...args),
 }))
 

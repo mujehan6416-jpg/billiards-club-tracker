@@ -1,4 +1,4 @@
-import { collection, deleteField, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
+import { collection, deleteField, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { db } from './firebase'
 import { createDrawMapping, createTournamentParticipant, validateDrawEntries } from '../logic/tournamentDraw'
 import type { Game, Member } from '../types'
@@ -588,6 +588,29 @@ export async function fetchTournamentMatches(
   } catch (e) {
     throw toSyncError(e)
   }
+}
+
+/**
+ * 경기 목록의 실시간 구독. 기존 fetchTournamentMatches와 같은 경로·같은 읽기 권한을 쓴다.
+ * 돌려주는 함수를 부르면 구독이 끊어진다(화면을 떠날 때 반드시 호출해야 한다).
+ *
+ * fromCache: 서버에서 받은 최신 값이 아니라 기기 캐시의 값이라는 뜻(오프라인 등).
+ * hasPendingWrites: 이 기기가 방금 쓴 값이 서버에 반영되기 전의 임시 반영이라는 뜻.
+ */
+export function subscribeTournamentMatches(
+  tournamentId: string,
+  onData: (matches: TournamentMatch[], meta: { fromCache: boolean; hasPendingWrites: boolean }) => void,
+  onError: () => void,
+  clubId = DEFAULT_CLUB_ID,
+): () => void {
+  return onSnapshot(
+    matchesCol(clubId, tournamentId),
+    (snap) => onData(
+      snap.docs.map((d) => d.data() as TournamentMatch),
+      { fromCache: snap.metadata.fromCache, hasPendingWrites: snap.metadata.hasPendingWrites },
+    ),
+    () => onError(),
+  )
 }
 
 async function loadMatch(
