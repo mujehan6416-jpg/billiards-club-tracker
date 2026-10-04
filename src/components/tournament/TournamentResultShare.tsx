@@ -14,15 +14,20 @@ export interface RestartResult {
 /** "마스터즈 1위" → "1위" (부문 이름은 구역 제목에 이미 있다) */
 const rankText = (label: string) => label.replace(/^(마스터즈|리스타트) /, '')
 
-/** 순위 칸 폭 — 모든 줄의 이름 시작 위치가 세로로 가지런하도록 고정한다("공동 3위"도 들어가는 폭). */
-const RANK_WIDTH = 92
+/**
+ * 순위 칸 폭 — 카드 전체에서 하나로 정해, 모든 줄(하이런상 포함)의 이름 시작 위치가 세로로 같은 선에 오게 한다.
+ * 보통은 "1위" 폭에 맞춰 좁게 두고, "공동 3위"가 있을 때만 넓힌다(라벨이 줄바꿈되지 않도록).
+ */
+export const RANK_WIDTH = 64
+export const RANK_WIDTH_JOINT = 100
+export const RANK_GAP = 14
 
 /** 순위 + 이름이 같은 줄에 놓이는 한 행. 공동 순위는 이름을 같은 칸 안에서 한 줄에 한 명씩 쌓는다. */
-function ResultRow({ label, value }: { label: string; value: string }) {
+function ResultRow({ label, value, rankWidth, testId = 'result-row' }: { label: string; value: string; rankWidth: number; testId?: string }) {
   return (
-    <div data-testid="result-row" style={{ display: 'flex', alignItems: 'baseline', gap: 10, width: '100%' }}>
-      <span style={{ fontSize: 21, fontWeight: 700, color: '#444', width: RANK_WIDTH, flexShrink: 0, whiteSpace: 'nowrap' }}>{label}</span>
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+    <div data-testid={testId} style={{ display: 'flex', alignItems: 'baseline', gap: RANK_GAP, width: '100%' }}>
+      <span data-testid="result-rank" style={{ fontSize: 21, fontWeight: 700, color: '#444', width: rankWidth, flexShrink: 0, whiteSpace: 'nowrap' }}>{label}</span>
+      <span data-testid="result-names" style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
         {value.split(', ').map((name) => (
           <span key={name} style={{ fontSize: 27, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', textAlign: 'left' }}>{name}</span>
         ))}
@@ -32,11 +37,11 @@ function ResultRow({ label, value }: { label: string; value: string }) {
 }
 
 /** 한 부문(마스터즈/리스타트)의 결과: 구역 제목 아래에 "1위  이름" 줄이 순서대로 이어진다. */
-function CardSection({ section }: { section: ResultSection }) {
+function CardSection({ section, rankWidth }: { section: ResultSection; rankWidth: number }) {
   return (
     <div data-testid="result-section" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
       <div style={{ fontSize: 20, fontWeight: 800, color: '#0f6e56' }}>🏆 {section.title}</div>
-      {section.lines.map((l) => <ResultRow key={l.label} label={rankText(l.label)} value={l.value} />)}
+      {section.lines.map((l) => <ResultRow key={l.label} label={rankText(l.label)} value={l.value} rankWidth={rankWidth} />)}
       {section.notice && (
         <div style={{ fontSize: 18, fontWeight: 600, color: section.status === 'pending' ? '#856404' : '#555' }}>{section.notice}</div>
       )}
@@ -53,6 +58,8 @@ const divider = <div aria-hidden="true" style={{ height: 1, background: '#e3e3e3
  */
 export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tournament; data: TournamentResultShareData }>(
   function TournamentResultCard({ tournament, data }, ref) {
+    const labels = [...data.masters.lines, ...data.restart.lines].map((l) => rankText(l.label))
+    const rankWidth = labels.some((l) => l.length > 3) ? RANK_WIDTH_JOINT : RANK_WIDTH
     return (
       <div
         ref={ref}
@@ -69,15 +76,16 @@ export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tou
           <span style={{ fontSize: 16, color: '#555' }}>{tournament.date}</span>
         </div>
         {divider}
-        <CardSection section={data.masters} />
+        <CardSection section={data.masters} rankWidth={rankWidth} />
         {divider}
-        <CardSection section={data.restart} />
+        <CardSection section={data.restart} rankWidth={rankWidth} />
         {data.highRun && (
           <>
             {divider}
             <div data-testid="result-highrun" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
               <div style={{ fontSize: 20, fontWeight: 800, color: '#0f6e56' }}>🎯 하이런상</div>
-              <span style={{ fontSize: 27, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', textAlign: 'left' }}>{data.highRun}</span>
+              {/* 순위 칸 자리를 비워 두고 이름을 위 결과 이름들과 같은 시작선에 놓는다 */}
+              <ResultRow label="" value={data.highRun} rankWidth={rankWidth} testId="result-highrun-row" />
             </div>
           </>
         )}

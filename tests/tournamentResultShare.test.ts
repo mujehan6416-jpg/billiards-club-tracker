@@ -117,6 +117,16 @@ describe('카카오톡 문구 — 대회 최종결과가 먼저, 그 뒤에 본�
     mastersMatches: masters, mastersNameOf: nameOfMain, restartMatches: restart, restartNameOf: nameOfRestart, highRun,
   })
   const text = (highRun = '가상하이런', masters = playMain8(true)) => buildResultShareText(data(highRun, masters))
+  /** 구역 하나의 경기 목록 — 경기 하나 = 번호 줄(승자) + 이어지는 "vs" 줄(패자). 부전승은 번호 줄 하나. */
+  const entries = (t: string, title: string) => {
+    const lines = t.split('\n\n').find((b) => b.startsWith(`▶ ${title}\n`))!.split('\n').slice(1)
+    const out: string[] = []
+    for (const l of lines) {
+      if (/^\d+\. /.test(l)) out.push(l)
+      else out[out.length - 1] += `\n${l}`
+    }
+    return out
+  }
 
   it('"🏆 대회 최종결과"로 시작하고, 마스터즈 → 리스타트 → 하이런상 → 경기 상세 순서다', () => {
     const t = text()
@@ -151,29 +161,49 @@ describe('카카오톡 문구 — 대회 최종결과가 먼저, 그 뒤에 본�
     expect(positions.every((p) => p >= 0)).toBe(true)
     expect([...positions].sort((a, b) => a - b)).toEqual(positions)
     expect(t).not.toContain('▶ 예선')
-    const section = (title: string) => t.split('\n\n').find((b) => b.startsWith(`▶ ${title}\n`))!.split('\n').slice(1)
-    expect(section('결승전')).toHaveLength(1)
-    expect(section('3·4위전')).toHaveLength(1)
-    expect(section('준결승전')).toHaveLength(2)
-    expect(section('8강')).toHaveLength(4)
+    expect(entries(t, '결승전')).toHaveLength(1)
+    expect(entries(t, '3·4위전')).toHaveLength(1)
+    expect(entries(t, '준결승전')).toHaveLength(2)
+    expect(entries(t, '8강')).toHaveLength(4)
   })
 
-  it('경기 한 줄은 모임탭 형식 그대로 — "번호. 이름 점수/핸디(달성률) vs 이름 점수/핸디(달성률)" + 승자에 (승)', () => {
-    const final = text().split('\n\n').find((b) => b.startsWith('▶ 결승전'))!.split('\n')[1]
+  it('경기 하나는 승자 줄이 먼저, 패자는 다음 줄 "vs" 뒤 — 점수 표기는 모임탭과 같은 "점수/핸디(달성률)"', () => {
+    const [final] = entries(text(), '결승전')
     // 8명 대진 결승: 가상선수1(승) 20/20(100%) vs 가상선수5 5/20(25%)
-    expect(final).toBe('1. 가상선수1 20/20(100%) (승) vs 가상선수5 5/20(25%)')
-    // 모든 경기 줄에 (승)이 정확히 한 번
-    const lines = text().split('\n').filter((l) => /^\d+\. /.test(l))
-    expect(lines.length).toBe(1 + 1 + 2 + 4)
-    for (const l of lines) expect(l.match(/\(승\)/g)).toHaveLength(1)
+    expect(final).toBe('1. 가상선수1 20/20(100%) (승)\n    vs 가상선수5 5/20(25%)')
+    // 모든 경기: 첫 줄(승자)에만 (승)이 한 번, 둘째 줄(패자)은 "    vs "로 시작하고 (승)이 없다
+    const all = ['결승전', '3·4위전', '준결승전', '8강'].flatMap((title) => entries(text(), title))
+    expect(all).toHaveLength(1 + 1 + 2 + 4)
+    for (const e of all) {
+      const [winnerLine, loserLine] = e.split('\n')
+      expect(winnerLine).toMatch(/^\d+\. \S.* \(승\)$/)
+      expect(loserLine.startsWith('    vs ')).toBe(true)
+      expect(loserLine).not.toContain('(승)')
+    }
+  })
+
+  it('경기 기록에서 B쪽이 이겨도 승자를 앞(위 줄)에 놓는다 — 승패 판정은 공식 승자 그대로', () => {
+    const matches = playMain8(false).map((m) => (m.id === 'r3m1'
+      ? { ...m, scoreA: 5, scoreB: 20, officialWinnerParticipantId: m.playerBParticipantId, officialLoserParticipantId: m.playerAParticipantId }
+      : m))
+    const [final] = entries(text('', matches), '결승전')
+    expect(final).toBe('1. 가상선수5 20/20(100%) (승)\n    vs 가상선수1 5/20(25%)')
+  })
+
+  it('이름 길이가 달라도 모양이 같다 — 승자 줄과 패자 줄로 나뉘어 긴 이름이 줄 가운데서 꺾이지 않는다', () => {
+    const longName = (id: string | null) => (id === 'p1' ? '아주긴이름가상선수' : nameOfMain(id))
+    const t = buildResultShareText(buildResultShareData({
+      mastersMatches: playMain8(true), mastersNameOf: longName, restartMatches: null, restartNameOf: nameOfRestart, highRun: '',
+    }))
+    expect(t).toContain('1. 아주긴이름가상선수 20/20(100%) (승)\n    vs 가상선수5 5/20(25%)')
   })
 
   it('달성률이 높은 쪽이 아니라 공식 승자에 (승)이 붙는다(동률을 관리자가 지정한 경우)', () => {
     const matches = playMain8(false).map((m) => (m.id === 'r3m1'
       ? { ...m, scoreA: 10, scoreB: 10, officialWinnerParticipantId: m.playerBParticipantId, officialLoserParticipantId: m.playerAParticipantId }
       : m))
-    const line = text('', matches).split('\n').find((l) => l.startsWith('1. ') && l.includes('10/20(50%)'))!
-    expect(line).toBe('1. 가상선수1 10/20(50%) vs 가상선수5 10/20(50%) (승)')
+    const [final] = entries(text('', matches), '결승전')
+    expect(final).toBe('1. 가상선수5 10/20(50%) (승)\n    vs 가상선수1 10/20(50%)')
   })
 
   it('16강 이전 라운드는 "예선"으로 묶고, 부전승·기권도 자연스럽게 표시한다(15명 대진)', () => {
@@ -190,9 +220,9 @@ describe('카카오톡 문구 — 대회 최종결과가 먼저, 그 뒤에 본�
     const positions = heads.map((h) => t.indexOf(h))
     expect(positions.every((p) => p >= 0)).toBe(true)
     expect([...positions].sort((a, b) => a - b)).toEqual(positions)
-    const early = t.split('\n\n').find((b) => b.startsWith('▶ 예선'))!.split('\n').slice(1)
+    const early = entries(t, '예선')
     expect(early).toHaveLength(8) // 1차 8경기 중 실제 7경기(기권 1 포함) + 부전승 1
-    expect(early[0]).toBe('1. 가상선수1 (승) vs 가상선수2 (기권)')
+    expect(early[0]).toBe('1. 가상선수1 (승)\n    vs 가상선수2 (기권)')
     expect(early.some((l) => l.endsWith('(부전승)') && l.includes('가상선수15'))).toBe(true)
   })
 
@@ -201,7 +231,7 @@ describe('카카오톡 문구 — 대회 최종결과가 먼저, 그 뒤에 본�
     const t = buildResultShareText(buildResultShareData({
       mastersMatches: m32, mastersNameOf: nameOfMain, restartMatches: null, restartNameOf: nameOfRestart, highRun: '',
     }))
-    const early = t.split('\n\n').find((b) => b.startsWith('▶ 예선'))!.split('\n').slice(1)
+    const early = entries(t, '예선')
     expect(early).toHaveLength(16 + 8) // 32강 16경기 + 16강 8경기
     expect(t.match(/▶ 예선/g)).toHaveLength(1)
     // 번호는 예선 안에서 1부터 이어진다

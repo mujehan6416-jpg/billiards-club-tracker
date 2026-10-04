@@ -103,11 +103,17 @@ export function buildRestartSection(matches: TournamentMatch[] | null, nameOf: P
 
 const pct = (n: number) => `${(n * 100).toFixed(0)}%`
 
+/** 패자 줄 들여쓰기 — 카톡은 글자 폭이 제각각이라 완전한 세로 맞춤은 안 되므로, "1. " 다음쯤에서 시작하도록 공백만 둔다. */
+const LOSER_INDENT = '    '
+
 /**
- * 경기 한 줄 — 모임탭 카톡 결과(lib/share.ts buildResultText)와 같은 모양:
- *   `1. 오용진 3/14(21%) vs 현응렬 13/23(57%) (승)`
- * 승자 쪽에 (승). 점수 / 당시 핸디(경기 시점 스냅샷) / 달성률(%). 승자는 공식 승자(officialWinner)를 그대로 쓴다.
- * 기권은 점수 없이 `이름 (승) vs 이름 (기권)`, 부전승은 `이름 (부전승)`. 아직 공식 확정되지 않은 경기는 null(출력하지 않음).
+ * 경기 한 줄 — 승자를 먼저(위 줄), 패자를 뒤(아래 줄 "vs" 다음)에 둔다. 모임탭 카톡 결과와 같은 점수 표기:
+ *   `1. 김명오 20/20(100%) (승)`
+ *   `    vs 강호철 13/23(57%)`
+ * 카톡은 폰 폭에 따라 긴 한 줄을 아무 데서나 꺾으므로, 승자·패자를 두 줄로 고정해 이름 길이와 상관없이 같은 모양이 되게 한다.
+ * 점수 / 당시 핸디(경기 시점 스냅샷) / 달성률(%). 승자는 공식 승자(officialWinner)를 그대로 쓴다(승패 계산은 하지 않는다).
+ * 기권은 점수 없이 `이름 (승)` / `vs 이름 (기권)`, 부전승은 `이름 (부전승)`. 아직 공식 확정되지 않은 경기는 null(출력하지 않음).
+ * 공식 승자가 기록되지 않은 예외 경기는 A·B 순서 그대로 둔다.
  */
 export function matchResultLine(index: number, m: TournamentMatch, nameOf: ParticipantNameOf): string | null {
   if (m.status !== 'official') return null
@@ -123,7 +129,10 @@ export function matchResultLine(index: number, m: TournamentMatch, nameOf: Parti
     const detail = score !== null && handicap !== null ? ` ${score}/${handicap}(${pct(rate(score, handicap))})` : ''
     return `${name}${detail}${isWinner ? ' (승)' : ''}`
   }
-  return `${index}. ${side(m.playerAParticipantId, m.scoreA, m.playerAHandicapSnapshot)} vs ${side(m.playerBParticipantId, m.scoreB, m.playerBHandicapSnapshot)}`
+  const a = side(m.playerAParticipantId, m.scoreA, m.playerAHandicapSnapshot)
+  const b = side(m.playerBParticipantId, m.scoreB, m.playerBHandicapSnapshot)
+  const [first, second] = winner !== null && winner === m.playerBParticipantId ? [b, a] : [a, b]
+  return `${index}. ${first}\n${LOSER_INDENT}vs ${second}`
 }
 
 /**
