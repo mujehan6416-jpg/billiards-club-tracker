@@ -15,21 +15,34 @@ export interface RestartResult {
 const rankText = (label: string) => label.replace(/^(마스터즈|리스타트) /, '')
 
 /**
- * 순위 칸 폭 — 카드 전체에서 하나로 정해, 모든 줄(하이런상 포함)의 이름 시작 위치가 세로로 같은 선에 오게 한다.
- * 보통은 "1위" 폭에 맞춰 좁게 두고, "공동 3위"가 있을 때만 넓힌다(라벨이 줄바꿈되지 않도록).
+ * 결과표 — 마스터즈·리스타트·하이런상 전체가 하나의 grid를 공유한다.
+ *   열: [왼쪽 여백 1fr] [순위 열] [이름 열] [오른쪽 여백 1fr]
+ * 모든 순위는 2열, 모든 이름은 3열에 놓이므로 순위 시작선·이름 시작선이 카드 전체에서 같고,
+ * 양쪽 여백 열이 같은 1fr이라 "순위 열 + 간격 + 이름 열" 표 전체가 카드 정중앙에 온다.
+ * 구역 제목·안내 문구·구분선은 네 열 전체에 걸쳐 놓아 카드 왼쪽에서 시작한다(표 폭 계산에는 영향 없음).
+ * 이름 열은 가장 긴 이름 폭(최대 NAME_COLUMN_MAX)이고, 더 긴 이름은 줄바꿈된다.
  */
-export const RANK_WIDTH = 64
-export const RANK_WIDTH_JOINT = 100
-export const RANK_GAP = 14
+export const RANK_GAP = 16
+export const NAME_COLUMN_MAX = 200
+const TABLE_COLUMNS = `1fr max-content fit-content(${NAME_COLUMN_MAX + RANK_GAP}px) 1fr`
+const FULL = '1 / -1'
+/** 순위 열 폭 기준 — 공동 3위가 없는 대회에서도 이만큼 확보해, 공동 3위가 생겨도 표 폭·위치가 바뀌지 않게 한다. */
+const RANK_WIDTH_SIZER = '공동 3위'
 
-/** 순위 + 이름이 같은 줄에 놓이는 한 행. 공동 순위는 이름을 같은 칸 안에서 한 줄에 한 명씩 쌓는다. */
-function ResultRow({ label, value, rankWidth, testId = 'result-row' }: { label: string; value: string; rankWidth: number; testId?: string }) {
+const rankStyle = { fontSize: 21, fontWeight: 700, color: '#444', whiteSpace: 'nowrap' } as const
+const nameStyle = { fontSize: 27, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', textAlign: 'left' } as const
+const titleStyle = { gridColumn: FULL, fontSize: 20, fontWeight: 800, color: '#0f6e56' } as const
+
+/** 결과 한 줄 — 순위(2열)와 이름(3열). 공동 순위는 이름 칸 안에서 한 줄에 한 명씩 쌓는다. 순위가 없으면(하이런상) 2열은 비운다. */
+function ResultRow({ label, value, testId = 'result-row' }: { label: string | null; value: string; testId?: string }) {
   return (
-    <div data-testid={testId} style={{ display: 'flex', alignItems: 'baseline', gap: RANK_GAP, width: '100%' }}>
-      <span data-testid="result-rank" style={{ fontSize: 21, fontWeight: 700, color: '#444', width: rankWidth, flexShrink: 0, whiteSpace: 'nowrap' }}>{label}</span>
-      <span data-testid="result-names" style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+    <div data-testid={testId} style={{ display: 'contents' }}>
+      {label !== null && (
+        <span data-testid="result-rank" style={{ ...rankStyle, gridColumn: 2, alignSelf: 'baseline' }}>{label}</span>
+      )}
+      <span data-testid="result-names" style={{ gridColumn: 3, paddingLeft: RANK_GAP, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, alignSelf: 'baseline' }}>
         {value.split(', ').map((name) => (
-          <span key={name} style={{ fontSize: 27, fontWeight: 800, color: '#111', overflowWrap: 'anywhere', textAlign: 'left' }}>{name}</span>
+          <span key={name} data-testid="result-name" style={nameStyle}>{name}</span>
         ))}
       </span>
     </div>
@@ -37,29 +50,28 @@ function ResultRow({ label, value, rankWidth, testId = 'result-row' }: { label: 
 }
 
 /** 한 부문(마스터즈/리스타트)의 결과: 구역 제목 아래에 "1위  이름" 줄이 순서대로 이어진다. */
-function CardSection({ section, rankWidth }: { section: ResultSection; rankWidth: number }) {
+function CardSection({ section, first = false }: { section: ResultSection; first?: boolean }) {
   return (
-    <div data-testid="result-section" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: '#0f6e56' }}>🏆 {section.title}</div>
-      {section.lines.map((l) => <ResultRow key={l.label} label={rankText(l.label)} value={l.value} rankWidth={rankWidth} />)}
+    <div data-testid="result-section" style={{ display: 'contents' }}>
+      <div style={first ? { ...titleStyle, gridRow: 1 } : titleStyle}>🏆 {section.title}</div>
+      {section.lines.map((l) => <ResultRow key={l.label} label={rankText(l.label)} value={l.value} />)}
       {section.notice && (
-        <div style={{ fontSize: 18, fontWeight: 600, color: section.status === 'pending' ? '#856404' : '#555' }}>{section.notice}</div>
+        <div style={{ gridColumn: FULL, fontSize: 18, fontWeight: 600, color: section.status === 'pending' ? '#856404' : '#555' }}>{section.notice}</div>
       )}
     </div>
   )
 }
 
 const divider = <div aria-hidden="true" style={{ height: 1, background: '#e3e3e3', width: '100%' }} />
+const tableDivider = <div aria-hidden="true" style={{ gridColumn: FULL, height: 1, background: '#e3e3e3', margin: '6px 0' }} />
 
 /**
  * 결과 이미지 카드 — 스마트폰 카카오톡용 세로형, 흰 배경, 큰 글씨. 이 DOM 그대로를 이미지로 만든다
- * (기존 정기모임 공유와 같은 shareImage). 위쪽 제목만 가운데 정렬하고, 결과는 "1위  이름"처럼 순위와 이름을 같은 줄에
- * 왼쪽부터 가지런히 놓는다. 이름이 길어도 줄바꿈되어 잘리지 않는다.
+ * (기존 정기모임 공유와 같은 shareImage). 위쪽 제목은 가운데 정렬, 결과는 하나의 2열 표(순위 | 이름)로 카드 정중앙에 놓는다.
+ * 이름이 길어도 줄바꿈되어 잘리지 않는다.
  */
 export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tournament; data: TournamentResultShareData }>(
   function TournamentResultCard({ tournament, data }, ref) {
-    const labels = [...data.masters.lines, ...data.restart.lines].map((l) => rankText(l.label))
-    const rankWidth = labels.some((l) => l.length > 3) ? RANK_WIDTH_JOINT : RANK_WIDTH
     return (
       <div
         ref={ref}
@@ -76,19 +88,28 @@ export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tou
           <span style={{ fontSize: 16, color: '#555' }}>{tournament.date}</span>
         </div>
         {divider}
-        <CardSection section={data.masters} rankWidth={rankWidth} />
-        {divider}
-        <CardSection section={data.restart} rankWidth={rankWidth} />
-        {data.highRun && (
-          <>
-            {divider}
-            <div data-testid="result-highrun" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: '#0f6e56' }}>🎯 하이런상</div>
-              {/* 순위 칸 자리를 비워 두고 이름을 위 결과 이름들과 같은 시작선에 놓는다 */}
-              <ResultRow label="" value={data.highRun} rankWidth={rankWidth} testId="result-highrun-row" />
-            </div>
-          </>
-        )}
+        <div data-testid="result-table" style={{ display: 'grid', gridTemplateColumns: TABLE_COLUMNS, rowGap: 12, width: '100%' }}>
+          {/* 순위 열 폭 기준(보이지 않음, 높이 0) — 첫 줄 제목과 같은 칸에 겹쳐 두어 줄 간격에 영향이 없다 */}
+          <span
+            data-testid="result-rank-sizer" aria-hidden="true"
+            style={{ ...rankStyle, gridColumn: 2, gridRow: 1, height: 0, overflow: 'hidden', visibility: 'hidden' }}
+          >
+            {RANK_WIDTH_SIZER}
+          </span>
+          <CardSection section={data.masters} first />
+          {tableDivider}
+          <CardSection section={data.restart} />
+          {data.highRun && (
+            <>
+              {tableDivider}
+              <div data-testid="result-highrun" style={{ display: 'contents' }}>
+                <div style={titleStyle}>🎯 하이런상</div>
+                {/* 순위 칸은 비우고 이름만 — 위 결과 이름들과 같은 이름 열(3열)에 놓인다 */}
+                <ResultRow label={null} value={data.highRun} testId="result-highrun-row" />
+              </div>
+            </>
+          )}
+        </div>
       </div>
     )
   },

@@ -221,7 +221,13 @@ describe('결과 이미지 카드 — 순위와 이름을 한 줄로, 리스타�
     fireEvent.change(screen.getByPlaceholderText('하이런상 이름'), { target: { value: '가상하이런' } })
   }
 
-  it('순위와 이름은 같은 줄에 놓인다 — "1위  이름"이 한 행(가로 배치)이고 이름은 가운데 정렬이 아니다', async () => {
+  // jsdom은 실제 글자 폭을 계산하지 못하므로 "하나의 공통 2열 표" 구조를 검사한다.
+  // 실제 픽셀(표 전체의 좌우 바깥 여백이 같은지, 이름 시작 X가 모두 같은지)은 폰 폭 390px 미리보기에서 따로 측정했다.
+  const table = () => screen.getByTestId('result-table')
+  const rankOf = (row: HTMLElement) => within(row).getByTestId('result-rank')
+  const namesOf = (row: HTMLElement) => within(row).getByTestId('result-names')
+
+  it('순위와 이름은 같은 줄에 놓인다 — "1위  이름"', async () => {
     await openCard()
     const expected: [string, string][] = [
       ['1위', '가상선수1'], ['2위', '가상선수5'], ['3위', '가상선수3'], ['4위', '가상선수7'],
@@ -231,54 +237,62 @@ describe('결과 이미지 카드 — 순위와 이름을 한 줄로, 리스타�
     expect(rows).toHaveLength(expected.length)
     rows.forEach((row, i) => {
       const [rank, name] = expected[i]
-      // 한 행 안에 순위와 이름이 함께 있고, 행은 가로(flex row)로 이어진다
-      expect(row.style.display).toBe('flex')
-      expect(row.style.flexDirection).toBe('') // 기본 = row
-      expect(row.firstElementChild!.textContent).toBe(rank)
+      expect(rankOf(row).textContent).toBe(rank)
       expect(row.textContent).toBe(`${rank}${name}`)
-      // 이름은 왼쪽 정렬(가운데 정렬 아님)
-      const nameEl = within(row as HTMLElement).getByText(name)
-      expect(nameEl.style.textAlign).toBe('left')
     })
-    // 하이런상: 제목 아래에 이름만(왼쪽 정렬)
-    const high = screen.getByTestId('result-highrun')
-    expect(high.textContent).toBe('🎯 하이런상가상하이런')
-    expect(within(high).getByText('가상하이런').style.textAlign).toBe('left')
   })
 
-  /** 이름 시작 위치를 정하는 값: 행의 간격 + 순위 칸 폭(줄어들지 않음, 줄바꿈 없음). 모두 같으면 이름이 같은 세로선에서 시작한다. */
-  const nameStart = (row: HTMLElement) => {
-    const rank = row.firstElementChild as HTMLElement
-    return `${row.style.gap}|${rank.style.width}/${rank.style.flexShrink}/${rank.style.whiteSpace}`
-  }
-
-  it('모든 줄의 이름 시작 위치가 세로로 가지런하다 — 순위 칸 폭·간격이 같고, "1위" 폭에 맞춰 좁게(64px) 둔다', async () => {
+  it('마스터즈·리스타트·하이런상 전체가 하나의 2열 표를 공유한다 — 양쪽 같은 여백 열(1fr) 사이에 순위 열·이름 열', async () => {
     await openCard()
-    const starts = screen.getAllByTestId('result-row').map(nameStart)
-    expect(new Set(starts).size).toBe(1)
-    expect(starts[0]).toBe('14px|64px/0/nowrap')
+    const t = table()
+    expect(t.style.display).toBe('grid')
+    expect(t.style.gridTemplateColumns).toBe('1fr max-content fit-content(216px) 1fr')
+    // 결과 줄은 따로 상자를 만들지 않고(display: contents) 순위·이름 칸이 곧바로 표의 칸이 된다
+    for (const row of screen.getAllByTestId('result-row')) {
+      expect(row.style.display).toBe('contents')
+      expect(rankOf(row).style.gridColumn).toBe('2') // 모든 순위는 2열 → 순위 시작선 동일
+      expect(namesOf(row).style.gridColumn).toBe('3') // 모든 이름은 3열 → 이름 시작선 동일
+      expect(rankOf(row).style.width).toBe('') // 줄마다 정하는 고정 폭 없음(열 폭은 표가 정한다)
+    }
+    // 마스터즈·리스타트·하이런상이 모두 같은 표 안에 있다(구역마다 따로 정렬하지 않는다)
+    for (const id of ['result-row', 'result-highrun-row']) {
+      for (const row of screen.getAllByTestId(id)) expect(t.contains(row)).toBe(true)
+    }
   })
 
-  it('하이런상 이름도 위 결과 이름들과 같은 시작선에 놓인다 — 순위 칸 자리를 비워 둔 같은 행 구조', async () => {
+  it('순위 열은 늘 "공동 3위" 폭만큼 확보한다 — 공동 3위가 생겨도 표 폭·위치가 바뀌지 않는다', async () => {
     await openCard()
-    const highRow = within(screen.getByTestId('result-highrun')).getByTestId('result-highrun-row')
-    expect(nameStart(highRow)).toBe(nameStart(screen.getAllByTestId('result-row')[0]))
-    expect(highRow.firstElementChild!.textContent).toBe('') // 순위 칸은 비어 있다
-    expect(highRow.lastElementChild!.textContent).toBe('가상하이런')
+    const sizer = screen.getByTestId('result-rank-sizer')
+    expect(sizer.textContent).toBe('공동 3위')
+    expect(sizer.style.gridColumn).toBe('2')
+    expect(sizer.style.visibility).toBe('hidden')
+    expect(sizer.style.height).toBe('0px')
   })
 
-  it('"공동 3위"가 있는 대회는 순위 칸을 넓혀(100px) 라벨이 줄바꿈되지 않고, 리스타트·하이런상도 같은 폭으로 맞춘다', async () => {
+  it('"공동 3위"도 같은 표 — 라벨은 2열, 이름 두 개는 3열 칸 안에 쌓인다', async () => {
     asAdmin()
     serve({ main: playMain8(false) }) // 3·4위전이 없는 대진 → 마스터즈 공동 3위
     await openMain()
     fireEvent.click(screen.getByText('경기결과 공유'))
     await waitFor(() => expect(card().getByText(nameOfRestart(champion))).toBeInTheDocument())
-    fireEvent.change(screen.getByPlaceholderText('하이런상 이름'), { target: { value: '가상하이런' } })
-    expect(card().getByText('공동 3위')).toBeInTheDocument()
-    const rows = [...screen.getAllByTestId('result-row'), screen.getByTestId('result-highrun-row')]
-    const starts = rows.map(nameStart)
-    expect(new Set(starts).size).toBe(1)
-    expect(starts[0]).toBe('14px|100px/0/nowrap')
+    const joint = screen.getAllByTestId('result-row').find((r) => r.textContent!.startsWith('공동 3위'))!
+    expect(rankOf(joint).style.gridColumn).toBe('2')
+    expect(namesOf(joint).style.gridColumn).toBe('3')
+    expect(namesOf(joint).children).toHaveLength(2)
+    expect(screen.getByTestId('result-table').style.gridTemplateColumns).toBe('1fr max-content fit-content(216px) 1fr')
+  })
+
+  it('하이런상 이름도 같은 이름 열(3열) — 위 결과 이름들과 시작선이 같고, 순위 칸은 비어 있다', async () => {
+    await openCard()
+    const high = screen.getByTestId('result-highrun')
+    expect(high.textContent).toBe('🎯 하이런상가상하이런')
+    const row = within(high).getByTestId('result-highrun-row')
+    expect(within(row).queryByTestId('result-rank')).toBeNull()
+    expect(namesOf(row).style.gridColumn).toBe('3')
+    expect(namesOf(row).style.paddingLeft).toBe(namesOf(screen.getAllByTestId('result-row')[0]).style.paddingLeft)
+    expect(namesOf(row).textContent).toBe('가상하이런')
+    // 하이런상 줄은 결과 줄(result-row)로 세지 않는다
+    expect(within(high).queryByTestId('result-row')).toBeNull()
   })
 
   it('구역 제목에 마스터즈·리스타트 이름이 있고, 줄에는 "1위"처럼 순위만 쓴다(중복 표기 없음)', async () => {
