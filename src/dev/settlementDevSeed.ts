@@ -35,6 +35,20 @@ export function buildScenarioA(): RegularSettlement {
       guest('가상참석자5', { dues: { amount: 30000, method: '현금', status: '입금확인' } }),
       guest('가상참석자6', { dues: { amount: 30000, method: '계좌이체', status: '입금확인' }, donation: { amount: 30000, method: '계좌이체', status: '입금확인' } }),
       guest('가상비회원1', { addedVia: 'manually_added_guest', dues: { amount: 30000, method: '현금', status: '입금확인' } }),
+      // 회비·찬조 여러 행: 가상회원A는 새 배열 구조(dues/donation에는 첫 행 복사본), 가상회원B는 예전 단일 값 구조.
+      guest('가상회원A', {
+        duesPayments: [
+          { amount: 50000, method: '계좌이체', status: '미확인' },
+          { amount: 30000, method: '현금', status: '입금확인' },
+        ],
+        dues: { amount: 50000, method: '계좌이체', status: '미확인' },
+        donationPayments: [
+          { amount: 100000, method: '현금', status: '입금확인' },
+          { amount: 50000, method: '계좌이체', status: '입금확인' },
+        ],
+        donation: { amount: 100000, method: '현금', status: '입금확인' },
+      }),
+      guest('가상회원B', { dues: { amount: 30000, method: '현금', status: '입금확인' }, donation: { amount: 20000, method: '현금', status: '입금확인' } }),
     ],
     expenses: [
       { id: 'dev-e1', date: '2026-02-07', label: '당구장 대관료', category: '대관비', amount: 100000, method: '체크카드', clubShare: 100000, personalDonation: 0 },

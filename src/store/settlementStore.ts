@@ -22,6 +22,11 @@ import {
   validateDinnerContribution,
   hasDuplicateDinnerRound,
   validateCashDeposit,
+  duesEntriesOf,
+  donationEntriesOf,
+  withDuesEntries,
+  withDonationEntries,
+  type IncomeRowCategory,
 } from '../logic/settlement'
 import { buildMemberShareText, buildPresidentShareText, buildPublicSummary } from '../lib/settlementShareText'
 import { useAdminAuthStore } from './adminAuthStore'
@@ -91,8 +96,20 @@ interface SettlementStoreState {
   addMemberParticipant: (settlementId: string, member: Member) => StoreResult
   addGuestParticipant: (settlementId: string, displayName: string) => StoreResult
   removeParticipant: (settlementId: string, participantId: string) => StoreResult
+  /** 첫 회비 행을 고친다(없으면 만든다). null이면 그 사람의 회비 행을 모두 비운다. */
   updateDues: (settlementId: string, participantId: string, patch: Partial<DuesPayment> | null) => StoreResult
+  /** 첫 찬조 행을 고친다(없으면 만든다). null이면 그 사람의 찬조 행을 모두 비운다. */
   updateDonation: (settlementId: string, participantId: string, patch: Partial<DonationPayment> | null) => StoreResult
+  /**
+   * 회비/찬조 행 하나를 고친다. index가 지금 행 개수와 같으면(=끝 다음) 새 행을 뒤에 붙인다.
+   * 저장 형태는 배열 전체 + 기존 dues/donation에 첫 행 복사본(옛 앱 호환).
+   */
+  updatePaymentRow: (
+    settlementId: string, participantId: string, category: IncomeRowCategory, index: number,
+    patch: Partial<DuesPayment> | Partial<DonationPayment>,
+  ) => StoreResult
+  /** 회비/찬조 행 하나만 지운다(다른 행은 그대로). 마지막 행을 지우면 그 구분은 빈 상태가 된다. */
+  removePaymentRow: (settlementId: string, participantId: string, category: IncomeRowCategory, index: number) => StoreResult
 
   addExpense: (settlementId: string, expense: Omit<SettlementExpense, 'id'>) => StoreResult
   updateExpense: (settlementId: string, expenseId: string, patch: Partial<Omit<SettlementExpense, 'id'>>) => StoreResult
@@ -311,8 +328,8 @@ export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
     // 결제수단이 바뀌면 확인 상태를 그 수단에 맞게 정규화한다(확정 정책):
     // 현금으로 바뀌면 즉시 확인 완료('입금확인')로, 계좌이체로 바뀌면 항상 기본 '미확인'으로 되돌린다
     // — 계좌이체였을 때의 이전 상태(예: 입금확인)를 그대로 들고 가서 임의로 확인 완료 처리되지 않도록.
-    // patch에 method가 없으면(금액만 수정 등) 상태는 건드리지 않는다.
-    updateDues: (settlementId, participantId, patch) => {
+    // patch에 method가 없으면(금액만 수정 등) 상태는 건드리지 않는다. 여러 행이면 행마다 따로 적용된다.
+    updatePaymentRow: (settlementId, participantId, category, index, patch) => {
       const blocked = guard(settlementId)
       if (blocked) return blocked
       set((s) => ({
@@ -320,18 +337,27 @@ export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
           ...st,
           participants: st.participants.map((p) => {
             if (p.id !== participantId) return p
-            if (patch === null) return { ...p, dues: undefined }
-            const merged = { ...(p.dues ?? { amount: 0, method: '현금', status: '미납' }), ...patch }
+            if (category === 'dues') {
+              const rows = [...duesEntriesOf(p)]
+              const merged: DuesPayment = { ...(rows[index] ?? { amount: 0, method: '현금', status: '미납' }), ...(patch as Partial<DuesPayment>) }
+              if (patch.method === '현금') merged.status = '입금확인'
+              else if (patch.method === '계좌이체') merged.status = '미확인'
+              rows[Math.min(index, rows.length)] = merged
+              return withDuesEntries(p, rows)
+            }
+            const rows = [...donationEntriesOf(p)]
+            const merged: DonationPayment = { ...(rows[index] ?? { amount: 0, method: '현금', status: '미확인' }), ...(patch as Partial<DonationPayment>) }
             if (patch.method === '현금') merged.status = '입금확인'
             else if (patch.method === '계좌이체') merged.status = '미확인'
-            return { ...p, dues: merged }
+            rows[Math.min(index, rows.length)] = merged
+            return withDonationEntries(p, rows)
           }),
         })),
       }))
       return { ok: true }
     },
 
-    updateDonation: (settlementId, participantId, patch) => {
+    removePaymentRow: (settlementId, participantId, category, index) => {
       const blocked = guard(settlementId)
       if (blocked) return blocked
       set((s) => ({
@@ -339,12 +365,36 @@ export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
           ...st,
           participants: st.participants.map((p) => {
             if (p.id !== participantId) return p
-            if (patch === null) return { ...p, donation: undefined }
-            const merged = { ...(p.donation ?? { amount: 0, method: '현금', status: '미확인' }), ...patch }
-            if (patch.method === '현금') merged.status = '입금확인'
-            else if (patch.method === '계좌이체') merged.status = '미확인'
-            return { ...p, donation: merged }
+            return category === 'dues'
+              ? withDuesEntries(p, duesEntriesOf(p).filter((_, i) => i !== index))
+              : withDonationEntries(p, donationEntriesOf(p).filter((_, i) => i !== index))
           }),
+        })),
+      }))
+      return { ok: true }
+    },
+
+    updateDues: (settlementId, participantId, patch) => {
+      if (patch !== null) return get().updatePaymentRow(settlementId, participantId, 'dues', 0, patch)
+      const blocked = guard(settlementId)
+      if (blocked) return blocked
+      set((s) => ({
+        settlements: patchSettlement(s.settlements, settlementId, (st) => ({
+          ...st,
+          participants: st.participants.map((p) => (p.id === participantId ? withDuesEntries(p, []) : p)),
+        })),
+      }))
+      return { ok: true }
+    },
+
+    updateDonation: (settlementId, participantId, patch) => {
+      if (patch !== null) return get().updatePaymentRow(settlementId, participantId, 'donation', 0, patch)
+      const blocked = guard(settlementId)
+      if (blocked) return blocked
+      set((s) => ({
+        settlements: patchSettlement(s.settlements, settlementId, (st) => ({
+          ...st,
+          participants: st.participants.map((p) => (p.id === participantId ? withDonationEntries(p, []) : p)),
         })),
       }))
       return { ok: true }

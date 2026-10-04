@@ -66,7 +66,7 @@ describe('1. 현금 회비', () => {
 describe('2. 현금 찬조', () => {
   it('상태 select 미노출, 총수입 포함, 미확인 합계 제외', () => {
     render(<DuesTable settlementId="settle-pm-1" />)
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '현금' } })
@@ -95,7 +95,7 @@ describe('3. 계좌이체 회비', () => {
 describe('4. 계좌이체 찬조', () => {
   it('상태 select 노출, 기본값 미확인, 총수입 제외, 미확인 합계 포함', () => {
     render(<DuesTable settlementId="settle-pm-1" />)
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
@@ -239,7 +239,7 @@ describe('10. 회비 30,000원 현금 + 찬조 20,000원 계좌이체 미확인'
     fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '현금' } })
 
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
@@ -258,7 +258,7 @@ describe('11. 회비만 계좌이체 → 회비 상태 select만 표시(찬조�
     fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
 
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '현금' } })
@@ -275,7 +275,7 @@ describe('12. 찬조만 계좌이체 → 찬조 상태 select만 표시(회비�
     fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '현금' } })
 
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
@@ -292,7 +292,7 @@ describe('13. 회비·찬조 둘 다 계좌이체 → 상태 select 두 개 모�
     fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
 
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
@@ -313,7 +313,7 @@ describe('14. 회비·찬조 상태 변경은 서로 영향을 주지 않는다'
     fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
 
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
@@ -336,7 +336,7 @@ describe('14. 회비·찬조 상태 변경은 서로 영향을 주지 않는다'
     fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
 
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })

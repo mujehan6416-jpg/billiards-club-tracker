@@ -13,11 +13,43 @@ import type {
   DuesStatus,
   DonationStatus,
   DonationPayment,
+  DuesPayment,
 } from '../types/settlement'
 import type { Member } from '../types'
 import { EXPENSE_CATEGORIES, displayExpenseCategory, DINNER_CATEGORY } from '../lib/settlementConstants'
 
 const sum = (nums: number[]) => nums.reduce((a, b) => a + b, 0)
+
+// ────────────────────────────────────────────────────────────
+// 회비·찬조 여러 행 — 읽기/저장 공통 기준
+//
+// 한 사람이 회비·찬조를 여러 번(또는 여러 결제수단으로) 나눠 낼 수 있도록 duesPayments/donationPayments
+// 배열을 쓴다. 예전 정산에는 배열이 없고 dues/donation 하나만 있으므로, 화면·합계·공유 문구·찬조자 계산은
+// 모두 아래 함수로만 읽는다 → 예전 정산은 변환(migration) 없이 그대로 1행으로 보이고 합계도 같다.
+// ────────────────────────────────────────────────────────────
+
+/** 회비 내역. duesPayments가 있으면 그 배열, 없으면 예전 단일 dues를 1행으로(그것도 없으면 빈 목록). */
+export function duesEntriesOf(p: SettlementParticipant): DuesPayment[] {
+  return p.duesPayments ?? (p.dues ? [p.dues] : [])
+}
+
+/** 찬조 내역. donationPayments가 있으면 그 배열, 없으면 예전 단일 donation을 1행으로(그것도 없으면 빈 목록). */
+export function donationEntriesOf(p: SettlementParticipant): DonationPayment[] {
+  return p.donationPayments ?? (p.donation ? [p.donation] : [])
+}
+
+/**
+ * 회비 행 목록을 참가자에 저장하는 형태로 만든다: 배열 전체 + dues에 첫 행 복사본(배열을 모르는 옛 앱도
+ * 첫 행은 볼 수 있게). 행이 하나도 없으면 dues도 비운다(예전 "회비 지우기"와 같은 결과).
+ */
+export function withDuesEntries(p: SettlementParticipant, rows: DuesPayment[]): SettlementParticipant {
+  return { ...p, duesPayments: rows, dues: rows[0] ? { ...rows[0] } : undefined }
+}
+
+/** 찬조 행 목록을 저장 형태로: 배열 전체 + donation에 첫 행 복사본. 행이 없으면 donation도 비운다. */
+export function withDonationEntries(p: SettlementParticipant, rows: DonationPayment[]): SettlementParticipant {
+  return { ...p, donationPayments: rows, donation: rows[0] ? { ...rows[0] } : undefined }
+}
 
 export interface SettlementIncomeSummary {
   duesCash: number
@@ -43,8 +75,9 @@ export interface SettlementIncomeSummary {
  * method만으로 판정한다 — 방어적 처리.)
  */
 export function calcIncomeSummary(settlement: RegularSettlement): SettlementIncomeSummary {
-  const dues = settlement.participants.map((p) => p.dues).filter((d): d is NonNullable<typeof d> => !!d)
-  const donations = settlement.participants.map((p) => p.donation).filter((d): d is NonNullable<typeof d> => !!d)
+  // 여러 행이면 모든 행을 각각 더한다(행마다 결제수단·확인상태가 따로 있다).
+  const dues = settlement.participants.flatMap(duesEntriesOf)
+  const donations = settlement.participants.flatMap(donationEntriesOf)
 
   const duesCash = sum(dues.filter((d) => d.method === '현금').map((d) => d.amount))
   const duesTransferConfirmed = sum(dues.filter((d) => d.method === '계좌이체' && d.status === '입금확인').map((d) => d.amount))
@@ -193,18 +226,28 @@ function isConfirmedDonation(donation: DonationPayment | undefined): donation is
   return donation.method === '현금' || donation.status === '입금확인'
 }
 
-/** 확정된 찬조자만 이름 목록으로 (일반 정기모임 감사문구용). 순서는 참가자 등록 순서를 따른다. */
+/** 참가자의 확정된 찬조 행만(여러 행이면 각각 판정). */
+const confirmedDonationsOf = (p: SettlementParticipant) => donationEntriesOf(p).filter(isConfirmedDonation)
+
+/**
+ * 확정된 찬조자만 이름 목록으로 (일반 정기모임 감사문구용). 순서는 참가자 등록 순서를 따른다.
+ * 한 사람이 찬조를 여러 행으로 냈어도 이름은 한 번만 나온다.
+ */
 export function confirmedDonorNames(participants: SettlementParticipant[]): string[] {
   return participants
-    .filter((p) => isConfirmedDonation(p.donation))
+    .filter((p) => confirmedDonationsOf(p).length > 0)
     .map((p) => p.displayName)
 }
 
-/** 확정된 찬조자 이름+금액 (정기대회 감사문구용). */
+/**
+ * 확정된 찬조자 이름+금액 (정기대회 감사문구용). 한 사람의 여러 찬조 행은 확정된 행만 더해 한 줄로 낸다
+ * (예: 현금 100,000 + 계좌이체 입금확인 50,000 → 150,000원). 미확인 계좌이체 행은 기존 규칙대로 빠진다.
+ */
 export function confirmedDonorAmounts(participants: SettlementParticipant[]): { name: string; amount: number }[] {
   return participants
-    .filter((p) => isConfirmedDonation(p.donation))
-    .map((p) => ({ name: p.displayName, amount: p.donation!.amount }))
+    .map((p) => ({ name: p.displayName, rows: confirmedDonationsOf(p) }))
+    .filter((d) => d.rows.length > 0)
+    .map((d) => ({ name: d.name, amount: sum(d.rows.map((r) => r.amount)) }))
 }
 
 /** 주요 지출 항목(금액 큰 순). 공유 요약에 몇 건만 노출할 때 사용. */
@@ -432,10 +475,8 @@ export function validateCashDeposit(
 // ────────────────────────────────────────────────────────────
 // 회비·찬조 입력표 (참가자별 dues/donation을 "이름·구분·금액·결제수단" 행으로 펼쳐서 보여준다)
 //
-// 참가자(SettlementParticipant)는 여전히 dues 최대 1개·donation 최대 1개만 갖는 기존 구조
-// 그대로다 — 데이터 구조를 바꾸지 않고, 표시할 때만 참가자 1명을 최대 2행(회비/찬조)으로 펼친다.
-// 한 사람에게 같은 구분(예: 회비)을 두 번 따로 기록하는 것은 이 구조에서 지원하지 않으며,
-// planAddTableRow가 이를 감지해 막는다(중복 구분 행 생성 방지 — 완료 보고에 한계로 기록).
+// 참가자 1명의 회비·찬조는 각각 여러 행일 수 있다(duesEntriesOf/donationEntriesOf 기준).
+// 표에는 회비 행들 다음에 찬조 행들이 이어진다.
 // ────────────────────────────────────────────────────────────
 
 export type IncomeRowCategory = 'dues' | 'donation'
@@ -444,6 +485,10 @@ export type IncomeRowMethod = DuesPaymentMethod | DonationPaymentMethod
 export interface IncomeTableRow {
   participantId: string
   category: IncomeRowCategory
+  /** 이 참가자의 같은 구분 행 목록 안에서의 위치(0부터). 아직 저장된 회비가 없는 기본 빈 행은 0. */
+  index: number
+  /** 실제로 저장된 행이면 true. 회비가 하나도 없는 참가자에게 보여주는 기본 빈 행은 false. */
+  saved: boolean
   displayName: string
   /** 아직 입력 안 됨(=dues/donation 자체가 없음)이면 undefined, 명시적으로 입력됐으면 그 금액(0 포함). */
   amount: number | undefined
@@ -457,18 +502,22 @@ export interface IncomeTableRow {
 }
 
 /**
- * 참가자 배열을 표의 행 순서(① 참석자 순서 그대로 → ② 같은 사람의 회비 행 다음 찬조 행)로 펼친다.
+ * 참가자 배열을 표의 행 순서(① 참석자 순서 그대로 → ② 같은 사람의 회비 행들 다음 찬조 행들)로 펼친다.
  * participants 배열 자체의 순서는 절대 바꾸지 않는다(정렬 없음) — 순서 보존은 이 함수가 아니라
  * settlementStore의 참가자 추가 액션들(항상 append)과 Firestore 배열 저장이 이미 보장한다.
- * 회비 행은 모든 참가자에 대해 항상 만든다(기본 행). 찬조 행은 donation이 있을 때만 만든다.
+ * 회비가 하나도 없는 참가자에게도 기본 빈 회비 행 1개를 만든다(saved=false). 찬조 행은 찬조가 있을 때만 만든다.
  */
 export function buildIncomeTableRows(participants: SettlementParticipant[]): IncomeTableRow[] {
   const rows: IncomeTableRow[] = []
   for (const p of participants) {
-    rows.push({ participantId: p.id, category: 'dues', displayName: p.displayName, amount: p.dues?.amount, method: p.dues?.method, status: p.dues?.status })
-    if (p.donation) {
-      rows.push({ participantId: p.id, category: 'donation', displayName: p.displayName, amount: p.donation.amount, method: p.donation.method, status: p.donation.status })
+    const base = { participantId: p.id, displayName: p.displayName }
+    const dues = duesEntriesOf(p)
+    if (dues.length === 0) {
+      rows.push({ ...base, category: 'dues', index: 0, saved: false, amount: undefined, method: undefined, status: undefined })
     }
+    dues.forEach((d, index) => rows.push({ ...base, category: 'dues', index, saved: true, amount: d.amount, method: d.method, status: d.status }))
+    donationEntriesOf(p).forEach((d, index) =>
+      rows.push({ ...base, category: 'donation', index, saved: true, amount: d.amount, method: d.method, status: d.status }))
   }
   return rows
 }
@@ -517,41 +566,39 @@ export type AddTableRowResult =
 
 /**
  * "행 추가"로 이름·구분을 입력했을 때 어떤 액션을 할지 판정한다(순수 함수, Firestore/store 미접근).
- * - 이름이 기존 참가자와 정확히 같고 그 구분이 아직 비어있으면 → 그 참가자에 값을 채운다(update-existing)
- * - 이름이 기존 참가자와 같은데 그 구분이 이미 있으면 → 중복 생성을 막는다(blocked)
+ * - 이름이 기존 참가자와 정확히 같으면 → 그 참가자에 그 구분의 행을 하나 더 붙인다(update-existing).
+ *   한 사람이 회비·찬조를 여러 행으로 낼 수 있으므로 이미 값이 있어도 막지 않는다.
  * - 이름이 새로우면 → 새 비회원 참가자를 만든다(create-guest, addGuestParticipant 재사용)
  */
 export function planAddTableRow(
   participants: SettlementParticipant[],
   name: string,
-  category: IncomeRowCategory,
+  // 구분과 관계없이 판정이 같지만, 호출부 시그니처는 유지한다.
+  _category: IncomeRowCategory,
 ): AddTableRowResult {
   const trimmed = name.trim()
   if (!trimmed) return { action: 'blocked', error: '이름을 입력해주세요.' }
   const existing = participants.find((p) => p.displayName === trimmed)
   if (!existing) return { action: 'create-guest' }
-  const already = category === 'dues' ? !!existing.dues : !!existing.donation
-  if (already) {
-    return {
-      action: 'blocked',
-      error: `${trimmed}님은 이미 ${category === 'dues' ? '회비' : '찬조'}가 입력되어 있습니다. 표에서 해당 행을 직접 수정해주세요.`,
-    }
-  }
   return { action: 'update-existing', participantId: existing.id }
 }
 
-export type DeleteTableRowResult = { action: 'clear-category' } | { action: 'remove-participant' }
+export type DeleteTableRowResult = { action: 'remove-row' } | { action: 'clear-category' } | { action: 'remove-participant' }
 
 /**
- * 표의 행 삭제(또는 초기화) 버튼을 눌렀을 때 어떤 액션을 할지 판정한다.
+ * 표의 행 삭제 버튼을 눌렀을 때 어떤 액션을 할지 판정한다.
+ * index를 주면 그 행 하나만 지우는 경우(remove-row), 주지 않으면 그 구분 전체를 비우는 경우(clear-category)다.
  * - 실제 모임 참석자(addedVia === 'meeting_attendee')는 절대 참가자 자체를 지우지 않는다
  *   (기본 참석자 행 삭제 금지 — 회비/찬조 값만 비운다).
- * - 그 외(관리자가 정산에만 추가한 사람)는, 지우려는 구분 외에 남는 값이 없으면 참가자 자체를 지운다.
+ * - 그 외(관리자가 정산에만 추가한 사람)는, 지운 뒤 남는 회비·찬조 행이 하나도 없으면 참가자 자체를 지운다.
  */
-export function planDeleteTableRow(participant: SettlementParticipant, category: IncomeRowCategory): DeleteTableRowResult {
-  if (participant.addedVia === 'meeting_attendee') return { action: 'clear-category' }
-  const willHaveOther = category === 'dues' ? !!participant.donation : !!participant.dues
-  return willHaveOther ? { action: 'clear-category' } : { action: 'remove-participant' }
+export function planDeleteTableRow(participant: SettlementParticipant, category: IncomeRowCategory, index?: number): DeleteTableRowResult {
+  const keep: DeleteTableRowResult = index === undefined ? { action: 'clear-category' } : { action: 'remove-row' }
+  if (participant.addedVia === 'meeting_attendee') return keep
+  const same = category === 'dues' ? duesEntriesOf(participant) : donationEntriesOf(participant)
+  const other = category === 'dues' ? donationEntriesOf(participant) : duesEntriesOf(participant)
+  const sameLeft = index === undefined ? 0 : same.filter((_, i) => i !== index).length
+  return sameLeft > 0 || other.length > 0 ? keep : { action: 'remove-participant' }
 }
 
 /**

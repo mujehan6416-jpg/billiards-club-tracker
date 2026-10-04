@@ -38,7 +38,14 @@ export interface DonationPayment {
   note?: string
 }
 
-/** 정산 대상자(참가 회원 또는 비회원) 1명. 회비·찬조는 별개 거래로 각각 선택 입력한다. */
+/**
+ * 정산 대상자(참가 회원 또는 비회원) 1명. 회비·찬조는 별개 거래로 각각 선택 입력한다.
+ *
+ * 한 사람이 회비·찬조를 여러 번(또는 현금+계좌이체처럼 여러 결제수단으로) 나눠 낼 수 있도록
+ * duesPayments/donationPayments 배열을 둔다. 예전 데이터에는 배열이 없고 dues/donation 하나만 있으므로,
+ * 읽을 때는 반드시 logic/settlement.ts의 duesEntriesOf/donationEntriesOf로 읽는다(배열이 없으면 단일 값을 1행으로 취급).
+ * 새 앱이 저장할 때는 배열과 함께 dues/donation에 첫 행을 그대로 복사해 둔다 — 배열을 모르는 옛 앱도 첫 행은 볼 수 있게.
+ */
 export interface SettlementParticipant {
   id: string
   participantType: ParticipantType
@@ -46,8 +53,14 @@ export interface SettlementParticipant {
   memberId: string | null
   displayName: string
   addedVia: AddedVia
+  /** 첫 회비 행의 복사본(옛 앱 호환용). 배열이 있으면 배열이 기준이다. */
   dues?: DuesPayment
+  /** 첫 찬조 행의 복사본(옛 앱 호환용). 배열이 있으면 배열이 기준이다. */
   donation?: DonationPayment
+  /** 회비 내역(여러 행). 없으면 dues 하나를 1행으로 본다. */
+  duesPayments?: DuesPayment[]
+  /** 찬조 내역(여러 행). 없으면 donation 하나를 1행으로 본다. */
+  donationPayments?: DonationPayment[]
 }
 
 /** 지출 1건. clubShare(모임 회계 부담액)만 모임 지출 집계에 들어가고, personalDonation은 개인이 낸 부분이다. */

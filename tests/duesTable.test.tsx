@@ -105,7 +105,7 @@ describe('확정 정책 검증: 계좌이체 미확인 합계 — DuesTable 확�
     fireEvent.blur(screen.getByLabelText('가상회원A 회비 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
 
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
@@ -128,7 +128,7 @@ describe('확정 정책 검증: 계좌이체 미확인 합계 — DuesTable 확�
     fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
     fireEvent.change(screen.getByLabelText('가상회원A 회비 확인상태'), { target: { value: '미확인' } })
 
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
@@ -152,7 +152,7 @@ describe('확정 정책 검증: 계좌이체 미확인 합계 — DuesTable 확�
     fireEvent.change(screen.getByLabelText('가상회원A 회비 결제수단'), { target: { value: '계좌이체' } })
     fireEvent.change(screen.getByLabelText('가상회원A 회비 확인상태'), { target: { value: '미확인' } })
 
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 금액'), { target: { value: '20000' } })
     fireEvent.blur(screen.getByLabelText('가상회원A 찬조 금액'))
     fireEvent.change(screen.getByLabelText('가상회원A 찬조 결제수단'), { target: { value: '계좌이체' } })
@@ -307,7 +307,7 @@ describe('회비·찬조 금액 입력칸 너비 — 모바일 표 배치를 위
 
   it('찬조 금액 입력칸도 동일한 축소 너비 스타일을 갖는다', () => {
     render(<DuesTable settlementId="settle-preview-1" />)
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     const input = screen.getByLabelText('가상회원A 찬조 금액') as HTMLInputElement
     expect(input.style.width).toBe('78px')
     expect(input.style.minWidth).toBe('70px')
@@ -351,7 +351,7 @@ describe('모바일 표 레이아웃 — 열 중앙 정렬 및 스크롤 보호'
 
   it('찬조 행도 회비 행과 같은 열 정렬(구분·금액·결제수단 중앙 정렬)을 갖는다', () => {
     render(<DuesTable settlementId="settle-preview-1" />)
-    fireEvent.click(screen.getByText('+ 찬조'))
+    fireEvent.click(screen.getByText('+ 찬조 추가'))
     const amountCell = screen.getByLabelText('가상회원A 찬조 금액').closest('td')!
     const categoryCell = amountCell.previousElementSibling as HTMLElement
     const methodCell = screen.getByLabelText('가상회원A 찬조 결제수단').closest('td')!
@@ -395,10 +395,10 @@ describe('모바일 표 레이아웃 — 열 중앙 정렬 및 스크롤 보호'
     expect(wrapper.style.overflowX).toBe('auto')
   })
 
-  it('표 최소 너비가 기존(480px)보다 좁아져(394px) 320px대 화면에서도 스크롤 폭이 과도하지 않다', () => {
+  it('표 최소 너비가 330px(삭제 열을 없애 4열·2줄 배치) — 390px 폰의 표 영역(약 360px) 안에 들어가 가로 스크롤이 없다', () => {
     const { container } = render(<DuesTable settlementId="settle-preview-1" />)
     const table = container.querySelector('table')!
-    expect(table.style.minWidth).toBe('394px')
+    expect(table.style.minWidth).toBe('330px')
   })
 })
 

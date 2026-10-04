@@ -841,9 +841,8 @@ describe('planAddTableRow', () => {
     expect(planAddTableRow(participants, '테스트회원A', 'donation')).toEqual({ action: 'update-existing', participantId: 'p1' })
   })
 
-  it('기존 참가자와 이름이 같고 그 구분이 이미 있으면 중복 생성을 막는다', () => {
-    const result = planAddTableRow(participants, '테스트회원A', 'dues')
-    expect(result.action).toBe('blocked')
+  it('기존 참가자와 이름이 같고 그 구분이 이미 있어도 막지 않는다 — 같은 사람에게 행을 하나 더 붙인다(여러 행 입력)', () => {
+    expect(planAddTableRow(participants, '테스트회원A', 'dues')).toEqual({ action: 'update-existing', participantId: 'p1' })
   })
 })
 
