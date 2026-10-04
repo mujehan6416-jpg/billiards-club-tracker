@@ -75,8 +75,8 @@ describe('B. 승자 이름 강조 (승패 판정은 그대로, 표시만)', () =
     expect(winner).toHaveStyle({ fontWeight: '800', color: WINNER_NAME_COLOR })
     expect(loser.dataset.winner).toBe('false')
     expect(loser).toHaveStyle({ fontWeight: '500', color: LOSER_NAME_COLOR })
-    expect(winner.closest('div')!.style.background).toBe('rgb(214, 240, 227)') // WINNER_NAME_BG
-    expect(loser.closest('div')!.style.background).not.toBe('rgb(214, 240, 227)')
+    expect(winner.closest('div')!.style.background).toBe('rgb(15, 110, 86)') // WINNER_NAME_BG
+    expect(loser.closest('div')!.style.background).not.toBe('rgb(15, 110, 86)')
     // 아직 승패가 없는 경기는 칠하지 않고 글자색도 바꾸지 않는다
     const { unmount } = render(<TournamentBracketVisual matches={pending} nameOf={nameOf} />)
     expect(screen.getAllByText('가상선수3')[1].style.color).toBe('')
@@ -94,7 +94,7 @@ describe('B. 승자 이름 강조 (승패 판정은 그대로, 표시만)', () =
       unmount()
     }
     expect(new Set(results).size).toBe(1)
-    expect(results[0]).toBe('true/800/rgb(11, 90, 69)')
+    expect(results[0]).toBe('true/800/rgb(255, 255, 255)')
   })
 
   it('부전승 경기는 승자 강조 대상이 아니다(점수 없는 진출이라 기존 표시 그대로)', () => {

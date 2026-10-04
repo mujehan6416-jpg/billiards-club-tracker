@@ -62,7 +62,7 @@ describe('전체 대진표', () => {
     expect(screen.getByText('테스트회원2')).toHaveStyle({ fontWeight: 500 })
   })
 
-  it('승자 칸은 연한 초록 배경으로 칠하고(iPad에서 굵기만으로는 구분이 약했다) 패자 칸에는 칠하지 않으며 테두리는 그대로다', () => {
+  it('승자 칸은 진한 초록으로 칠하고(iPad에서 굵기만으로는 구분이 약했다) 패자 칸에는 칠하지 않으며 테두리는 그대로다', () => {
     const matches = [normalMatch({
       status: 'official', scoreA: 15, scoreB: 12,
       officialWinnerParticipantId: 'p-1', officialLoserParticipantId: 'p-2',
@@ -70,8 +70,8 @@ describe('전체 대진표', () => {
     render(<TournamentBracketVisual matches={matches} nameOf={nameOf} />)
     const winnerBox = screen.getByText('테스트회원1').closest('div')!
     const loserBox = screen.getByText('테스트회원2').closest('div')!
-    expect(winnerBox.style.background).toBe('rgb(214, 240, 227)')
-    expect(loserBox.style.background).not.toBe('rgb(214, 240, 227)')
+    expect(winnerBox.style.background).toBe('rgb(15, 110, 86)')
+    expect(loserBox.style.background).not.toBe('rgb(15, 110, 86)')
     expect(winnerBox.style.border).toBe(loserBox.style.border)
   })
 

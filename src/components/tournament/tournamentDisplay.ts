@@ -54,18 +54,19 @@ export function roundLabel(playerCountInRound: number): string {
   return `${playerCountInRound}강`
 }
 
-/** 승자 이름 글자 색(진한 초록) · 승자 이름 배경(연한 초록) · 패자 이름 글자 색(차분한 진회색). */
-export const WINNER_NAME_COLOR = '#0b5a45'
-export const WINNER_NAME_BG = '#d6f0e3'
-export const LOSER_NAME_COLOR = '#6b6b6b'
+/** 승자 이름: 진한 초록 칠 위의 흰 글씨(대비 약 6:1) · 패자 이름: 차분한 진회색. */
+export const WINNER_NAME_COLOR = '#ffffff'
+export const WINNER_NAME_BG = '#0f6e56'
+export const LOSER_NAME_COLOR = '#555555'
 
 /**
  * 이름 한 칸의 굵기·색·배경 — 승패 판정에는 관여하지 않고 표시만 정한다.
  *
- * iPad(Safari)에서는 굵기(600↔800)와 초록 글자색만으로는 승자가 거의 구분되지 않았다(한글 시스템 글꼴이 굵기 차이를
- * 약하게 그리고, 진한 초록은 검정과 비슷해 보인다). 그래서 글꼴에 기대지 않는 차이를 함께 쓴다.
- *  - 승자: 연한 초록 배경 칠 + 진한 초록 글자 + 굵기 800  → 한눈에 "칠해진 이름"으로 보인다.
- *  - 패자: 굵기 400 + 차분한 진회색 → 상대적으로 물러나 보인다.
+ * iPad(Safari)에서는 굵기(600↔800)와 초록 글자색, 연한 초록 배경까지도 승자가 패자와 거의 구분되지 않았다
+ * (한글 시스템 글꼴이 굵기 차이를 약하게 그리고, 연한 칠은 흰 바탕과 비슷해 보인다). 그래서 글꼴·옅은 색에 기대지 않는
+ * 가장 큰 차이를 쓴다.
+ *  - 승자: 진한 초록 칠(이름 주변 알약 모양) + 흰 글자 + 굵기 800  → 어느 화면에서도 "칠해진 이름"이 한눈에 보인다.
+ *  - 패자: 칠 없음 + 굵기 400 + 차분한 진회색 → 평범하게 물러나 보인다.
  * 아직 승패가 없는 경기는 두 이름 모두 기존 모양(fallback 굵기)을 유지한다.
  */
 export function nameEmphasis(
