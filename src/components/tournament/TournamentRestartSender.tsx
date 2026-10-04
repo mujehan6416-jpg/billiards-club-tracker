@@ -4,6 +4,12 @@ import {
   isAlreadyInTarget, planRestartTransfer, restartTargetState,
   type RestartCandidate,
 } from '../../logic/tournamentRestart'
+import type { RestartFirstRoundStatus } from '../../logic/tournamentRestartBracket'
+
+/** 리스타트 대진 자동 생성 가능 여부 안내. ok:false면 이유를 그대로 보여준다. */
+export type RestartBracketPlan =
+  | { ok: false; message: string }
+  | { ok: true; status: RestartFirstRoundStatus; w: number; entrants: number; joinLabel: string }
 
 export interface RestartSendResult {
   added: number
@@ -20,13 +26,17 @@ export interface RestartSendResult {
  * 이미 보낸 뒤 본선 결과를 정정해도 리스타트 쪽 참가자는 자동으로 바뀌지 않는다.
  */
 export function TournamentRestartSender({
-  currentTournamentId, candidates, tournaments, loadTargetParticipants, onSend,
+  currentTournamentId, candidates, tournaments, loadTargetParticipants, onSend, bracketPlan, onCreateBracket,
 }: {
   currentTournamentId: string
   candidates: RestartCandidate[]
   tournaments: Tournament[]
   loadTargetParticipants: (targetId: string) => Promise<TournamentParticipant[]>
   onSend: (targetId: string, memberIds: string[]) => Promise<RestartSendResult>
+  /** 리스타트 대진 자동 생성 안내(없으면 이 구역을 보여주지 않는다). */
+  bracketPlan?: RestartBracketPlan
+  /** 대상 대회의 리스타트 대진을 자동 생성하고 완료 안내 문구를 돌려준다. 실패하면 Error를 던진다. */
+  onCreateBracket?: (targetId: string) => Promise<string>
 }) {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
@@ -77,6 +87,30 @@ export function TournamentRestartSender({
       setMessage(parts.join(' '))
     } catch {
       setMessage('처리하지 못했습니다. 인터넷 연결과 관리자 로그인 상태를 확인해 주세요.')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const createBracket = async () => {
+    if (!target || !onCreateBracket || working) return
+    if (!window.confirm(
+      [
+        `'${target.name}' 대회의 리스타트 대진을 자동으로 만듭니다.`,
+        '',
+        '본선 1차 탈락자로 1차전을 만들고, 다음 단계에 본선 탈락자가 들어올 자리를 미리 만듭니다.',
+        '한 번 만들면 다시 섞이지 않습니다. 진행하시겠습니까?',
+      ].join('\n'),
+    )) return
+    setWorking(true)
+    setMessage('')
+    try {
+      setMessage(await onCreateBracket(target.id))
+      setTargetId(null)
+      setTargetParticipants(null)
+      setSelected([])
+    } catch (e) {
+      setMessage(e instanceof Error && e.message ? e.message : '대진을 만들지 못했습니다. 인터넷 연결과 관리자 로그인 상태를 확인해 주세요.')
     } finally {
       setWorking(false)
     }
@@ -160,6 +194,35 @@ export function TournamentRestartSender({
             {working ? '처리 중...' : plan.toAdd.length > 0 ? `선택한 ${plan.toAdd.length}명 보내기` : '보낼 사람과 대회를 선택해 주세요'}
           </button>
         </>
+      )}
+
+      {bracketPlan && onCreateBracket && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>3. 리스타트 대진 자동 생성</div>
+          {!bracketPlan.ok ? (
+            <span className="muted" style={{ fontSize: 15 }}>{bracketPlan.message}</span>
+          ) : (
+            <>
+              <span style={{ fontSize: 16 }}>
+                본선 1차 경기 {bracketPlan.status.officialCount} / {bracketPlan.status.total} 최종 승인
+              </span>
+              <span className="muted" style={{ fontSize: 15 }}>
+                {bracketPlan.status.ready
+                  ? `1차 탈락자 ${bracketPlan.entrants}명으로 1차전을 자동으로 만들고`
+                    + `${bracketPlan.w * 2 > bracketPlan.entrants ? `(부전승 ${bracketPlan.w * 2 - bracketPlan.entrants}명은 추첨으로 자동 배정)` : ''}, `
+                    + `다음 단계에 ${bracketPlan.joinLabel.replace(' 합류 예정', '')} 자리 ${bracketPlan.w}개를 미리 만듭니다. 위에서 보낼 대회를 선택한 뒤 눌러 주세요.`
+                  : '본선 1차 경기가 모두 최종 승인되면 만들 수 있습니다.'}
+              </span>
+              <button
+                className="primary block" style={{ fontSize: 17, padding: 14, minHeight: 48 }}
+                disabled={!bracketPlan.status.ready || !target || working}
+                onClick={() => void createBracket()}
+              >
+                {working ? '처리 중...' : '리스타트 대진 자동 생성'}
+              </button>
+            </>
+          )}
+        </div>
       )}
 
       {message && <p className="info-msg" style={{ fontSize: 16, margin: 0 }}>{message}</p>}

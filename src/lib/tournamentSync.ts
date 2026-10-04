@@ -1,6 +1,7 @@
 import { collection, deleteField, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { db } from './firebase'
 import { createDrawMapping, createTournamentParticipant, validateDrawEntries } from '../logic/tournamentDraw'
+import { pendingRestartJoins } from '../logic/tournamentRestartBracket'
 import type { Game, Member } from '../types'
 import {
   adminEntersMatchResult as applyAdminEntry,
@@ -183,6 +184,7 @@ function toTournamentDoc(tournament: Tournament): Tournament {
     completedAt: tournament.completedAt,
     championParticipantId: tournament.championParticipantId,
     runnerUpParticipantId: tournament.runnerUpParticipantId,
+    restartSourceTournamentId: tournament.restartSourceTournamentId,
   })
 }
 
@@ -1058,4 +1060,121 @@ export async function finishTournament(
   } catch (e) {
     throw toSyncError(e)
   }
+}
+
+// ── 리스타트 대진 자동 생성 · 합류 자리 자동 채움 ─────────────────────────────
+//
+// 새 저장 구조를 만들지 않는다. 기존 경기·참가자·대회 문서에 선택 필드(playerBJoinFrom,
+// playerBJoinLabel, restartSourceTournamentId)만 더한다. Rules 변경이 필요 없다(관리자 쓰기).
+
+/**
+ * 리스타트 대진을 한 번에 확정한다 — 경기 전체와 대회 상태 변경을 하나의 배치로 묶는다(중간까지만
+ * 저장되는 상태를 만들지 않는다). 이미 경기 문서가 있으면 덮어쓰지 않고 막는다(한 번 만든 대진은 다시 섞지 않는다).
+ */
+export async function createRestartBracket(
+  restartTournamentId: string,
+  matches: TournamentMatch[],
+  input: { sourceTournamentId: string; bracketSize: number; participantCount: number; at: string },
+  clubId = DEFAULT_CLUB_ID,
+): Promise<void> {
+  if (matches.length === 0) {
+    throw new TournamentSyncError('validation', '저장할 경기가 없습니다.')
+  }
+  try {
+    const existing = await getDocs(matchesCol(clubId, restartTournamentId))
+    if (existing.docs.length > 0) {
+      throw new TournamentSyncError('blocked', '이미 대진이 만들어진 대회입니다. 기존 대진은 다시 만들 수 없습니다.')
+    }
+    const tournament = await getDoc(tournamentDoc(clubId, restartTournamentId))
+    if (!tournament.exists() || (tournament.data() as Tournament).status !== 'draft') {
+      throw new TournamentSyncError('blocked', '참가 신청 중인 대회에서만 리스타트 대진을 만들 수 있습니다.')
+    }
+    const batch = writeBatch(db)
+    for (const match of matches) {
+      batch.set(matchDoc(clubId, restartTournamentId, match.id), toMatchDoc(match))
+    }
+    batch.update(tournamentDoc(clubId, restartTournamentId), {
+      status: 'bracketFixed',
+      bracketSize: input.bracketSize,
+      participantCount: input.participantCount,
+      drawConfirmedAt: input.at,
+      restartSourceTournamentId: input.sourceTournamentId,
+    })
+    await batch.commit()
+  } catch (e) {
+    throw toSyncError(e)
+  }
+}
+
+/**
+ * 합류 자리 하나를 채운다. 저장 직전에 그 경기를 다시 읽어 B 자리가 이미 차 있으면 아무것도 쓰지 않는다
+ * (중복 배치·덮어쓰기 방지). 참가자 문서(없으면 새로 만들고, 있으면 '참가'로 바꿈)와 경기의 B 자리를
+ * 하나의 배치로 함께 쓴다. 반환값: 실제로 채웠으면 true.
+ */
+export async function placeRestartJoiner(
+  restartTournamentId: string,
+  matchId: string,
+  participant: TournamentParticipant,
+  participantExists: boolean,
+  clubId = DEFAULT_CLUB_ID,
+): Promise<boolean> {
+  try {
+    const fresh = await loadMatch(clubId, restartTournamentId, matchId)
+    if (fresh.playerBParticipantId) return false
+    const batch = writeBatch(db)
+    if (participantExists) {
+      batch.update(participantDoc(clubId, restartTournamentId, participant.id), { entryStatus: 'entered' })
+    } else {
+      batch.set(participantDoc(clubId, restartTournamentId, participant.id), toParticipantDoc(participant))
+    }
+    batch.update(matchDoc(clubId, restartTournamentId, matchId), {
+      playerBParticipantId: participant.id,
+      playerBMemberId: participant.memberId,
+      playerBHandicapSnapshot: participant.tournamentHandicap,
+    })
+    await batch.commit()
+    return true
+  } catch (e) {
+    throw toSyncError(e)
+  }
+}
+
+/**
+ * 리스타트 대회의 합류 예약 자리를 본선의 최종 승인(official) 결과로 자동으로 채운다. 여러 번 불러도
+ * 안전하다(이미 채운 자리는 건드리지 않는다). 본선 승인 직후, 리스타트 대진 생성 직후, 관리자가
+ * 리스타트 대회를 열 때 부른다. 반환값: 이번에 새로 채운 자리 수.
+ */
+export async function syncRestartJoiners(
+  restartTournamentId: string,
+  clubId = DEFAULT_CLUB_ID,
+): Promise<number> {
+  const restart = await fetchTournament(restartTournamentId, clubId)
+  const sourceId = restart?.restartSourceTournamentId
+  if (!restart || !sourceId) return 0
+
+  const [restartMatches, sourceMatches] = await Promise.all([
+    fetchTournamentMatches(restartTournamentId, clubId),
+    fetchTournamentMatches(sourceId, clubId),
+  ])
+  const joins = pendingRestartJoins(restartMatches, sourceMatches)
+  if (joins.length === 0) return 0
+
+  const [restartParticipants, sourceParticipants] = await Promise.all([
+    fetchTournamentParticipants(restartTournamentId, clubId),
+    fetchTournamentParticipants(sourceId, clubId),
+  ])
+  let placed = 0
+  for (const join of joins) {
+    const existing = restartParticipants.find((p) => p.memberId === join.memberId)
+    const source = sourceParticipants.find((p) => p.id === join.sourceParticipantId)
+    if (!existing && !source) continue // 선수 정보를 알 수 없으면 건너뛴다(다음 확인 때 다시 시도)
+    const participant: TournamentParticipant = existing
+      ? { ...existing, entryStatus: 'entered' }
+      : createTournamentParticipant(
+        { id: join.memberId, name: source!.displayNameSnapshot, handicap: source!.baseHandicapSnapshot },
+        { participantId: join.memberId, entryStatus: 'entered' },
+      )
+    if (await placeRestartJoiner(restartTournamentId, join.restartMatchId, participant, !!existing, clubId)) placed += 1
+  }
+  return placed
 }
