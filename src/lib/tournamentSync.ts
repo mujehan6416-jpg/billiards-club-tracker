@@ -1,4 +1,4 @@
-import { collection, deleteField, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
+import { collection, deleteField, doc, getDoc, getDocs, onSnapshot, runTransaction, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { db } from './firebase'
 import { createDrawMapping, createTournamentParticipant, validateDrawEntries } from '../logic/tournamentDraw'
 import { pendingRestartJoins } from '../logic/tournamentRestartBracket'
@@ -191,6 +191,28 @@ function toTournamentDoc(tournament: Tournament): Tournament {
 export async function createTournament(tournament: Tournament, clubId = DEFAULT_CLUB_ID): Promise<void> {
   try {
     await setDoc(tournamentDoc(clubId, tournament.id), toTournamentDoc(tournament))
+  } catch (e) {
+    throw toSyncError(e)
+  }
+}
+
+/**
+ * 대회 문서를 "없을 때만" 만든다. 이미 있으면 아무것도 쓰지 않고 그대로 둔다(진행 중인 대회를 덮어쓰지 않음).
+ * 읽기와 쓰기를 한 트랜잭션으로 묶어서, 두 기기가 같은 id로 동시에 만들려 해도 한 번만 만들어진다.
+ * 자동 생성 리스타트 대회(고정 id)에 쓴다. 참가자 문서는 만들지 않는다.
+ */
+export async function ensureTournamentDoc(
+  tournament: Tournament,
+  clubId = DEFAULT_CLUB_ID,
+): Promise<{ created: boolean }> {
+  try {
+    return await runTransaction(db, async (tx) => {
+      const ref = tournamentDoc(clubId, tournament.id)
+      const snap = await tx.get(ref)
+      if (snap.exists()) return { created: false }
+      tx.set(ref, toTournamentDoc(tournament))
+      return { created: true }
+    })
   } catch (e) {
     throw toSyncError(e)
   }

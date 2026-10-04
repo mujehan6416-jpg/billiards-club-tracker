@@ -102,6 +102,31 @@ export function restartTournamentName(sourceName: string): string {
   return `${normalizeTournamentName(sourceName)} 리스타트전`
 }
 
+/**
+ * 자동으로 만드는 리스타트 대회의 문서 id — 본선 id에서 정해진다(난수 아님).
+ * 두 기기가 동시에 만들려 해도 같은 문서 하나로 합쳐져 중복 대회가 생기지 않는다.
+ */
+export function restartTournamentId(sourceTournamentId: string): string {
+  return `restart-${sourceTournamentId}`
+}
+
+/**
+ * 자동 생성할 리스타트 대회 문서. 기존 대회 만들기와 같은 필드만 쓰고(새 구조 없음), 본선에서는 이름·날짜·
+ * 제한시간만 가져온다. 참가자 문서는 만들지 않는다 — 본선 참가자를 복사하지 않으며, 리스타트 대상자는
+ * 본선 1차 탈락자가 최종 승인된 뒤에만 들어온다. 참가자 확정·대진 확정·종료 전(draft)이다.
+ */
+export function buildRestartTournament(source: Tournament, nowIso: string, adminUid?: string | null): Tournament {
+  return {
+    id: restartTournamentId(source.id),
+    name: restartTournamentName(source.name),
+    date: source.date,
+    timeLimitMinutes: source.timeLimitMinutes,
+    status: 'draft',
+    createdAt: nowIso,
+    ...(adminUid ? { createdByAdminUid: adminUid } : {}),
+  }
+}
+
 export type RestartTargetLookup =
   | { kind: 'found'; tournament: Tournament }
   | { kind: 'missing'; expectedName: string; message: string }
@@ -116,9 +141,11 @@ export type RestartTargetLookup =
  */
 export function findRestartTarget(current: Tournament, tournaments: Tournament[]): RestartTargetLookup {
   const expectedName = restartTournamentName(current.name)
-  const sameName = tournaments.filter((t) => t.id !== current.id && normalizeTournamentName(t.name) === expectedName)
+  // 이름이 정확히 같은 대회, 또는 이 본선에서 자동 생성한 대회(고정 id — 나중에 이름을 고쳤어도 같은 대회로 본다)
+  const autoId = restartTournamentId(current.id)
+  const sameName = tournaments.filter((t) => t.id !== current.id && (t.id === autoId || normalizeTournamentName(t.name) === expectedName))
   if (sameName.length === 0) {
-    return { kind: 'missing', expectedName, message: `'${expectedName}' 대회를 먼저 만들어 주세요.` }
+    return { kind: 'missing', expectedName, message: `'${expectedName}' 대회가 아직 없습니다.` }
   }
   if (sameName.length === 1) return { kind: 'found', tournament: sameName[0] }
   const sameDate = sameName.filter((t) => t.date === current.date)
