@@ -48,7 +48,7 @@ beforeEach(() => {
 })
 
 describe('[재현] CashDepositForm — 버그 당시엔 이 탭에 저장 버튼 자체가 없었다', () => {
-  it('현금입금 탭에 "임시저장" 버튼이 보인다', () => {
+  it('현금·통장 탭에 "임시저장" 버튼이 보인다', () => {
     render(<CashDepositForm settlementId="settle-cash-1" />)
     expect(screen.getByText('임시저장')).toBeInTheDocument()
   })

@@ -38,7 +38,7 @@ describe('[재현 및 수정 확인] 회식비 탭 제거 — 지출 분류 회�
     expect(screen.queryByText('회식비')).not.toBeInTheDocument()
   })
 
-  it('상단 탭은 참가자·지출·현금입금·집계/확정·공유 5개만 남는다', () => {
+  it('상단 탭은 참가자·지출·현금·통장·집계/확정·공유 5개만 남는다', () => {
     render(<SettlementTab devMembers={[]} devSessions={[]} />)
     for (const label of ['참가자', '지출', '공유']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()

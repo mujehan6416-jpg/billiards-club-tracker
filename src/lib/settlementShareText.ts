@@ -1,14 +1,17 @@
 import type { DinnerContribution, RegularSettlement, SettlementPublicSummary } from '../types/settlement'
 import {
   allExpenseLineItems,
+  buildFundMovementLog,
   calcBankSummary,
   calcCashSummary,
   calcExpenseByCategory,
+  calcHoldingsSummary,
   calcIncomeSummary,
   calcProfitSummary,
   confirmedDonorAmounts,
   confirmedDonorNames,
   majorExpenses,
+  withdrawalsOf,
 } from '../logic/settlement'
 import { DINNER_CATEGORY, displayExpenseCategory } from './settlementConstants'
 
@@ -122,6 +125,22 @@ export function buildPresidentShareText(settlement: RegularSettlement): string {
     `현금 잔액(입금 후) ${won(cash.cashBalanceAfterDeposit)}`,
     `계좌이체 미확인 금액 ${won(bank.unconfirmedTransferAmount)}`,
   ]
+  // 통장에서 현금 인출 기록이 있는 정산에만 추가한다 — 없으면 예전 문구와 글자 하나 다르지 않다.
+  if (withdrawalsOf(settlement).length > 0) {
+    const holdings = calcHoldingsSummary(settlement)
+    lines.push(
+      `통장에서 현금 인출 ${won(cash.bankWithdrawal)}`,
+      `현금 잔액(인출 반영) ${won(cash.cashBalance)}`,
+      `전체 보유액(통장+현금) ${won(holdings.totalHoldings)}`,
+    )
+    // 통장 거래내역과 대조할 수 있게 날짜순으로(인출·입금확인 입금 함께). 회원용 문구·공개 요약에는 넣지 않는다.
+    lines.push('[자금이동 내역]')
+    for (const e of buildFundMovementLog(settlement)) {
+      const day = e.date.length >= 10 ? `${e.date.slice(5, 7)}/${e.date.slice(8, 10)}` : e.date
+      const kind = e.kind === 'withdrawal' ? '통장→현금' : '현금→통장'
+      lines.push(`${day} ${kind} ${won(e.amount)}${e.note ? ` (${e.note})` : ''}`)
+    }
+  }
   return lines.join('\n')
 }
 

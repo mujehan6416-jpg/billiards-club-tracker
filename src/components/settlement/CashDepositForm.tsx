@@ -53,7 +53,9 @@ export function CashDepositForm({ settlementId, previewMode = false }: { settlem
       {!locked && (
         <div className="card col-card">
           <span style={{ fontWeight: 700, fontSize: 14 }}>{editingId ? '현금 통장 입금 수정' : '현금 통장 입금 추가'}</span>
-          <input type="date" value={form.depositDate} onChange={(e) => set('depositDate')(e.target.value)} />
+          <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>입금일 (현금을 통장에 넣은 날)</span>
+          <input type="date" aria-label="입금일" value={form.depositDate} onChange={(e) => set('depositDate')(e.target.value)} />
+          <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>금액</span>
           <MoneyInput value={form.amount} placeholder="입금액" onChange={set('amount')} style={moneyInputStyle} />
           <select value={form.status} onChange={(e) => set('status')(e.target.value)}>
             <option value="입금전">입금전</option>
@@ -61,7 +63,8 @@ export function CashDepositForm({ settlementId, previewMode = false }: { settlem
             <option value="입금확인">입금확인</option>
             <option value="취소">취소</option>
           </select>
-          <input placeholder="비고 (선택)" value={form.note} onChange={(e) => set('note')(e.target.value)} />
+          <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>메모</span>
+          <input placeholder="메모 (선택)" value={form.note} onChange={(e) => set('note')(e.target.value)} />
           {error && <p className="info-msg" style={{ background: '#fdeceb', color: '#c0392b' }}>{error}</p>}
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button" className="primary grow" onClick={submit}>{editingId ? '수정 저장' : '입금 추가'}</button>
@@ -75,7 +78,7 @@ export function CashDepositForm({ settlementId, previewMode = false }: { settlem
         <div key={d.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontWeight: 600 }}>{fmt(d.amount)}원 <span className="muted" style={{ fontSize: 12 }}>({d.status})</span></div>
-            <div className="muted" style={{ fontSize: 13 }}>{d.depositDate}{d.note ? ` · ${d.note}` : ''}</div>
+            <div className="muted" style={{ fontSize: 13, overflowWrap: 'anywhere' }}>입금일 {d.depositDate}{d.note ? ` · ${d.note}` : ''}</div>
           </div>
           {!locked && (
             <div style={{ display: 'flex', gap: 6 }}>

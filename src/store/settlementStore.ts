@@ -6,6 +6,7 @@ import type {
   SettlementExpense,
   DinnerContribution,
   CashDeposit,
+  BankCashWithdrawal,
   SettlementStatus,
   DuesPayment,
   DonationPayment,
@@ -22,6 +23,7 @@ import {
   validateDinnerContribution,
   hasDuplicateDinnerRound,
   validateCashDeposit,
+  validateBankCashWithdrawal,
   duesEntriesOf,
   donationEntriesOf,
   withDuesEntries,
@@ -122,6 +124,13 @@ interface SettlementStoreState {
   addCashDeposit: (settlementId: string, deposit: Omit<CashDeposit, 'id'>) => StoreResult
   updateCashDeposit: (settlementId: string, depositId: string, patch: Partial<Omit<CashDeposit, 'id'>>) => StoreResult
   deleteCashDeposit: (settlementId: string, depositId: string) => StoreResult
+
+  /**
+   * 통장에서 현금 인출 추가/삭제(통장 → 현금 전용). 수입·지출에는 영향이 없고 통장잔액은 줄고 현금잔액은 는다.
+   * 현금 → 통장 입금은 addCashDeposit이 담당한다(같은 거래를 두 군데 입력하지 않도록 여기엔 두지 않는다).
+   */
+  addBankCashWithdrawal: (settlementId: string, withdrawal: Omit<BankCashWithdrawal, 'id' | 'createdAt'>) => StoreResult
+  deleteBankCashWithdrawal: (settlementId: string, withdrawalId: string) => StoreResult
 
   updatePrevBankBalance: (settlementId: string, amount: number) => StoreResult
   updateOtherBankAdjustment: (settlementId: string, amount: number) => StoreResult
@@ -528,6 +537,32 @@ export const useSettlementStore = create<SettlementStoreState>()((set, get) => {
         settlements: patchSettlement(s.settlements, settlementId, (st) => ({
           ...st,
           cashDeposits: st.cashDeposits.filter((d) => d.id !== depositId),
+        })),
+      }))
+      return { ok: true }
+    },
+
+    addBankCashWithdrawal: (settlementId, withdrawal) => {
+      const blocked = guard(settlementId)
+      if (blocked) return blocked
+      const validation = validateBankCashWithdrawal(withdrawal)
+      if (!validation.ok) return validation
+      set((s) => ({
+        settlements: patchSettlement(s.settlements, settlementId, (st) => ({
+          ...st,
+          bankCashWithdrawals: [...(st.bankCashWithdrawals ?? []), { ...withdrawal, id: uid(), createdAt: now() }],
+        })),
+      }))
+      return { ok: true }
+    },
+
+    deleteBankCashWithdrawal: (settlementId, withdrawalId) => {
+      const blocked = guard(settlementId)
+      if (blocked) return blocked
+      set((s) => ({
+        settlements: patchSettlement(s.settlements, settlementId, (st) => ({
+          ...st,
+          bankCashWithdrawals: (st.bankCashWithdrawals ?? []).filter((w) => w.id !== withdrawalId),
         })),
       }))
       return { ok: true }

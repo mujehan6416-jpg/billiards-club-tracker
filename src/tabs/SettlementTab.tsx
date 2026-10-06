@@ -6,6 +6,8 @@ import type { ImportAttendeesResult } from '../store/settlementStore'
 import { DuesTable } from '../components/settlement/DuesTable'
 import { SettlementExpenseForm } from '../components/settlement/SettlementExpenseForm'
 import { CashDepositForm } from '../components/settlement/CashDepositForm'
+import { BankCashWithdrawalForm } from '../components/settlement/BankCashWithdrawalForm'
+import { FundMovementLog } from '../components/settlement/FundMovementLog'
 import { SettlementSummary } from '../components/settlement/SettlementSummary'
 import { SettlementSharePreview } from '../components/settlement/SettlementSharePreview'
 import { SettlementDeleteControl } from '../components/settlement/SettlementDeleteControl'
@@ -30,7 +32,7 @@ type Section = 'participants' | 'expenses' | 'cash' | 'summary' | 'share'
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'participants', label: '참가자' },
   { key: 'expenses', label: '지출' },
-  { key: 'cash', label: '현금\n입금' },
+  { key: 'cash', label: '현금·통장' },
   { key: 'summary', label: '집계\n/확정' },
   { key: 'share', label: '공유' },
 ]
@@ -212,7 +214,14 @@ export function SettlementTab({ devMembers, devSessions, previewMode = false }: 
           {section === 'expenses' && (
             <SettlementExpenseForm settlementId={settlement.id} previewMode={previewMode} />
           )}
-          {section === 'cash' && <CashDepositForm settlementId={settlement.id} previewMode={previewMode} />}
+          {section === 'cash' && (
+            <>
+              <BankCashWithdrawalForm settlementId={settlement.id} />
+              <span style={{ fontWeight: 700, fontSize: 16, padding: '0 4px' }}>② 현금을 통장에 입금</span>
+              <CashDepositForm settlementId={settlement.id} previewMode={previewMode} />
+              <FundMovementLog settlementId={settlement.id} />
+            </>
+          )}
           {section === 'summary' && <SettlementSummary settlementId={settlement.id} previewMode={previewMode} />}
           {section === 'share' && <SettlementSharePreview settlementId={settlement.id} />}
         </>

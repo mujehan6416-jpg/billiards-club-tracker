@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useSettlementStore } from '../../store/settlementStore'
 import { useAuth } from '../../store/authStore'
+import { calcHoldingsSummary, withdrawalsOf } from '../../logic/settlement'
 import { MoneyInput } from '../MoneyInput'
+import { FundMovementLog } from './FundMovementLog'
 
 const fmt = (n: number) => `${n.toLocaleString('ko-KR')}원`
 const parseAmt = (v: string) => parseInt(v.replace(/[^0-9-]/g, '') || '0', 10)
@@ -39,6 +41,8 @@ export function SettlementSummary({ settlementId, previewMode = false }: { settl
   const summary = getSummary(settlementId)
   if (!summary) return null
   const { income, expense, profit, cash, bank } = summary
+  const holdings = calcHoldingsSummary(settlement)
+  const hasWithdrawals = withdrawalsOf(settlement).length > 0
   const actorDisplayName = memberName ?? '관리자'
   const locked = settlement.status === 'confirmed' || settlement.status === 'cancelled'
   const saving = syncStatus === 'saving'
@@ -96,6 +100,12 @@ export function SettlementSummary({ settlementId, previewMode = false }: { settl
         <div className="muted" style={{ fontSize: 13 }}>현금 수입 {fmt(cash.cashIncome)} · 현금 지출 {fmt(cash.cashExpense)}</div>
         <div className="muted" style={{ fontSize: 13 }}>입금 전 잔액 {fmt(cash.cashBalanceBeforeDeposit)} · 통장 입금 {fmt(cash.confirmedDeposit)}</div>
         <div style={{ fontWeight: 700 }}>입금 후 현금 잔액 {fmt(cash.cashBalanceAfterDeposit)}</div>
+        {hasWithdrawals && (
+          <>
+            <div className="muted" style={{ fontSize: 13 }}>통장에서 현금 인출 +{fmt(cash.bankWithdrawal)}</div>
+            <div style={{ fontWeight: 700 }}>현금잔액 (인출 반영) {fmt(cash.cashBalance)}</div>
+          </>
+        )}
       </div>
 
       <div className="card col-card">
@@ -118,6 +128,9 @@ export function SettlementSummary({ settlementId, previewMode = false }: { settl
         </div>
         <div className="muted" style={{ fontSize: 13 }}>확인된 계좌이체 수입 {fmt(bank.confirmedTransferIncome)} · 통장 입금액 {fmt(bank.confirmedCashDeposit)}</div>
         <div className="muted" style={{ fontSize: 13 }}>체크카드 지출 {fmt(bank.cardExpense)} · 계좌이체 지출 {fmt(bank.transferExpense)}</div>
+        {hasWithdrawals && (
+          <div className="muted" style={{ fontSize: 13 }}>통장에서 현금 인출 −{fmt(bank.bankWithdrawal)}</div>
+        )}
         {bank.unconfirmedTransferAmount > 0 && (
           <div style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>
             <div>⚠ 계좌이체 미확인 합계 {fmt(bank.unconfirmedTransferAmount)}</div>
@@ -128,6 +141,31 @@ export function SettlementSummary({ settlementId, previewMode = false }: { settl
           <span style={{ fontWeight: 700 }}>현재 통장 잔액</span>
           <span style={{ fontWeight: 700, fontSize: 18 }}>{fmt(bank.currentBalance)}</span>
         </div>
+      </div>
+
+      <FundMovementLog settlementId={settlementId} />
+
+      <div className="card col-card">
+        <span style={{ fontWeight: 700, fontSize: 14 }}>💼 자금 현황 (관리자 전용)</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><span>총수입</span><span style={{ fontWeight: 600 }}>{fmt(profit.totalIncome)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><span>총지출</span><span style={{ fontWeight: 600 }}>{fmt(profit.totalExpense)}</span></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: holdings.bankBalance < 0 ? '#c0392b' : undefined }}>
+          <span>통장잔액</span><span style={{ fontWeight: 600 }}>{fmt(holdings.bankBalance)}</span>
+        </div>
+        {holdings.bankBalance < 0 && (
+          <div style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>⚠ 통장잔액이 마이너스입니다. 전월 통장 잔액과 현금 인출을 확인해주세요.</div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: holdings.cashBalance < 0 ? '#c0392b' : undefined }}>
+          <span>현금잔액</span><span style={{ fontWeight: 600 }}>{fmt(holdings.cashBalance)}</span>
+        </div>
+        {holdings.cashBalance < 0 && (
+          <div style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>⚠ 현금잔액이 마이너스입니다. 현금 지출·현금 통장 입금을 확인해주세요.</div>
+        )}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 6, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ fontWeight: 700 }}>전체 보유액</span>
+          <span style={{ fontWeight: 700, fontSize: 18 }}>{fmt(holdings.totalHoldings)}</span>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>전체 보유액 = 통장잔액 + 현금잔액 (통장에서 현금 인출·현금 통장 입금은 전체 보유액을 바꾸지 않습니다)</div>
       </div>
 
       {error && <p className="info-msg" style={{ background: '#fdeceb', color: '#c0392b' }}>{error}</p>}

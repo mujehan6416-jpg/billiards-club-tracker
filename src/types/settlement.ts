@@ -117,6 +117,21 @@ export interface CashDeposit {
   note?: string
 }
 
+/**
+ * 통장에서 현금을 찾아온(인출) 기록 1건 — 통장 → 현금 한 방향 전용.
+ * 수입도 지출도 아니므로 총수입·총지출·모임 순익에는 절대 들어가지 않고, 통장잔액은 줄고 현금잔액은
+ * 늘어난다(전체 보유액 = 통장잔액 + 현금잔액은 그대로).
+ * 반대 방향(현금 → 통장 입금)은 이미 있는 CashDeposit(cashDeposits)이 담당한다 — 같은 거래를 두 곳에
+ * 입력해 이중 반영되지 않도록 여기에는 입금 기록을 두지 않는다.
+ */
+export interface BankCashWithdrawal {
+  id: string
+  amount: number
+  date: string
+  note?: string
+  createdAt?: string
+}
+
 export interface RevisionEntry {
   fromStatus: SettlementStatus
   toStatus: SettlementStatus
@@ -142,6 +157,11 @@ export interface RegularSettlement {
   expenses: SettlementExpense[]
   dinnerContributions: DinnerContribution[]
   cashDeposits: CashDeposit[]
+  /**
+   * 통장에서 현금 인출 내역. 예전 정산에는 이 필드가 없으므로(마이그레이션 없음) 읽을 때는
+   * 반드시 logic/settlement.ts의 withdrawalsOf로 읽는다(없으면 빈 목록).
+   */
+  bankCashWithdrawals?: BankCashWithdrawal[]
 
   prevBankBalance: number
   otherBankAdjustment: number

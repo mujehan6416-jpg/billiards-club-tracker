@@ -14,6 +14,7 @@ import type {
   DonationStatus,
   DonationPayment,
   DuesPayment,
+  BankCashWithdrawal,
 } from '../types/settlement'
 import type { Member } from '../types'
 import { EXPENSE_CATEGORIES, displayExpenseCategory, DINNER_CATEGORY } from '../lib/settlementConstants'
@@ -149,15 +150,81 @@ export function calcProfitSummary(settlement: RegularSettlement): SettlementProf
   return { totalIncome, totalExpense, netProfit: totalIncome - totalExpense }
 }
 
+// ────────────────────────────────────────────────────────────
+// 통장에서 현금 인출 (통장 → 현금 한 방향 전용)
+//
+// 인출은 수입도 지출도 아니다 — 총수입·총지출·모임 순익(calcIncomeSummary/calcExpenseSummary/
+// calcProfitSummary)에는 전혀 들어가지 않고, 아래 현금·통장 잔액 계산에서만 반대로 반영된다.
+// 반대 방향(현금 → 통장 입금)은 기존 cashDeposits가 담당하며 그 계산은 그대로다 — 여기서 다시 세지 않는다.
+// 예전 정산에는 bankCashWithdrawals 필드가 없으므로 항상 withdrawalsOf로 읽는다(없으면 빈 목록 → 기존 계산과 동일).
+// ────────────────────────────────────────────────────────────
+
+/** 통장에서 현금 인출 내역. 필드가 없는 예전 정산은 빈 목록. */
+export function withdrawalsOf(settlement: RegularSettlement): BankCashWithdrawal[] {
+  return settlement.bankCashWithdrawals ?? []
+}
+
+/** 통장에서 현금으로 찾아온 금액 합계. */
+export function calcWithdrawalTotal(settlement: RegularSettlement): number {
+  return sum(withdrawalsOf(settlement).map((w) => w.amount))
+}
+
+/** 통합 자금이동 내역 1줄 — 기존 두 기록(인출·입금)을 그대로 보여주기 위한 표시용 값이다(저장하지 않는다). */
+export interface FundMovementEntry {
+  /** 'withdrawal' = 통장에서 현금 인출(통장 → 현금), 'deposit' = 현금을 통장에 입금(현금 → 통장). */
+  kind: 'withdrawal' | 'deposit'
+  /** 출금일(bankCashWithdrawals.date) 또는 입금일(cashDeposits.depositDate). 두 날짜를 서로 맞추지 않는다. */
+  date: string
+  amount: number
+  note?: string
+  /** 원본 기록의 id(화면 key용). */
+  id: string
+}
+
+/**
+ * 통장 거래내역과 대조하기 위한 통합 자금이동 내역: 통장에서 현금 인출(bankCashWithdrawals) +
+ * 현금을 통장에 입금(cashDeposits, '입금확인'만 — 잔액 계산에 반영되는 입금과 똑같은 기준이고, 입금예정·
+ * 입금전·취소는 실제 통장 거래가 아니므로 제외한다). 읽기 전용 — 두 원본 배열과 계산에는 영향이 없다.
+ *
+ * 정렬: 날짜 오름차순(오래된 것 → 최근, 통장 거래내역 흐름과 같은 순서). 같은 날짜는 ① 인출 → 입금 순,
+ * ② 같은 종류끼리는 기록 시각(createdAt, 인출만 있음) → ③ 원래 입력 순서. 이 키 조합은 항상 같은 결과를 낸다.
+ */
+export function buildFundMovementLog(settlement: RegularSettlement): FundMovementEntry[] {
+  const keyed = [
+    ...withdrawalsOf(settlement).map((w, index) => ({
+      entry: { kind: 'withdrawal' as const, date: w.date, amount: w.amount, note: w.note, id: w.id },
+      rank: 0, createdAt: w.createdAt ?? '', index,
+    })),
+    ...settlement.cashDeposits
+      .filter((d) => d.status === '입금확인')
+      .map((d, index) => ({
+        entry: { kind: 'deposit' as const, date: d.depositDate, amount: d.amount, note: d.note, id: d.id },
+        rank: 1, createdAt: '', index,
+      })),
+  ]
+  keyed.sort((a, b) =>
+    a.entry.date.localeCompare(b.entry.date) ||
+    a.rank - b.rank ||
+    a.createdAt.localeCompare(b.createdAt) ||
+    a.index - b.index)
+  return keyed.map((k) => ({ ...k.entry, note: k.entry.note?.trim() || undefined }))
+}
+
 export interface SettlementCashSummary {
   cashIncome: number
   cashExpense: number
+  /** 현금 수입 − 현금 지출 (자금이동은 반영하지 않는다 — 기존 의미 유지). */
   cashBalanceBeforeDeposit: number
   confirmedDeposit: number
+  /** 입금 전 잔액 − 통장 입금확인액 (자금이동은 반영하지 않는다 — 기존 의미 유지). */
   cashBalanceAfterDeposit: number
+  /** 통장에서 현금으로 찾아온(인출) 금액 합계. */
+  bankWithdrawal: number
+  /** 현금잔액(최종) = 입금 후 현금 잔액 + 통장에서 인출한 현금. 인출 기록이 없으면 cashBalanceAfterDeposit과 같다. */
+  cashBalance: number
 }
 
-/** 현금 수입/지출/입금전·후 잔액. 통장 입금은 '입금확인' 상태만 반영한다. */
+/** 현금 수입/지출/입금전·후 잔액. 통장 입금은 '입금확인' 상태만 반영한다. 통장 인출은 별도 필드로만 반영한다. */
 export function calcCashSummary(settlement: RegularSettlement): SettlementCashSummary {
   const income = calcIncomeSummary(settlement)
   const expense = calcExpenseSummary(settlement)
@@ -166,8 +233,13 @@ export function calcCashSummary(settlement: RegularSettlement): SettlementCashSu
   const cashBalanceBeforeDeposit = cashIncome - cashExpense
   const confirmedDeposit = sum(settlement.cashDeposits.filter((d) => d.status === '입금확인').map((d) => d.amount))
   const cashBalanceAfterDeposit = cashBalanceBeforeDeposit - confirmedDeposit
+  const bankWithdrawal = calcWithdrawalTotal(settlement)
+  const cashBalance = cashBalanceAfterDeposit + bankWithdrawal
 
-  return { cashIncome, cashExpense, cashBalanceBeforeDeposit, confirmedDeposit, cashBalanceAfterDeposit }
+  return {
+    cashIncome, cashExpense, cashBalanceBeforeDeposit, confirmedDeposit, cashBalanceAfterDeposit,
+    bankWithdrawal, cashBalance,
+  }
 }
 
 export interface SettlementBankSummary {
@@ -178,6 +250,8 @@ export interface SettlementBankSummary {
   cardExpense: number
   transferExpense: number
   otherAdjustment: number
+  /** 통장에서 현금으로 인출한 금액. 통장잔액이 줄어든다. */
+  bankWithdrawal: number
   bankChange: number
   currentBalance: number
   unconfirmedTransferAmount: number
@@ -186,6 +260,8 @@ export interface SettlementBankSummary {
 /**
  * 통장 잔액 = 전월 잔액 + 입금확인된 계좌이체 수입 + 입금확인된 현금 통장입금액
  *            + 기타 계좌 입금 - 체크카드 지출 - 계좌이체 지출 ± 기타 통장 조정액
+ *            - 통장에서 현금 인출
+ * (현금 → 통장 입금은 위 "입금확인된 현금 통장입금액"(cashDeposits)이 이미 담당한다.)
  * 현금 수입은 실제로 통장에 입금 확인되기 전까지는 포함하지 않는다.
  */
 export function calcBankSummary(settlement: RegularSettlement): SettlementBankSummary {
@@ -202,15 +278,31 @@ export function calcBankSummary(settlement: RegularSettlement): SettlementBankSu
   const otherAdjustment = settlement.otherBankAdjustment
   const unconfirmedTransferAmount = income.duesTransferUnconfirmed + income.donationTransferUnconfirmed
 
+  const bankWithdrawal = calcWithdrawalTotal(settlement)
+
   const bankChange =
     confirmedTransferIncome + confirmedCashDeposit + otherBankIncome - cardExpense - transferExpense + otherAdjustment
+    - bankWithdrawal
   const currentBalance = prevBalance + bankChange
 
   return {
     prevBalance, confirmedTransferIncome, confirmedCashDeposit, otherBankIncome,
-    cardExpense, transferExpense, otherAdjustment, bankChange, currentBalance,
+    cardExpense, transferExpense, otherAdjustment, bankWithdrawal, bankChange, currentBalance,
     unconfirmedTransferAmount,
   }
+}
+
+export interface SettlementHoldingsSummary {
+  bankBalance: number
+  cashBalance: number
+  /** 전체 보유액 = 통장잔액 + 현금잔액. 통장 인출·현금 통장입금은 이 값을 바꾸지 않는다. */
+  totalHoldings: number
+}
+
+export function calcHoldingsSummary(settlement: RegularSettlement): SettlementHoldingsSummary {
+  const bankBalance = calcBankSummary(settlement).currentBalance
+  const cashBalance = calcCashSummary(settlement).cashBalance
+  return { bankBalance, cashBalance, totalHoldings: bankBalance + cashBalance }
 }
 
 /**
@@ -455,7 +547,9 @@ export function validateCashDeposit(
   settlement: RegularSettlement,
   candidate: { id?: string; amount: number; status: CashDepositStatus },
 ): ValidationResult {
-  const { cashBalanceBeforeDeposit } = calcCashSummary(settlement)
+  const cashSummary = calcCashSummary(settlement)
+  // 통장에서 인출해 온 현금도 다시 입금할 수 있다. 인출 기록이 없으면 예전과 똑같이 입금 전 현금 잔액이 한도다.
+  const cashBalanceBeforeDeposit = cashSummary.cashBalanceBeforeDeposit + cashSummary.bankWithdrawal
   const otherConfirmed = sum(
     settlement.cashDeposits
       .filter((d) => d.id !== candidate.id && d.status === '입금확인')
@@ -469,6 +563,19 @@ export function validateCashDeposit(
       error: `입금 확인 금액 합계(${totalConfirmed.toLocaleString('ko-KR')}원)가 입금 전 현금 잔액(${cashBalanceBeforeDeposit.toLocaleString('ko-KR')}원)보다 많습니다.`,
     }
   }
+  return { ok: true }
+}
+
+/**
+ * 통장 현금 인출 입력 검증: 금액이 0보다 큰 정수이고 날짜가 있어야 한다.
+ * 통장잔액 한도는 두지 않는다 — 전월 통장 잔액을 아직 입력하지 않았을 수 있어 정상 입력이 막힐 수 있다.
+ * 대신 통장잔액이 마이너스가 되면 화면에 경고로 보여준다(SettlementSummary·BankCashWithdrawalForm).
+ */
+export function validateBankCashWithdrawal(candidate: { amount: number; date: string }): ValidationResult {
+  if (!Number.isInteger(candidate.amount) || candidate.amount <= 0) {
+    return { ok: false, error: '금액은 0원보다 커야 합니다.' }
+  }
+  if (!candidate.date) return { ok: false, error: '날짜를 입력해주세요.' }
   return { ok: true }
 }
 
