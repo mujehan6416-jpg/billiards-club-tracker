@@ -558,10 +558,11 @@ export function validateCashDeposit(
   const candidateConfirmed = candidate.status === '입금확인' ? candidate.amount : 0
   const totalConfirmed = otherConfirmed + candidateConfirmed
   if (totalConfirmed > cashBalanceBeforeDeposit) {
-    return {
-      ok: false,
-      error: `입금 확인 금액 합계(${totalConfirmed.toLocaleString('ko-KR')}원)가 입금 전 현금 잔액(${cashBalanceBeforeDeposit.toLocaleString('ko-KR')}원)보다 많습니다.`,
-    }
+    // 조건은 그대로, 안내 문구만 화면 용어("보유 현금")에 맞춘다 — 현금이 모자라면 음수 잔액 대신 "현금 부족"으로 알린다.
+    const error = cashBalanceBeforeDeposit < 0
+      ? `현금이 ${(-cashBalanceBeforeDeposit).toLocaleString('ko-KR')}원 부족해서 입금할 수 없습니다. 현금 지출 또는 입금 내역을 확인해 주세요.`
+      : `입금 확인 금액 합계(${totalConfirmed.toLocaleString('ko-KR')}원)가 입금할 수 있는 현금(${cashBalanceBeforeDeposit.toLocaleString('ko-KR')}원)보다 많습니다.`
+    return { ok: false, error }
   }
   return { ok: true }
 }

@@ -144,6 +144,64 @@ export function buildPresidentShareText(settlement: RegularSettlement): string {
   return lines.join('\n')
 }
 
+// ────────────────────────────────────────────────────────────
+// 찬조 상세내역 공유문 (공유 탭의 세 번째 종류 — 회원용·회장 보고용 공유문과는 완전히 별개)
+//
+// - 찬조금: 기존 회계 기준(confirmedDonorAmounts = calcIncomeSummary와 같은 "확정" 판정)을 그대로 쓴다.
+//   현금은 즉시 확정, 계좌이체·기타는 입금확인만, 미확인·취소·0원은 제외. 한 사람이 여러 행(donationPayments[])으로
+//   냈으면 확정된 행만 더해 회원별 한 줄로, 순서는 참가자 등록 순서 그대로(금액순 정렬 없음).
+// - 물품찬조: 화면에서 직접 입력한 글을 그대로 붙인다(서버·DB에 저장하지 않는다). 비어 있으면 섹션 자체를 뺀다.
+// - 이름과 금액만 쓴다 — 연락처·이메일·주소 등 다른 회원 정보는 이 함수가 읽지도 않는다.
+// ────────────────────────────────────────────────────────────
+
+const DONATION_RULE = '━━━━━━━━━━━━━━'
+
+/** 찬조 상세내역 맨 아래에 항상 들어가는 감사 인사(카카오톡에서 읽기 쉬운 짧은 문단). */
+export const DONATION_THANK_YOU_LINES = [
+  '소중한 찬조를 보내주신 모든 분들께',
+  '진심으로 감사드립니다.',
+  '',
+  '여러분의 따뜻한 마음 덕분에',
+  '행사를 더욱 풍성하게 진행할 수 있었습니다.',
+  '감사합니다.',
+] as const
+
+export const NO_CONFIRMED_DONATION_TEXT = '확인된 찬조금 내역이 없습니다.'
+
+export interface DonationDetail {
+  /** 회원별 확정 찬조금 합계 — 참가자 등록 순서. */
+  donors: { name: string; amount: number }[]
+  total: number
+}
+
+export function buildDonationDetail(settlement: RegularSettlement): DonationDetail {
+  const donors = confirmedDonorAmounts(settlement.participants)
+  return { donors, total: donors.reduce((sum, d) => sum + d.amount, 0) }
+}
+
+/** 물품찬조 입력 글을 공유문용으로 정리한다: 줄바꿈 통일(\r\n→\n)과 앞뒤 빈 줄·공백 제거만 하고 나머지는 그대로 둔다. */
+export function normalizeGiftDonationText(raw: string): string {
+  return raw.replace(/\r\n?/g, '\n').trim()
+}
+
+/** 찬조 상세내역 카카오톡 공유문. giftText는 물품찬조 직접 입력(없거나 비어 있으면 그 섹션을 뺀다). */
+export function buildDonationDetailText(settlement: RegularSettlement, giftText = ''): string {
+  const { donors, total } = buildDonationDetail(settlement)
+  const gifts = normalizeGiftDonationText(giftText)
+
+  const lines: string[] = [DONATION_RULE, '🎁 찬조 내역', DONATION_RULE, '', '[찬조금]', '']
+  if (donors.length > 0) {
+    lines.push(...donors.map((d) => `${d.name} ${won(d.amount)}`), '', `찬조금 합계: ${won(total)}`)
+  } else {
+    lines.push(NO_CONFIRMED_DONATION_TEXT)
+  }
+  if (gifts) {
+    lines.push('', '', '[물품찬조]', '', gifts)
+  }
+  lines.push('', '', DONATION_RULE, '', ...DONATION_THANK_YOU_LINES)
+  return lines.join('\n')
+}
+
 /**
  * 관리자 원본(RegularSettlement)에서 회원 공개용 요약만 뽑아낸다.
  * status가 'confirmed'가 아니면 호출하지 않는 것을 전제로 한다(호출부에서 확정 여부 확인).

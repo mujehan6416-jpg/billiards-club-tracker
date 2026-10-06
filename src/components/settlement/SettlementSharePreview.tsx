@@ -1,8 +1,13 @@
 import { useRef, useState } from 'react'
 import { useSettlementStore } from '../../store/settlementStore'
 import { shareImage, shareText } from '../../lib/share'
+import { DonationDetailShare } from './DonationDetailShare'
 
-type Audience = 'member' | 'president'
+// 공유 종류 3가지: 회원용 / 회장 보고용 / 찬조 상세내역(세 번째, 별도 공유 — 앞의 둘과 문구·계산을 공유하지 않는다).
+type Audience = 'member' | 'president' | 'donation'
+
+// 공유 종류 선택 버튼 — 손가락으로 누르기 쉽도록 높이를 48px로(전역 .seg 버튼은 약 37px라 이 화면에서만 키운다).
+const AUDIENCE_BUTTON_STYLE = { minHeight: 48, fontSize: 14 } as const
 
 export function SettlementSharePreview({ settlementId }: { settlementId: string }) {
   const settlement = useSettlementStore((s) => s.getById(settlementId))
@@ -10,11 +15,13 @@ export function SettlementSharePreview({ settlementId }: { settlementId: string 
   const getPresidentShareText = useSettlementStore((s) => s.getPresidentShareText)
   const [audience, setAudience] = useState<Audience>('member')
   const [msg, setMsg] = useState('')
+  // 물품찬조 직접 입력(공유용 임시 글) — 정산별로 따로 들고 있고, 저장소(Firestore 등)에는 저장하지 않는다.
+  const [giftTextById, setGiftTextById] = useState<Record<string, string>>({})
   const previewRef = useRef<HTMLDivElement>(null)
 
   if (!settlement) return null
 
-  const text = audience === 'member' ? getMemberShareText(settlementId) : getPresidentShareText(settlementId)
+  const text = audience === 'president' ? getPresidentShareText(settlementId) : getMemberShareText(settlementId)
 
   const doCopy = async () => {
     const copied = await shareText(text)
@@ -33,22 +40,33 @@ export function SettlementSharePreview({ settlementId }: { settlementId: string 
         <p className="info-msg">아직 확정되지 않은 정산입니다. 미리보기 형식만 확인하고, 실제 공유는 확정 후 진행해주세요.</p>
       )}
       <div className="seg">
-        <button type="button" className={audience === 'member' ? 'on' : ''} onClick={() => setAudience('member')}>회원용</button>
-        <button type="button" className={audience === 'president' ? 'on' : ''} onClick={() => setAudience('president')}>회장 보고용</button>
+        <button type="button" style={AUDIENCE_BUTTON_STYLE} className={audience === 'member' ? 'on' : ''} onClick={() => setAudience('member')}>회원용</button>
+        <button type="button" style={AUDIENCE_BUTTON_STYLE} className={audience === 'president' ? 'on' : ''} onClick={() => setAudience('president')}>회장 보고용</button>
+        <button type="button" style={AUDIENCE_BUTTON_STYLE} className={audience === 'donation' ? 'on' : ''} onClick={() => setAudience('donation')}>찬조 상세내역</button>
       </div>
 
-      <div ref={previewRef} className="card" style={{ whiteSpace: 'pre-wrap', fontSize: 15, lineHeight: 1.6, background: '#fff' }}>
-        {text}
-      </div>
+      {audience === 'donation' ? (
+        <DonationDetailShare
+          settlement={settlement}
+          giftText={giftTextById[settlementId] ?? ''}
+          onGiftTextChange={(v) => setGiftTextById((prev) => ({ ...prev, [settlementId]: v }))}
+        />
+      ) : (
+        <>
+          <div ref={previewRef} className="card" style={{ whiteSpace: 'pre-wrap', fontSize: 15, lineHeight: 1.6, background: '#fff' }}>
+            {text}
+          </div>
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" className="primary grow" onClick={doCopy}>문구 복사 / 공유</button>
-        <button type="button" className="grow" onClick={doImage}>이미지 저장 / 공유</button>
-      </div>
-      {msg && <p className="info-msg">{msg}</p>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="primary grow" onClick={doCopy}>문구 복사 / 공유</button>
+            <button type="button" className="grow" onClick={doImage}>이미지 저장 / 공유</button>
+          </div>
+          {msg && <p className="info-msg">{msg}</p>}
 
-      {audience === 'president' && (
-        <p className="muted" style={{ fontSize: 12 }}>회장 보고용은 통장 잔액 등 내부 정보를 포함하므로 회원에게 전달하지 마세요.</p>
+          {audience === 'president' && (
+            <p className="muted" style={{ fontSize: 12 }}>회장 보고용은 통장 잔액 등 내부 정보를 포함하므로 회원에게 전달하지 마세요.</p>
+          )}
+        </>
       )}
     </div>
   )

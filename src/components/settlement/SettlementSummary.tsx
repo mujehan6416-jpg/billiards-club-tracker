@@ -4,6 +4,10 @@ import { useAuth } from '../../store/authStore'
 import { calcHoldingsSummary, withdrawalsOf } from '../../logic/settlement'
 import { MoneyInput } from '../MoneyInput'
 import { FundMovementLog } from './FundMovementLog'
+import { formatCash } from './CashOnHandSummary'
+
+// 현금이 모자랄 때(현금잔액 < 0)의 보조 문구 — "현금·통장" 탭과 같은 표현을 쓴다. 경고가 뜨는 조건은 그대로다.
+const CASH_SHORTAGE_NOTE = '현금 수입, 통장 인출 또는 지출 내역을 확인해 주세요.'
 
 const fmt = (n: number) => `${n.toLocaleString('ko-KR')}원`
 const parseAmt = (v: string) => parseInt(v.replace(/[^0-9-]/g, '') || '0', 10)
@@ -98,12 +102,12 @@ export function SettlementSummary({ settlementId, previewMode = false }: { settl
       <div className="card col-card">
         <span style={{ fontWeight: 700, fontSize: 14 }}>현금 관리</span>
         <div className="muted" style={{ fontSize: 13 }}>현금 수입 {fmt(cash.cashIncome)} · 현금 지출 {fmt(cash.cashExpense)}</div>
-        <div className="muted" style={{ fontSize: 13 }}>입금 전 잔액 {fmt(cash.cashBalanceBeforeDeposit)} · 통장 입금 {fmt(cash.confirmedDeposit)}</div>
-        <div style={{ fontWeight: 700 }}>입금 후 현금 잔액 {fmt(cash.cashBalanceAfterDeposit)}</div>
+        <div className="muted" style={{ fontSize: 13 }}>입금 전 잔액 {formatCash(cash.cashBalanceBeforeDeposit)} · 통장 입금 {fmt(cash.confirmedDeposit)}</div>
+        <div style={{ fontWeight: 700 }}>입금 후 현금 잔액 {formatCash(cash.cashBalanceAfterDeposit)}</div>
         {hasWithdrawals && (
           <>
             <div className="muted" style={{ fontSize: 13 }}>통장에서 현금 인출 +{fmt(cash.bankWithdrawal)}</div>
-            <div style={{ fontWeight: 700 }}>현금잔액 (인출 반영) {fmt(cash.cashBalance)}</div>
+            <div style={{ fontWeight: 700 }}>현금잔액 (인출 반영) {formatCash(cash.cashBalance)}</div>
           </>
         )}
       </div>
@@ -156,10 +160,10 @@ export function SettlementSummary({ settlementId, previewMode = false }: { settl
           <div style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>⚠ 통장잔액이 마이너스입니다. 전월 통장 잔액과 현금 인출을 확인해주세요.</div>
         )}
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: holdings.cashBalance < 0 ? '#c0392b' : undefined }}>
-          <span>현금잔액</span><span style={{ fontWeight: 600 }}>{fmt(holdings.cashBalance)}</span>
+          <span>현금잔액</span><span style={{ fontWeight: 600 }}>{formatCash(holdings.cashBalance)}</span>
         </div>
         {holdings.cashBalance < 0 && (
-          <div style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>⚠ 현금잔액이 마이너스입니다. 현금 지출·현금 통장 입금을 확인해주세요.</div>
+          <div style={{ fontSize: 13, color: '#c0392b', fontWeight: 600 }}>{CASH_SHORTAGE_NOTE}</div>
         )}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 6, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
           <span style={{ fontWeight: 700 }}>전체 보유액</span>

@@ -160,26 +160,30 @@ describe('화면 — 입력 날짜 명칭 (출금일 / 입금일)', () => {
 })
 
 describe('FundMovementLog 화면', () => {
-  const cards = () => within(screen.getByTestId('fund-movement-log')).getAllByText(/^(출금일|입금일) /).map((el) => el.closest('.card') as HTMLElement)
+  // 카드의 첫 줄: "2026-10-05 · 현금 인출" / "2026-10-06 · 현금 입금"
+  const cards = () => within(screen.getByTestId('fund-movement-log')).getAllByText(/^\d{4}-\d{2}-\d{2} · 현금 (인출|입금)$/).map((el) => el.closest('.card') as HTMLElement)
 
-  it('날짜 | 구분 | 금액 | 메모가 날짜순 카드로 표시되고 합계가 나온다', () => {
+  it('날짜·구분 / 금액 / 메모가 날짜순 카드로 표시되고 합계가 나온다 (제목·안내문 포함)', () => {
     setStore(fake({
       bankCashWithdrawals: [w('w1', '2026-10-05', 200_000, { note: '행사 운영비 준비' })],
       cashDeposits: [d('d1', '2026-10-06', 80_000, { note: '잔액 재입금' }), d('d0', '2026-10-04', 1_000)],
     }))
     render(<FundMovementLog settlementId={ID} />)
+    const log = screen.getByTestId('fund-movement-log')
+    expect(within(log).getByText('📒 자금이동 내역')).toBeInTheDocument()
+    expect(log).toHaveTextContent('통장에서 현금을 인출하거나 현금을 다시 통장에 입금한 내역입니다.')
+    expect(log).toHaveTextContent('통장 거래내역과 날짜·금액을 대조할 때 확인할 수 있습니다.')
     const list = cards()
     expect(list).toHaveLength(3)
-    expect(list[0]).toHaveTextContent('입금일 2026-10-04')
-    expect(list[0]).toHaveTextContent('현금 → 통장 (현금 입금)')
-    expect(list[0]).toHaveTextContent('1,000원')
+    expect(list[0]).toHaveTextContent('2026-10-04 · 현금 입금')
+    expect(list[0]).toHaveTextContent('현금 → 통장 1,000원')
     expect(list[0]).toHaveTextContent('메모 없음')
-    expect(list[1]).toHaveTextContent('출금일 2026-10-05')
-    expect(list[1]).toHaveTextContent('통장 → 현금 (현금 인출)')
-    expect(list[1]).toHaveTextContent('200,000원')
-    expect(list[1]).toHaveTextContent('메모: 행사 운영비 준비')
-    expect(list[2]).toHaveTextContent('입금일 2026-10-06')
-    expect(list[2]).toHaveTextContent('메모: 잔액 재입금')
+    expect(list[1]).toHaveTextContent('2026-10-05 · 현금 인출')
+    expect(list[1]).toHaveTextContent('통장 → 현금 200,000원')
+    expect(list[1]).toHaveTextContent('행사 운영비 준비')
+    expect(list[2]).toHaveTextContent('2026-10-06 · 현금 입금')
+    expect(list[2]).toHaveTextContent('현금 → 통장 80,000원')
+    expect(list[2]).toHaveTextContent('잔액 재입금')
     expect(screen.getByText('인출 합계 200,000원 (통장 → 현금)')).toBeInTheDocument()
     expect(screen.getByText('입금 합계 81,000원 (현금 → 통장)')).toBeInTheDocument()
   })
@@ -197,18 +201,16 @@ describe('FundMovementLog 화면', () => {
     expect(box.queryAllByRole('textbox')).toHaveLength(0)
   })
 
-  it('9. 좁은 화면 대비: 긴 메모는 줄바꿈되고 날짜·구분 줄은 감싸지며(flexWrap), 표가 아닌 카드 구조다', () => {
+  it('9. 좁은 화면 대비: 긴 메모·긴 줄은 줄바꿈되고 표가 아닌 카드 구조다', () => {
     const longNote = '아주긴메모'.repeat(30)
     setStore(fake({ bankCashWithdrawals: [w('w1', '2026-10-05', 1_234_567_890, { note: longNote })] }))
     render(<FundMovementLog settlementId={ID} />)
     const card = cards()[0]
     expect(card.querySelector('table')).toBeNull()
-    expect(card).toHaveTextContent('1,234,567,890원')
+    expect(card).toHaveTextContent('통장 → 현금 1,234,567,890원')
     expect(card).toHaveTextContent(longNote)
-    const noteEl = within(card).getByText(`메모: ${longNote}`)
-    expect(noteEl.style.overflowWrap).toBe('anywhere')
-    const headRow = within(card).getByText('출금일 2026-10-05').parentElement as HTMLElement
-    expect(headRow.style.flexWrap).toBe('wrap')
+    expect(within(card).getByText(longNote).style.overflowWrap).toBe('anywhere')
+    expect(within(card).getByText('2026-10-05 · 현금 인출').style.overflowWrap).toBe('anywhere')
   })
 })
 
@@ -225,8 +227,8 @@ describe('배치 위치', () => {
   it('집계 화면(SettlementSummary)에도 날짜별 내역이 포함된다', () => {
     setStore(fake({ bankCashWithdrawals: [w('w1', '2026-10-05', 200_000)], cashDeposits: [d('d1', '2026-10-06', 80_000)] }))
     render(<SettlementSummary settlementId={ID} />)
-    expect(screen.getByText('출금일 2026-10-05')).toBeInTheDocument()
-    expect(screen.getByText('입금일 2026-10-06')).toBeInTheDocument()
+    expect(screen.getByText('2026-10-05 · 현금 인출')).toBeInTheDocument()
+    expect(screen.getByText('2026-10-06 · 현금 입금')).toBeInTheDocument()
   })
 })
 

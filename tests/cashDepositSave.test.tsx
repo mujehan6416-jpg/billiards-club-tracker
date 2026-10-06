@@ -56,7 +56,7 @@ describe('[재현] CashDepositForm — 버그 당시엔 이 탭에 저장 버튼
   it('입금 내역을 추가한 뒤 임시저장을 누르면 그 내역이 포함된 settlement가 Firestore 저장 함수에 전달된다', async () => {
     render(<CashDepositForm settlementId="settle-cash-1" />)
     fireEvent.change(screen.getByPlaceholderText('입금액'), { target: { value: '150000' } })
-    fireEvent.click(screen.getByText('입금 추가'))
+    fireEvent.click(screen.getByText('통장 입금 저장'))
 
     fireEvent.click(screen.getByText('임시저장'))
     await waitFor(() => expect(saveSettlementMock).toHaveBeenCalledTimes(1))
@@ -68,7 +68,7 @@ describe('[재현] CashDepositForm — 버그 당시엔 이 탭에 저장 버튼
   it('임시저장은 상태를 draft로 유지한다(최종 게시를 눌러야 confirmed)', async () => {
     render(<CashDepositForm settlementId="settle-cash-1" />)
     fireEvent.change(screen.getByPlaceholderText('입금액'), { target: { value: '50000' } })
-    fireEvent.click(screen.getByText('입금 추가'))
+    fireEvent.click(screen.getByText('통장 입금 저장'))
     fireEvent.click(screen.getByText('임시저장'))
     await waitFor(() => expect(saveSettlementMock).toHaveBeenCalledTimes(1))
     expect(saveSettlementMock.mock.calls[0][0].status).toBe('draft')
@@ -78,7 +78,7 @@ describe('[재현] CashDepositForm — 버그 당시엔 이 탭에 저장 버튼
   it('임시저장 후 store를 초기화(재로그인 재현)하고 Firestore 조회 결과를 반영하면 입금 내역이 그대로 복원된다', async () => {
     render(<CashDepositForm settlementId="settle-cash-1" />)
     fireEvent.change(screen.getByPlaceholderText('입금액'), { target: { value: '80000' } })
-    fireEvent.click(screen.getByText('입금 추가'))
+    fireEvent.click(screen.getByText('통장 입금 저장'))
     fireEvent.click(screen.getByText('임시저장'))
     await waitFor(() => expect(saveSettlementMock).toHaveBeenCalledTimes(1))
     const savedPayload = saveSettlementMock.mock.calls[0][0]
@@ -93,7 +93,7 @@ describe('[재현] CashDepositForm — 버그 당시엔 이 탭에 저장 버튼
     saveSettlementMock.mockRejectedValue(new Error('가상 네트워크 오류'))
     render(<CashDepositForm settlementId="settle-cash-1" />)
     fireEvent.change(screen.getByPlaceholderText('입금액'), { target: { value: '30000' } })
-    fireEvent.click(screen.getByText('입금 추가'))
+    fireEvent.click(screen.getByText('통장 입금 저장'))
     fireEvent.click(screen.getByText('임시저장'))
 
     await waitFor(() => expect(saveSettlementMock).toHaveBeenCalledTimes(1))

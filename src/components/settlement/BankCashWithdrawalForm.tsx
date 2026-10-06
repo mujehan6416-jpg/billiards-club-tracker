@@ -52,21 +52,12 @@ export function BankCashWithdrawalForm({ settlementId }: { settlementId: string 
   return (
     <div className="card col-card">
       <span style={{ fontWeight: 700, fontSize: 16 }}>① 통장에서 현금 인출</span>
-      <p className="muted" style={{ fontSize: 13 }}>
-        통장에서 현금을 찾아왔을 때 기록하세요. 수입·지출이 아니므로 총수입·총지출은 변하지 않습니다.
-        (현금을 통장에 넣는 것은 아래 ②번에서 입력합니다.)
+      <p className="muted" style={{ fontSize: 13, whiteSpace: 'pre-line' }}>
+        {'통장에서 현금을 찾아 보관하거나 행사비로 사용할 때 기록해 주세요.\n이 금액은 수입이나 지출로 계산되지 않고, 통장 잔액은 줄고 보유 현금은 늘어납니다.'}
       </p>
 
-      <div className="info-msg" style={{ fontSize: 15, display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <span>통장잔액 {fmt(holdings.bankBalance)}원</span>
-        <span>현금잔액 {fmt(holdings.cashBalance)}원</span>
-        <span style={{ fontWeight: 700 }}>전체 보유액 {fmt(holdings.totalHoldings)}원</span>
-      </div>
-      {holdings.cashBalance < 0 && (
-        <p className="info-msg" style={{ background: '#fdeceb', color: '#c0392b', fontWeight: 600 }}>
-          ⚠ 현금잔액이 마이너스입니다. 현금 지출·현금 통장 입금을 다시 확인해주세요.
-        </p>
-      )}
+      {/* 통장·현금·전체 보유액 요약은 "현금·통장" 탭 맨 아래의 "현재 자금 현황"으로 옮겼다(CurrentFundStatus).
+          여기에는 이 입력과 바로 관련된 경고(인출하면 통장이 모자라는 경우)만 남긴다. */}
       {holdings.bankBalance < 0 && (
         <p className="info-msg" style={{ background: '#fdeceb', color: '#c0392b', fontWeight: 600 }}>
           ⚠ 통장잔액이 마이너스입니다. 전월 통장 잔액과 인출 금액을 다시 확인해주세요.
@@ -76,9 +67,9 @@ export function BankCashWithdrawalForm({ settlementId }: { settlementId: string 
       {!locked && (
         <div className="col-card">
           <span style={{ fontWeight: 700, fontSize: 14 }}>현금 인출 추가</span>
-          <span className="muted" style={labelStyle}>출금일 (통장에서 현금을 찾은 날)</span>
+          <span className="muted" style={labelStyle}>출금일</span>
           <input type="date" aria-label="출금일" value={date} onChange={(e) => setDate(e.target.value)} style={fieldStyle} />
-          <span className="muted" style={labelStyle}>금액</span>
+          <span className="muted" style={labelStyle}>인출 금액</span>
           <MoneyInput ariaLabel="현금 인출 금액" value={amount} placeholder="인출한 금액" onChange={setAmount} style={moneyInputStyle} />
           <span className="muted" style={labelStyle}>메모</span>
           <input aria-label="현금 인출 메모" placeholder="메모 (선택)" value={note} onChange={(e) => setNote(e.target.value)} style={fieldStyle} />

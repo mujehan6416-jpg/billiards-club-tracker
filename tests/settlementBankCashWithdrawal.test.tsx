@@ -227,9 +227,10 @@ describe('BankCashWithdrawalForm 화면', () => {
 
     expect(screen.getByText('200,000원')).toBeInTheDocument()
     expect(screen.getByText('출금일 2026-01-12 · 현금 찾음')).toBeInTheDocument()
-    expect(screen.getByText('통장잔액 800,000원')).toBeInTheDocument()
-    expect(screen.getByText('현금잔액 200,000원')).toBeInTheDocument()
-    expect(screen.getByText('전체 보유액 1,000,000원')).toBeInTheDocument()
+    // 통장·현금·전체 보유액 요약 박스는 인출 영역에서 빠지고 "현금·통장" 탭 맨 아래(현재 자금 현황)로 갔다
+    expect(screen.queryByText(/통장잔액/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/전체 보유액/)).not.toBeInTheDocument()
+    expect(snap(useSettlementStore.getState().getById(ID)!)).toEqual([800_000, 200_000, 1_000_000])
   })
 
   it('금액 없이 저장하면 안내가 나오고 저장되지 않는다', () => {
@@ -260,16 +261,11 @@ describe('BankCashWithdrawalForm 화면', () => {
     expect(screen.getByText('30,000원')).toBeInTheDocument()
   })
 
-  it('현금잔액·통장잔액이 마이너스면 각각 경고가 보인다', () => {
+  it('인출하면 통장이 모자라는 경우(통장잔액 마이너스)에는 인출 영역에 경고가 보인다', () => {
     useSettlementStore.setState({ settlements: [fake({ prevBankBalance: 100_000, bankCashWithdrawals: [withdrawal(300_000)] })] })
-    const { unmount } = render(<BankCashWithdrawalForm settlementId={ID} />)
-    expect(screen.getByText(/통장잔액이 마이너스입니다/)).toBeInTheDocument()
-    expect(screen.queryByText(/현금잔액이 마이너스입니다/)).not.toBeInTheDocument()
-    unmount()
-
-    useSettlementStore.setState({ settlements: [fake({ expenses: [cashExpense(10_000)] })] })
     render(<BankCashWithdrawalForm settlementId={ID} />)
-    expect(screen.getByText(/현금잔액이 마이너스입니다/)).toBeInTheDocument()
+    expect(screen.getByText(/통장잔액이 마이너스입니다/)).toBeInTheDocument()
+    expect(screen.queryByText(/현금잔액이 마이너스/)).not.toBeInTheDocument()
   })
 })
 
@@ -282,7 +278,7 @@ describe('"현금·통장" 탭 — 같은 거래를 두 군데 입력할 수 없
     expect(screen.getByText('② 현금을 통장에 입금')).toBeInTheDocument()
     // 인출 입력 버튼 1개, 입금 입력 버튼 1개 — 방향 선택 버튼(통장→현금 / 현금→통장)은 존재하지 않는다
     expect(screen.getAllByRole('button', { name: '현금 인출 저장' })).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: '입금 추가' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: '통장 입금 저장' })).toHaveLength(1)
     expect(screen.queryByText('현금 → 통장')).not.toBeInTheDocument()
     expect(screen.queryByText('통장 → 현금')).not.toBeInTheDocument()
     expect(screen.getAllByPlaceholderText('입금액')).toHaveLength(1)
@@ -294,7 +290,7 @@ describe('"현금·통장" 탭 — 같은 거래를 두 군데 입력할 수 없
     render(<SettlementTab devMembers={[]} devSessions={[]} />)
     fireEvent.click(screen.getByRole('button', { name: /현금/ }))
     fireEvent.change(screen.getByPlaceholderText('입금액'), { target: { value: '100000' } })
-    fireEvent.click(screen.getByRole('button', { name: '입금 추가' }))
+    fireEvent.click(screen.getByRole('button', { name: '통장 입금 저장' }))
 
     const s = useSettlementStore.getState().getById(ID)!
     expect(s.cashDeposits).toHaveLength(1)

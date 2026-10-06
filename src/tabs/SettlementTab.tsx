@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { scrollToElement } from '../lib/scrollToElement'
 import { useApp } from '../store/appStore'
 import { useAuth } from '../store/authStore'
 import { useSettlementStore } from '../store/settlementStore'
@@ -8,6 +9,7 @@ import { SettlementExpenseForm } from '../components/settlement/SettlementExpens
 import { CashDepositForm } from '../components/settlement/CashDepositForm'
 import { BankCashWithdrawalForm } from '../components/settlement/BankCashWithdrawalForm'
 import { FundMovementLog } from '../components/settlement/FundMovementLog'
+import { CurrentFundStatus } from '../components/settlement/CashOnHandSummary'
 import { SettlementSummary } from '../components/settlement/SettlementSummary'
 import { SettlementSharePreview } from '../components/settlement/SettlementSharePreview'
 import { SettlementDeleteControl } from '../components/settlement/SettlementDeleteControl'
@@ -163,6 +165,9 @@ export function SettlementTab({ devMembers, devSessions, previewMode = false }: 
   const currentId = useSettlementStore((s) => s.currentId)
   const setCurrentId = useSettlementStore((s) => s.setCurrentId)
   const [section, setSection] = useState<Section>('participants')
+  // 지출 목록에서 "수정"을 누르면 이 탭 버튼 줄(지출 탭 표시)이 화면 맨 위에 오도록 옮긴다 — 바로 아래에 수정 폼이 이어져
+  // "지출" 탭 표시와 수정 폼 시작 부분이 한 화면에 같이 보인다(위쪽의 정산 선택·새 정산 만들기 카드는 건너뛴다).
+  const sectionBarRef = useRef<HTMLDivElement>(null)
 
   const settlement = settlements.find((s) => s.id === currentId)
 
@@ -195,7 +200,7 @@ export function SettlementTab({ devMembers, devSessions, previewMode = false }: 
             <AttendeeImport settlementId={settlement.id} membersOverride={devMembers} sessionsOverride={devSessions} />
           )}
 
-          <div className="seg">
+          <div className="seg" ref={sectionBarRef} style={{ scrollMarginTop: 8 }}>
             {SECTIONS.map((s) => (
               <button
                 key={s.key}
@@ -212,14 +217,17 @@ export function SettlementTab({ devMembers, devSessions, previewMode = false }: 
             <DuesTable settlementId={settlement.id} previewMode={previewMode} membersOverride={devMembers} />
           )}
           {section === 'expenses' && (
-            <SettlementExpenseForm settlementId={settlement.id} previewMode={previewMode} />
+            <SettlementExpenseForm
+              settlementId={settlement.id} previewMode={previewMode}
+              onEditStart={() => scrollToElement(sectionBarRef.current, 'start')}
+            />
           )}
           {section === 'cash' && (
             <>
               <BankCashWithdrawalForm settlementId={settlement.id} />
-              <span style={{ fontWeight: 700, fontSize: 16, padding: '0 4px' }}>② 현금을 통장에 입금</span>
               <CashDepositForm settlementId={settlement.id} previewMode={previewMode} />
               <FundMovementLog settlementId={settlement.id} />
+              <CurrentFundStatus settlement={settlement} />
             </>
           )}
           {section === 'summary' && <SettlementSummary settlementId={settlement.id} previewMode={previewMode} />}

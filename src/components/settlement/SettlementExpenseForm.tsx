@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { scrollToElement } from '../../lib/scrollToElement'
 import { useSettlementStore, isLocked } from '../../store/settlementStore'
 import { EXPENSE_CATEGORIES, displayExpenseCategory } from '../../lib/settlementConstants'
 import { calcDefaultExpenseClubShare, prefillExpenseClubShare, validateExpenseShares } from '../../logic/settlement'
@@ -6,6 +7,10 @@ import type { ExpensePaymentMethod, SettlementExpense } from '../../types/settle
 import { SettlementSaveButtons } from './SettlementSaveButtons'
 import { moneyInputStyle } from './moneyInputStyle'
 import { MoneyInput } from '../MoneyInput'
+
+// 수정 중임을 알리는 색(진한 노랑 계열) — 수정 폼 테두리·"지출 수정 중" 안내·목록의 해당 항목에 같이 쓴다.
+const EDITING_COLOR = '#e6a817'
+const EDITING_BG = '#fff4d6'
 
 const fmt = (n: number) => n.toLocaleString('ko-KR')
 const parseAmt = (v: string) => Math.max(0, parseInt(v.replace(/[^0-9]/g, '') || '0', 10))
@@ -38,9 +43,14 @@ const emptyForm = (date: string): FormState => ({
 // 새로 등록하기 전에 이미 있다는 걸 알 수 있고, 이미 중복 입력된 경우에도 둘 중 무엇을 지울지
 // 직접 판단해서 삭제할 수 있다. 수정(금액 등 변경)까지는 다시 만들지 않고 조회+삭제만 제공한다
 // (여러 찬조자 입력 등 원래 폼의 복잡한 편집 UI를 되살리는 것은 이번 수정 범위 밖).
-export function SettlementExpenseForm({ settlementId, previewMode = false }: {
+export function SettlementExpenseForm({ settlementId, previewMode = false, onEditStart }: {
   settlementId: string
   previewMode?: boolean
+  /**
+   * 목록에서 "수정"을 눌러 수정 폼에 값이 채워진 직후 화면을 어디로 옮길지 정한다. 상위 화면(SettlementTab)이
+   * "지출 탭 버튼 줄이 맨 위에 오도록" 옮기도록 넘겨준다. 없으면(단독 사용) 수정 폼 카드가 맨 위에 오도록 옮긴다.
+   */
+  onEditStart?: () => void
 }) {
   const settlement = useSettlementStore((s) => s.getById(settlementId))
   const addExpense = useSettlementStore((s) => s.addExpense)
@@ -52,6 +62,25 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
 
+  // "수정" 클릭 → 수정 폼으로 자동 이동. 값이 폼에 채워지고 수정 표시가 그려진 "다음"에 이동해야 하므로
+  // 클릭 때마다 올라가는 번호(editStartTick)를 effect로 지켜본다(같은 항목의 "수정"을 또 눌러도 다시 이동).
+  const formCardRef = useRef<HTMLDivElement>(null)
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const [editStartTick, setEditStartTick] = useState(0)
+  // 수정 저장에 성공하면 방금 고친 항목이 목록에서 보이도록 그 항목으로 이동한다.
+  const [savedFocus, setSavedFocus] = useState<{ id: string; tick: number } | null>(null)
+
+  useEffect(() => {
+    if (editStartTick === 0) return
+    if (onEditStart) onEditStart()
+    else scrollToElement(formCardRef.current, 'start')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editStartTick])
+
+  useEffect(() => {
+    if (savedFocus) scrollToElement(itemRefs.current[savedFocus.id], 'center')
+  }, [savedFocus])
+
   // 다른 정산을 선택해도 이 컴포넌트는 다시 마운트되지 않으므로(같은 "지출" 탭 안에서 settlementId
   // prop만 바뀜), 새 지출을 입력 중이 아닐 때(=수정 중이 아닐 때)만 날짜를 새 정산의 날짜로 맞춘다.
   useEffect(() => {
@@ -61,6 +90,7 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
 
   if (!settlement) return null
   const locked = isLocked(settlement.status)
+  const editingExpense = editingId ? settlement.expenses.find((x) => x.id === editingId) : undefined
 
   const set = (field: keyof FormState) => (v: string) => setForm((f) => ({ ...f, [field]: v }))
 
@@ -72,6 +102,7 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
       clubShare: prefillExpenseClubShare(e.amount, e.clubShare, e.personalDonation),
       personalDonation: String(e.personalDonation), note: e.note ?? '',
     })
+    setEditStartTick((n) => n + 1)
   }
 
   const submit = () => {
@@ -89,15 +120,28 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
     }
     const res = editingId ? updateExpense(settlementId, editingId, expense) : addExpense(settlementId, expense)
     if (!res.ok) { setError(res.error); return }
+    const savedId = editingId
     setForm(emptyForm(settlement.meetingDate))
     setEditingId(null)
+    if (savedId) setSavedFocus((p) => ({ id: savedId, tick: (p?.tick ?? 0) + 1 }))
   }
 
   return (
     <div className="col-card">
       {!locked && (
-        <div className="card col-card">
+        <div
+          ref={formCardRef} className="card col-card"
+          style={editingId ? { border: `2px solid ${EDITING_COLOR}`, scrollMarginTop: 8 } : { scrollMarginTop: 8 }}
+        >
           <span style={{ fontWeight: 700, fontSize: 14 }}>{editingId ? '지출 수정' : '지출 추가'}</span>
+          {editingId && (
+            <div
+              role="status" data-testid="expense-editing-banner"
+              style={{ background: EDITING_BG, color: '#7a4b00', borderRadius: 8, padding: '8px 10px', fontWeight: 700, fontSize: 15, overflowWrap: 'anywhere' }}
+            >
+              ✏️ 지출 수정 중{editingExpense ? ` — ${editingExpense.label}` : ''}
+            </div>
+          )}
           <input type="date" value={form.date} onChange={(e) => set('date')(e.target.value)} />
           <input placeholder="항목명 (예: 당구장 대관료)" value={form.label} onChange={(e) => set('label')(e.target.value)} style={{ fontSize: 16 }} />
           <select value={form.category} onChange={(e) => set('category')(e.target.value)}>
@@ -137,9 +181,18 @@ export function SettlementExpenseForm({ settlementId, previewMode = false }: {
 
       {settlement.expenses.length === 0 && <p className="muted">등록된 지출이 없습니다.</p>}
       {settlement.expenses.map((e) => (
-        <div key={e.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div
+          key={e.id} className="card" ref={(el) => { itemRefs.current[e.id] = el }}
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            ...(e.id === editingId ? { borderLeft: `6px solid ${EDITING_COLOR}`, background: EDITING_BG } : {}),
+          }}
+        >
           <div>
-            <div style={{ fontWeight: 600 }}>{e.label} <span className="muted" style={{ fontSize: 12 }}>({displayExpenseCategory(e.category)})</span></div>
+            <div style={{ fontWeight: 600 }}>
+              {e.label} <span className="muted" style={{ fontSize: 12 }}>({displayExpenseCategory(e.category)})</span>
+              {e.id === editingId && <span style={{ fontSize: 12, fontWeight: 700, color: '#7a4b00' }}> · 수정 중</span>}
+            </div>
             <div className="muted" style={{ fontSize: 13 }}>
               {e.date} · {e.method} · 총액 {fmt(e.amount)}원 · 모임부담 {fmt(e.clubShare)}원
               {e.personalDonation > 0 && ` · 개인찬조 ${fmt(e.personalDonation)}원`}
