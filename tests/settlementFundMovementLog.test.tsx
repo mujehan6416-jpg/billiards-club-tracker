@@ -241,7 +241,7 @@ describe('공유문·공개 범위', () => {
       bankCashWithdrawals: [w('w1', '2026-10-05', 200_000, { note: '행사 운영비 준비' })],
       cashDeposits: [d('d1', '2026-10-06', 80_000, { note: '잔액 재입금' })],
     }))
-    expect(text).toContain('[자금이동 내역]\n10/05 통장 → 현금 200,000원\n행사 운영비 준비\n\n10/06 현금 → 통장 80,000원\n잔액 재입금')
+    expect(text).toContain('[자금이동 내역]\n\n10/05 통장 → 현금 200,000원\n행사 운영비 준비\n\n10/06 현금 → 통장 80,000원\n잔액 재입금')
     expect(text.indexOf('10/05 통장 → 현금')).toBeLessThan(text.indexOf('10/06 현금 → 통장'))
   })
 
@@ -250,11 +250,11 @@ describe('공유문·공개 범위', () => {
       participants: [{ id: 'p1', participantType: 'guest', memberId: null, displayName: '가상A', addedVia: 'manually_added_guest', dues: { amount: 100_000, method: '현금', status: '입금확인' } }],
       cashDeposits: [d('d1', '2026-10-06', 7_000)],
     }))
-    expect(text).toContain('[자금이동 내역]\n10/06 현금 → 통장 7,000원')
-    // 입금 금액은 [현금 현황]에서는 나오지 않는다(중복 표시 제거) — 현금 현황은 받은 금액·지출·현재 보유 현금뿐
-    const cashBlock = text.split('[현금 현황]\n')[1].split('\n\n')[0]
-    expect(cashBlock).toBe('현금으로 받은 금액 100,000원\n현금으로 지출한 금액 0원\n현재 보유 현금 93,000원')
-    expect(cashBlock).not.toContain('7,000원')
+    expect(text).toContain('[자금이동 내역]\n\n10/06 현금 → 통장 7,000원')
+    // 같은 입금이 현금 흐름표에는 "현금 감소"로 나온다(회계상 지출이 아니라 현금의 위치 이동)
+    expect(text).toContain('현금을 통장에 입금\n-7,000원 → 보유 93,000원')
+    expect(text).toContain('현재 보유 현금 : 93,000원')
+    expect(text).toContain('총지출금액 : 0원') // 입금은 총지출에 들어가지 않는다
   })
 
   it('자금이동 기록이 하나도 없으면 [자금이동 내역] 줄이 아예 없다', () => {

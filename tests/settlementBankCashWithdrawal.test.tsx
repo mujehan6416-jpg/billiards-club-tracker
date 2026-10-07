@@ -165,10 +165,11 @@ describe('통장에서 현금 인출 계산 (현금→통장 입금은 기존 ca
     expect(buildMemberShareText(moved)).toBe(buildMemberShareText(plain))
     expect(buildPublicSummary(moved)).toEqual(buildPublicSummary(plain))
     expect(buildPresidentShareText(plain)).not.toContain('인출')
-    // 인출 금액은 [현금 현황]이 아니라 [자금이동 내역]에서만 보인다
+    // 인출은 현금 흐름표에서는 "현금 증가", [자금이동 내역]에서는 날짜별 기록으로 보인다
     expect(buildPresidentShareText(moved)).toContain('[자금이동 내역]\n')
     expect(buildPresidentShareText(moved)).toContain('통장 → 현금 200,000원')
-    expect(buildPresidentShareText(moved)).toContain('전체 보유액(통장+현금) 1,000,000원')
+    expect(buildPresidentShareText(moved)).toContain('통장에서 현금 인출\n+200,000원 → 보유 200,000원')
+    expect(buildPresidentShareText(moved)).toContain('전체 보유액 : 1,000,000원')
   })
 })
 

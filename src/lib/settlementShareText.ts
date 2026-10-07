@@ -5,13 +5,13 @@ import {
   calcBankSummary,
   calcCashSummary,
   calcExpenseByCategory,
+  calcExpenseSummary,
   calcHoldingsSummary,
   calcIncomeSummary,
   calcProfitSummary,
   confirmedDonorAmounts,
   confirmedDonorNames,
   majorExpenses,
-  withdrawalsOf,
 } from '../logic/settlement'
 import { DINNER_CATEGORY, displayExpenseCategory } from './settlementConstants'
 
@@ -107,39 +107,99 @@ export function buildMemberShareText(settlement: RegularSettlement): string {
   return lines.join('\n')
 }
 
-/** 회장 보고용 공유문 — 회원용 내용 + 통장·현금 등 내부 재무 정보. 관리자만 생성한다. */
+/** 총지출을 결제수단별로 풀어 쓴 괄호 문구: "(현금 1,920,000원 + 계좌이체 480,000원 + 체크카드 100,000원)". 0원 수단은 생략, 전부 0원이면 빈 문자열. */
+export function expenseByMethodText(settlement: RegularSettlement): string {
+  const e = calcExpenseSummary(settlement) // 총지출 = cash + card + transfer + other — 이 네 값의 합이 곧 총지출금액
+  const parts: [string, number][] = [['현금', e.cash], ['계좌이체', e.transfer], ['체크카드', e.card], ['기타', e.other]]
+  const shown = parts.filter(([, n]) => n > 0).map(([name, n]) => `${name} ${won(n)}`)
+  return shown.length > 0 ? `(${shown.join(' + ')})` : ''
+}
+
+/**
+ * 회장 보고용 지출 상세 — 항목마다 결제수단을 붙인다("상품비 200,000원 (현금)"). 금액·항목·순서는 회원용 공유문의
+ * allExpenseLineItems와 똑같이 모임 부담액(clubShare)·예전 회식비(차수순) 다음 지출(등록순)이고, 결제수단은 각 기록의 값(현금/체크카드/계좌이체/기타)이다.
+ */
+export function expenseLinesWithMethod(settlement: RegularSettlement): string[] {
+  const dinner = [...settlement.dinnerContributions]
+    .sort((a, b) => a.dinnerRound - b.dinnerRound)
+    .map((d) => `${d.dinnerRound}차 회식비${d.paidBy ? `(${d.paidBy})` : ''} ${won(d.clubShare)} (${d.method})`)
+  const items = settlement.expenses.map((e) => `${e.label} ${won(e.clubShare)} (${e.method})`)
+  return [...dinner, ...items]
+}
+
+/** 현금 흐름표 한 줄: 내용, 증감, 그 시점의 보유 현금. */
+export interface CashFlowRow { label: string; delta: number; balance: number }
+
+/**
+ * 현금 흐름표 — 현금이 어떻게 늘고 줄었는지 순서대로(현금 회비 → 현금 찬조금 → 통장에서 현금 인출 → 현금 지출 → 현금을 통장에 입금).
+ * 새 계산 없이 기존 calcIncomeSummary(현금 회비·찬조)·calcCashSummary(인출·현금 지출·입금확인 입금)의 값을 그대로 늘어놓고
+ * 누적만 더한다 → 마지막 보유액은 항상 calcCashSummary().cashBalance와 같다. 0원 항목은 뺀다.
+ * 통장 인출·입금은 현금의 "위치 이동"이라 총수입·총지출에는 들어가지 않고 여기서만 현금 증가/감소로 보인다.
+ */
+export function buildCashFlowRows(settlement: RegularSettlement): CashFlowRow[] {
+  const income = calcIncomeSummary(settlement)
+  const cash = calcCashSummary(settlement)
+  const steps: [string, number][] = [
+    ['현금 회비', income.duesCash],
+    ['현금 찬조금', income.donationCash],
+    ['통장에서 현금 인출', cash.bankWithdrawal],
+    ['현금 지출', -cash.cashExpense],
+    ['현금을 통장에 입금', -cash.confirmedDeposit],
+  ]
+  let balance = 0
+  const rows: CashFlowRow[] = []
+  for (const [label, delta] of steps) {
+    balance += delta
+    if (delta !== 0) rows.push({ label, delta, balance })
+  }
+  return rows
+}
+
+const signedWon = (n: number) => `${n >= 0 ? '+' : '-'}${won(Math.abs(n))}`
+/** 현금이 모자라면(음수) "현금 부족 N원", 아니면 "N원". */
+const cashOrShortage = (n: number) => (n < 0 ? `현금 부족 ${won(-n)}` : won(n))
+
+/**
+ * 회장 보고용 공유문 — 정산 제목 + 관리자용 재무 요약. 관리자만 생성한다.
+ * 구성: 통장 요약(전월 잔액·총수입·총지출+결제수단별·현재 잔액) → [현금 흐름표] → [자금이동 내역] → [지출 내역].
+ * 현금 흐름표가 현금 설명을 모두 맡으므로 예전 [현금 현황] 3줄은 따로 두지 않는다(중복 제거).
+ * 카카오톡은 고정폭 글꼴이 아니라서 열을 맞춘 표 대신 "라벨 / +금액 → 보유 금액" 두 줄 흐름으로 쓴다.
+ */
 export function buildPresidentShareText(settlement: RegularSettlement): string {
-  const memberText = buildMemberShareText(settlement)
   const bank = calcBankSummary(settlement)
   const cash = calcCashSummary(settlement)
+  const profit = calcProfitSummary(settlement)
+  const byMethod = expenseByMethodText(settlement)
 
-  // 현금 현황은 3줄만 보여준다. 통장 인출액·통장 입금액·"입금 전/인출 반영" 같은 중간 계산값은 여기서 빼고,
-  // 그 금액들은 아래 [자금이동 내역]에서만 보여준다(중복 표시 제거 — 기록·계산식·데이터는 그대로다).
-  // 현재 보유 현금 = cash.cashBalance (= 받은 현금 + 통장 인출 − 현금 지출 − 통장 입금, 기존 계산 그대로).
-  const lines = [
-    memberText,
+  const lines: string[] = [
+    `[${settlement.meetingName}] ${settlement.meetingDate}`,
     '',
     '[관리자 보고용]',
-    `전월 통장 잔액 ${won(bank.prevBalance)}`,
-    `이번 기간 통장 증감 ${bank.bankChange >= 0 ? '+' : ''}${won(bank.bankChange)}`,
-    `현재 통장 잔액 ${won(bank.currentBalance)}`,
     '',
-    '[현금 현황]',
-    `현금으로 받은 금액 ${won(cash.cashIncome)}`,
-    `현금으로 지출한 금액 ${won(cash.cashExpense)}`,
-    cash.cashBalance < 0 ? `현금 부족 ${won(-cash.cashBalance)}` : `현재 보유 현금 ${won(cash.cashBalance)}`,
+    `전월 통장 잔액 : ${won(bank.prevBalance)}`,
     '',
-    `계좌이체 미확인 금액 ${won(bank.unconfirmedTransferAmount)}`,
+    `총수입금액 : ${won(profit.totalIncome)}`,
+    '',
+    `총지출금액 : ${won(profit.totalExpense)}`,
   ]
-  // 통장에서 현금 인출 기록이 있는 정산에만 추가한다(예전처럼).
-  if (withdrawalsOf(settlement).length > 0) {
-    lines.push(`전체 보유액(통장+현금) ${won(calcHoldingsSummary(settlement).totalHoldings)}`)
+  if (byMethod) lines.push(byMethod)
+  lines.push('', `현재 통장 잔액 : ${won(bank.currentBalance)}`)
+  lines.push(`계좌이체 미확인 금액 : ${won(bank.unconfirmedTransferAmount)}`)
+
+  // [현금 흐름표] — 마지막 보유액 = 현재 보유 현금(= cash.cashBalance)
+  lines.push('', '', '[현금 흐름표]', '')
+  for (const r of buildCashFlowRows(settlement)) {
+    lines.push(r.label, `${signedWon(r.delta)} → 보유 ${cashOrShortage(r.balance)}`, '')
   }
-  // 통장 거래내역과 대조할 수 있게 날짜순으로(인출 + 입금확인된 현금 통장 입금). 회원용 문구·공개 요약에는 넣지 않는다.
-  // 형식: "09/30 통장 → 현금 1,200,000원" 다음 줄에 메모(있을 때), 건과 건 사이는 한 줄 띄운다.
+  lines.push(cash.cashBalance < 0 ? `현금 부족 ${won(-cash.cashBalance)}` : `현재 보유 현금 : ${won(cash.cashBalance)}`)
+  if (cash.cashBalance < 0) lines.push('현금 수입, 통장 인출 또는 지출 내역을 확인해 주세요.')
+  // 전체 보유액(= 현재 통장 잔액 + 현재 보유 현금)은 인출 기록 유무와 상관없이 항상 보여준다. 기존 calcHoldingsSummary 값 그대로.
+  lines.push(`전체 보유액 : ${won(calcHoldingsSummary(settlement).totalHoldings)}`)
+
+  // [자금이동 내역] — 통장 거래내역과 대조용(날짜순, 인출 + 입금확인된 현금 통장 입금). 현금 흐름표의 인출·입금 합계와 같은 기록이다.
   const movements = buildFundMovementLog(settlement)
   if (movements.length > 0) {
-    lines.push('', '[자금이동 내역]')
+    lines.push('', '', '[자금이동 내역]', '')
     movements.forEach((e, i) => {
       const day = e.date.length >= 10 ? `${e.date.slice(5, 7)}/${e.date.slice(8, 10)}` : e.date
       const flow = e.kind === 'withdrawal' ? '통장 → 현금' : '현금 → 통장'
@@ -147,6 +207,12 @@ export function buildPresidentShareText(settlement: RegularSettlement): string {
       lines.push(`${day} ${flow} ${won(e.amount)}`)
       if (e.note) lines.push(e.note)
     })
+  }
+
+  // [지출 내역] — 항목마다 결제수단 표시
+  const expenseLines = expenseLinesWithMethod(settlement)
+  if (expenseLines.length > 0) {
+    lines.push('', '', '[지출 내역]', '', ...expenseLines)
   }
   return lines.join('\n')
 }
