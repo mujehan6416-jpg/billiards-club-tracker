@@ -236,20 +236,29 @@ describe('공유문·공개 범위', () => {
   const confirmed = (extra: Partial<RegularSettlement> = {}) =>
     fake({ status: 'confirmed', confirmedAt: '2026-10-07T00:00:00.000Z', ...extra })
 
-  it('회장 보고문에는 (인출이 있으면) 날짜별 자금이동 내역이 나온다', () => {
+  it('회장 보고문에는 날짜별 자금이동 내역이 나온다 (건마다 금액 줄 + 메모 줄)', () => {
     const text = buildPresidentShareText(confirmed({
       bankCashWithdrawals: [w('w1', '2026-10-05', 200_000, { note: '행사 운영비 준비' })],
       cashDeposits: [d('d1', '2026-10-06', 80_000, { note: '잔액 재입금' })],
     }))
-    expect(text).toContain('[자금이동 내역]')
-    expect(text).toContain('10/05 통장→현금 200,000원 (행사 운영비 준비)')
-    expect(text).toContain('10/06 현금→통장 80,000원 (잔액 재입금)')
-    expect(text.indexOf('10/05 통장→현금')).toBeLessThan(text.indexOf('10/06 현금→통장'))
+    expect(text).toContain('[자금이동 내역]\n10/05 통장 → 현금 200,000원\n행사 운영비 준비\n\n10/06 현금 → 통장 80,000원\n잔액 재입금')
+    expect(text.indexOf('10/05 통장 → 현금')).toBeLessThan(text.indexOf('10/06 현금 → 통장'))
   })
 
-  it('인출 기록이 없는 기존 정산의 회장 보고문은 예전과 똑같다 (입금만 있어도 줄이 늘지 않는다)', () => {
-    const legacy = confirmed({ cashDeposits: [d('d1', '2026-10-06', 0)] })
-    expect(buildPresidentShareText(legacy)).not.toContain('[자금이동 내역]')
+  it('입금만 있는 정산(인출 없음)의 회장 보고문에도 입금은 자금이동 내역에서 확인할 수 있다', () => {
+    const text = buildPresidentShareText(confirmed({
+      participants: [{ id: 'p1', participantType: 'guest', memberId: null, displayName: '가상A', addedVia: 'manually_added_guest', dues: { amount: 100_000, method: '현금', status: '입금확인' } }],
+      cashDeposits: [d('d1', '2026-10-06', 7_000)],
+    }))
+    expect(text).toContain('[자금이동 내역]\n10/06 현금 → 통장 7,000원')
+    // 입금 금액은 [현금 현황]에서는 나오지 않는다(중복 표시 제거) — 현금 현황은 받은 금액·지출·현재 보유 현금뿐
+    const cashBlock = text.split('[현금 현황]\n')[1].split('\n\n')[0]
+    expect(cashBlock).toBe('현금으로 받은 금액 100,000원\n현금으로 지출한 금액 0원\n현재 보유 현금 93,000원')
+    expect(cashBlock).not.toContain('7,000원')
+  })
+
+  it('자금이동 기록이 하나도 없으면 [자금이동 내역] 줄이 아예 없다', () => {
+    expect(buildPresidentShareText(confirmed())).not.toContain('[자금이동 내역]')
   })
 
   it('회원용 공유문·공개 요약에는 자금이동 상세가 나타나지 않고 인출 유무와 무관하게 같다', () => {

@@ -113,6 +113,9 @@ export function buildPresidentShareText(settlement: RegularSettlement): string {
   const bank = calcBankSummary(settlement)
   const cash = calcCashSummary(settlement)
 
+  // 현금 현황은 3줄만 보여준다. 통장 인출액·통장 입금액·"입금 전/인출 반영" 같은 중간 계산값은 여기서 빼고,
+  // 그 금액들은 아래 [자금이동 내역]에서만 보여준다(중복 표시 제거 — 기록·계산식·데이터는 그대로다).
+  // 현재 보유 현금 = cash.cashBalance (= 받은 현금 + 통장 인출 − 현금 지출 − 통장 입금, 기존 계산 그대로).
   const lines = [
     memberText,
     '',
@@ -120,26 +123,30 @@ export function buildPresidentShareText(settlement: RegularSettlement): string {
     `전월 통장 잔액 ${won(bank.prevBalance)}`,
     `이번 기간 통장 증감 ${bank.bankChange >= 0 ? '+' : ''}${won(bank.bankChange)}`,
     `현재 통장 잔액 ${won(bank.currentBalance)}`,
-    `현금 수입 ${won(cash.cashIncome)} / 현금 지출 ${won(cash.cashExpense)}`,
-    `현금 잔액(입금 전) ${won(cash.cashBalanceBeforeDeposit)} / 현금 통장 입금액 ${won(cash.confirmedDeposit)}`,
-    `현금 잔액(입금 후) ${won(cash.cashBalanceAfterDeposit)}`,
+    '',
+    '[현금 현황]',
+    `현금으로 받은 금액 ${won(cash.cashIncome)}`,
+    `현금으로 지출한 금액 ${won(cash.cashExpense)}`,
+    cash.cashBalance < 0 ? `현금 부족 ${won(-cash.cashBalance)}` : `현재 보유 현금 ${won(cash.cashBalance)}`,
+    '',
     `계좌이체 미확인 금액 ${won(bank.unconfirmedTransferAmount)}`,
   ]
-  // 통장에서 현금 인출 기록이 있는 정산에만 추가한다 — 없으면 예전 문구와 글자 하나 다르지 않다.
+  // 통장에서 현금 인출 기록이 있는 정산에만 추가한다(예전처럼).
   if (withdrawalsOf(settlement).length > 0) {
-    const holdings = calcHoldingsSummary(settlement)
-    lines.push(
-      `통장에서 현금 인출 ${won(cash.bankWithdrawal)}`,
-      `현금 잔액(인출 반영) ${won(cash.cashBalance)}`,
-      `전체 보유액(통장+현금) ${won(holdings.totalHoldings)}`,
-    )
-    // 통장 거래내역과 대조할 수 있게 날짜순으로(인출·입금확인 입금 함께). 회원용 문구·공개 요약에는 넣지 않는다.
-    lines.push('[자금이동 내역]')
-    for (const e of buildFundMovementLog(settlement)) {
+    lines.push(`전체 보유액(통장+현금) ${won(calcHoldingsSummary(settlement).totalHoldings)}`)
+  }
+  // 통장 거래내역과 대조할 수 있게 날짜순으로(인출 + 입금확인된 현금 통장 입금). 회원용 문구·공개 요약에는 넣지 않는다.
+  // 형식: "09/30 통장 → 현금 1,200,000원" 다음 줄에 메모(있을 때), 건과 건 사이는 한 줄 띄운다.
+  const movements = buildFundMovementLog(settlement)
+  if (movements.length > 0) {
+    lines.push('', '[자금이동 내역]')
+    movements.forEach((e, i) => {
       const day = e.date.length >= 10 ? `${e.date.slice(5, 7)}/${e.date.slice(8, 10)}` : e.date
-      const kind = e.kind === 'withdrawal' ? '통장→현금' : '현금→통장'
-      lines.push(`${day} ${kind} ${won(e.amount)}${e.note ? ` (${e.note})` : ''}`)
-    }
+      const flow = e.kind === 'withdrawal' ? '통장 → 현금' : '현금 → 통장'
+      if (i > 0) lines.push('')
+      lines.push(`${day} ${flow} ${won(e.amount)}`)
+      if (e.note) lines.push(e.note)
+    })
   }
   return lines.join('\n')
 }
