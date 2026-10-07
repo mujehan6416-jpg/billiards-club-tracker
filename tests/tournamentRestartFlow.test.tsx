@@ -247,6 +247,22 @@ describe('본선 승인 → 합류 자리 자동 배치', () => {
     await waitFor(() => expect(syncRestartJoinersMock).toHaveBeenCalledWith(RESTART_ID, 'skkubc'))
   })
 
+  it('화면을 연 뒤 다른 기기에서 리스타트 대진을 만들었어도(화면 목록이 오래됨) 승인 직후 서버 목록을 새로 읽어 합류 배치를 요청한다', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    asAdmin()
+    const pending = mainR1.map((m) => (m.id === 'r2m1'
+      ? { ...m, status: 'awaitingApproval' as const, scoreA: 20, scoreB: 5, calculatedWinnerParticipantId: m.playerAParticipantId }
+      : m))
+    serve({ tournaments: [mainTournament, restartFixed], mainMatches: pending, restartMatches })
+    fetchTournamentsMock.mockResolvedValueOnce([mainTournament, restartDraft]) // 화면을 처음 열 때는 아직 대진 전(draft)
+    await openTournament('가상 본선')
+    fireEvent.click(screen.getByRole('button', { name: '8강' }))
+    fireEvent.click(screen.getAllByRole('button').find((b) => b.textContent?.includes('관리자 확인을 기다리고 있습니다') || b.getAttribute('role') === 'button' && b.textContent?.includes('경기 1'))!)
+    fireEvent.click(await screen.findByText('최종 승인'))
+    await waitFor(() => expect(approveTournamentMatchMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(syncRestartJoinersMock).toHaveBeenCalledWith(RESTART_ID, 'skkubc'))
+  })
+
   it('합류 자리 배치가 실패해도 최종 승인은 유효하고, 다시 확인하라는 안내가 나온다', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     asAdmin()

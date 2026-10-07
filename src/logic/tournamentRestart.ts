@@ -134,6 +134,7 @@ export type RestartTargetLookup =
 
 /**
  * 현재 본선 대회에 연결할 리스타트 대회를 찾는다.
+ * - 우선순위: 이 본선으로 대진을 만든 대회 → 고정 id(restart-{본선 id}) 대회 → 이름이 같은 대회.
  * - 현재 대회 자신은 제외한다.
  * - 같은 이름이 둘 이상이면 현재 대회와 날짜가 같은 것을 우선하고, 그래도 둘 이상이면 고르지 않고 중단한다
  *   (운영 데이터 오연결 방지).
@@ -141,9 +142,19 @@ export type RestartTargetLookup =
  */
 export function findRestartTarget(current: Tournament, tournaments: Tournament[]): RestartTargetLookup {
   const expectedName = restartTournamentName(current.name)
-  // 이름이 정확히 같은 대회, 또는 이 본선에서 자동 생성한 대회(고정 id — 나중에 이름을 고쳤어도 같은 대회로 본다)
   const autoId = restartTournamentId(current.id)
-  const sameName = tournaments.filter((t) => t.id !== current.id && (t.id === autoId || normalizeTournamentName(t.name) === expectedName))
+  const others = tournaments.filter((t) => t.id !== current.id)
+  // 1순위: 이 본선으로 리스타트 대진을 이미 만든 대회(실제로 운영 중인 대회) — 하나일 때만.
+  const linked = others.filter((t) => t.restartSourceTournamentId === current.id)
+  if (linked.length === 1) return { kind: 'found', tournament: linked[0] }
+  // 2순위: 이 본선에서 자동 생성한 대회(고정 id) — 이름이 같은 다른 대회가 있어도, 이름을 고쳤어도 이 대회로 연결한다.
+  const fixed = others.find((t) => t.id === autoId)
+  if (fixed) return { kind: 'found', tournament: fixed }
+  // 3순위(고정 id 대회가 없을 때만): 이름이 정확히 같은 대회. 다른 본선에 이미 연결된 대회·다른 본선의 자동 생성 대회는 제외한다.
+  const sameName = others.filter((t) =>
+    normalizeTournamentName(t.name) === expectedName
+    && !(t.restartSourceTournamentId && t.restartSourceTournamentId !== current.id)
+    && !t.id.startsWith('restart-'))
   if (sameName.length === 0) {
     return { kind: 'missing', expectedName, message: `'${expectedName}' 대회가 아직 없습니다.` }
   }

@@ -241,7 +241,12 @@ export function TournamentTab({
   const isRestartDetail = view === 'detail' && selected?.status === 'bracketFixed' && !!selected.restartSourceTournamentId
   useEffect(() => {
     if (previewMode || !isAuthorizedAdmin || !isRestartDetail || !selectedId) return
-    void syncRestartJoiners(selectedId, clubId).catch(() => { /* 수동 확인 버튼으로 다시 시도할 수 있다 */ })
+    void syncRestartJoiners(selectedId, clubId)
+      .then(async (placed) => {
+        if (placed > 0) await Promise.all([reloadMatches(selectedId), reloadParticipants(selectedId)])
+      })
+      .catch(() => { /* 수동 확인 버튼으로 다시 시도할 수 있다 */ })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewMode, isAuthorizedAdmin, isRestartDetail, selectedId, clubId])
 
   /** 보조 기능: 인터넷이 불안정할 때 직접 한 번 더 읽는다. */
@@ -266,7 +271,9 @@ export function TournamentTab({
     const target = tournaments.find((t) => t.id === id)
     const needsMatches = (target?.status === 'bracketFixed' || target?.status === 'finished') && !matchesByTournamentId[id]
     const tasks: Promise<void>[] = []
-    if (!participantsByTournamentId[id]) tasks.push(reloadParticipants(id))
+    // 참가자 목록은 열 때마다 서버에서 새로 읽는다. 한 번 읽어 둔 목록을 계속 쓰면, 그 사이 다른 기기나 자동 배치로
+    // 늘어난 참가자(리스타트 합류자 등)의 이름이 "알수없음"으로 보인다.
+    tasks.push(reloadParticipants(id))
     if (needsMatches) tasks.push(reloadMatches(id))
     if (tasks.length === 0) return
     setBusy(true)
@@ -493,10 +500,16 @@ export function TournamentTab({
   /** 이 대회를 본선으로 삼는(대진이 만들어진) 리스타트 대회마다 합류 자리를 채운다. */
   const syncLinkedRestarts = async (sourceId: string) => {
     if (previewMode) return
-    const linked = tournaments.filter((t) => t.restartSourceTournamentId === sourceId && t.status === 'bracketFixed')
+    // 화면에 들고 있는 목록은 다른 기기에서 리스타트 대진을 만든 사실을 모를 수 있으므로 서버에서 새로 읽는다.
+    const latest = await fetchTournaments(clubId)
+    setTournaments(latest)
+    const linked = latest.filter((t) => t.restartSourceTournamentId === sourceId && t.status === 'bracketFixed')
     for (const t of linked) {
       await syncRestartJoiners(t.id, clubId)
       await reloadMatches(t.id) // 본선 화면의 "합류 완료" 표시가 바로 바뀌도록 리스타트 경기 목록을 새로 읽는다
+      // 합류한 선수의 참가자 문서도 새로 생겼으므로 참가자 목록도 새로 읽는다 — 안 읽으면 이미 열어 본 리스타트 화면에서
+      // 합류자 이름이 "알수없음"으로 보인다(경기에는 id만 있고 이름은 참가자 목록에서 찾기 때문).
+      await reloadParticipants(t.id)
     }
   }
 
@@ -549,6 +562,7 @@ export function TournamentTab({
     try {
       const placed = await syncRestartJoiners(selectedId, clubId)
       await reloadMatches(selectedId)
+      if (placed > 0) await reloadParticipants(selectedId)
       setRestartSyncMsg(placed > 0
         ? `본선 탈락자 ${placed}명을 합류 자리에 배치했습니다.`
         : '새로 배치할 합류자가 없습니다. 본선 경기가 최종 승인되면 자동으로 배치됩니다.')
@@ -1146,7 +1160,7 @@ export function TournamentTab({
         {isAdmin && isAuthorizedAdmin && (
           <div className="card col-card" style={{ borderColor: 'var(--danger)' }}>
             <span className="muted" style={{ fontSize: 13 }}>
-              대회를 완전히 지웁니다. 참가자·대진·경기 기록이 모두 함께 삭제되며 되돌릴 수 없습니다.
+              대회를 완전히 지웁니다. 참가자·대진·경기 기록(전적·랭킹 반영분과 연결된 리스타트 포함)이 모두 함께 삭제되며 되돌릴 수 없습니다.
             </span>
             <button
               className="danger block" style={{ fontSize: 15, padding: 12 }} disabled={busy}

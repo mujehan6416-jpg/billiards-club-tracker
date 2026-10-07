@@ -714,23 +714,42 @@ export async function cancelTournamentBracket(
  *
  * 배치 하나는 500개 쓰기로 제한되므로(Firestore 제약), createMissingParticipants와 같은
  * 방식으로 450개씩 나눠 커밋한다. 마지막 배치에서 대회 본문 문서도 함께 지운다.
+ *
+ * 위 4곳 외에 "통계용 파생 기록"도 함께 지운다: clubs/{clubId}/sessions/tournament-session-{id} 와 그 아래 games.
+ * 연결된 리스타트 대회가 있으면 그 대회(와 같은 종류의 하위 데이터)도 함께 지운다.
  */
 export async function deleteTournament(
   tournamentId: string,
   clubId = DEFAULT_CLUB_ID,
 ): Promise<void> {
   try {
-    const [participants, matches] = await Promise.all([
-      fetchTournamentParticipants(tournamentId, clubId),
-      fetchTournamentMatches(tournamentId, clubId),
-    ])
+    if (!tournamentId) throw new Error('삭제할 대회 번호가 없습니다.')
 
-    const refs = [
-      ...participants.map((p) => participantDoc(clubId, tournamentId, p.id)),
-      ...matches.map((m) => matchDoc(clubId, tournamentId, m.id)),
-      drawDoc(clubId, tournamentId),
-      tournamentDoc(clubId, tournamentId),
-    ]
+    // 이 대회에 딸린 리스타트 대회(고정 번호 restart-{id} 또는 본선 연결 정보가 이 대회인 것)도 함께 지운다.
+    // 다른 대회·다른 리스타트는 번호가 정확히 맞는 것만 대상이 되므로 건드리지 않는다.
+    const all = await fetchTournaments(clubId)
+    const linkedRestartIds = all
+      .filter((t) => t.id !== tournamentId && (t.id === `restart-${tournamentId}` || t.restartSourceTournamentId === tournamentId))
+      .map((t) => t.id)
+
+    const refs = []
+    for (const id of [tournamentId, ...linkedRestartIds]) {
+      const sessionId = tournamentSessionId(id)
+      const [participants, matches, games] = await Promise.all([
+        fetchTournamentParticipants(id, clubId),
+        fetchTournamentMatches(id, clubId),
+        // 통계용 경기 기록(이 대회 전용 세션 아래)도 함께 지운다 — 남기면 대회를 지워도 전적·랭킹에 계속 잡힌다.
+        getDocs(collection(db, 'clubs', clubId, 'sessions', sessionId, 'games')),
+      ])
+      refs.push(
+        ...participants.map((p) => participantDoc(clubId, id, p.id)),
+        ...matches.map((m) => matchDoc(clubId, id, m.id)),
+        ...games.docs.map((g) => gameDoc(clubId, sessionId, g.id)),
+        drawDoc(clubId, id),
+        sessionDoc(clubId, sessionId),
+        tournamentDoc(clubId, id),
+      )
+    }
 
     const BATCH_LIMIT = 450
     for (let i = 0; i < refs.length; i += BATCH_LIMIT) {

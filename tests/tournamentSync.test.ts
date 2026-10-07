@@ -616,14 +616,18 @@ describe('대진 확정 취소', () => {
 
 // ══════════════════════════════════════════════════════════════════
 describe('대회 삭제', () => {
-  it('참가자·경기·비공개 추첨매핑·대회 본문을 모두 지운다', async () => {
-    getDocsMock.mockImplementation((ref: { path: string }) =>
-      Promise.resolve(
-        ref.path.endsWith('/matches')
-          ? querySnapOf([match(), match({ id: 'r1m2' })])
-          : querySnapOf([participant('a'), participant('b')]),
-      ),
-    )
+  const SESSION = `clubs/${CLUB}/sessions/tournament-session-${TID}`
+  /** 경로별로 다른 목록을 돌려준다(대회 목록·참가자·경기·통계 경기). */
+  const mockLists = (lists: { matches?: unknown[]; participants?: unknown[]; games?: unknown[] }) =>
+    getDocsMock.mockImplementation((ref: { path: string }) => {
+      if (ref.path.endsWith('/matches')) return Promise.resolve(querySnapOf(lists.matches ?? []))
+      if (ref.path.endsWith('/participants')) return Promise.resolve(querySnapOf(lists.participants ?? []))
+      if (ref.path.endsWith('/games')) return Promise.resolve({ docs: (lists.games ?? []).map((g) => ({ id: (g as { id: string }).id, data: () => g })) })
+      return Promise.resolve(querySnapOf([])) // 대회 목록(연결된 리스타트 없음)
+    })
+
+  it('참가자·경기·비공개 추첨매핑·통계 기록·대회 본문을 모두 지운다', async () => {
+    mockLists({ matches: [match(), match({ id: 'r1m2' })], participants: [participant('a'), participant('b')], games: [{ id: 'g1' }] })
 
     await deleteTournament(TID, CLUB)
 
@@ -636,26 +640,26 @@ describe('대회 삭제', () => {
       `${BASE}/participants/participant-a`,
       `${BASE}/participants/participant-b`,
       `${BASE}/private/draw`,
+      SESSION,
+      `${SESSION}/games/g1`,
     ].sort())
   })
 
   it('경기가 하나도 없어도(참가 신청 단계 대회) 대회 본문은 지운다', async () => {
-    getDocsMock.mockResolvedValue(querySnapOf([]))
+    mockLists({})
     await deleteTournament(TID, CLUB)
     const deletedPaths = lastBatch().ops.filter((op) => op.kind === 'delete').map((op) => op.path)
-    expect(deletedPaths).toEqual([`${BASE}/private/draw`, `${BASE}`])
+    expect(deletedPaths).toEqual([`${BASE}/private/draw`, SESSION, `${BASE}`])
   })
 
   it('500개 배치 제한을 넘으면 여러 배치로 나눠 커밋한다', async () => {
     const manyParticipants = Array.from({ length: 500 }, (_, i) => participant('a', { id: `p${i}`, memberId: `m${i}` }))
-    getDocsMock.mockImplementation((ref: { path: string }) =>
-      Promise.resolve(ref.path.endsWith('/matches') ? querySnapOf([]) : querySnapOf(manyParticipants)),
-    )
+    mockLists({ participants: manyParticipants })
     await deleteTournament(TID, CLUB)
     expect(batches.length).toBeGreaterThan(1)
     const totalDeletes = batches.flatMap((b) => b.ops).filter((op) => op.kind === 'delete').length
-    // 참가자 500 + private/draw 1 + 대회 본문 1
-    expect(totalDeletes).toBe(502)
+    // 참가자 500 + private/draw 1 + 통계 세션 1 + 대회 본문 1
+    expect(totalDeletes).toBe(503)
   })
 
   it('없는 대회를 지우려 하면 오류를 낸다', async () => {

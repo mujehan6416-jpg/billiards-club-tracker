@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Tournament, TournamentParticipant } from '../../types/tournament'
 import {
   findRestartTarget, isAlreadyInTarget, normalizeTournamentName, planRestartTransfer, restartTargetState,
-  restartTournamentName, type RestartCandidate,
+  restartTournamentId, restartTournamentName, type RestartCandidate,
 } from '../../logic/tournamentRestart'
 import type { RestartFirstRoundStatus, RestartJoinStatus } from '../../logic/tournamentRestartBracket'
 
@@ -231,6 +231,14 @@ export function TournamentRestartSender({
           {latestBuildId && buildId !== '개발 실행' && (buildId === latestBuildId ? ' (최신 버전)' : ` — 새 버전(${latestBuildId})이 있습니다. 앱을 완전히 종료한 뒤 다시 열어 주세요.`)}
         </span>
         <span>읽은 대회 {tournaments.length}개</span>
+        <span>본선 번호: {currentTournament.id}</span>
+        <span>찾는 리스타트 번호: {restartTournamentId(currentTournament.id)}</span>
+        <span>
+          연결 상태: {lookup.kind === 'found' ? `연결됨 (${lookup.tournament.id})` : lookup.kind === 'ambiguous' ? '후보 여러 개' : '없음'}
+          {' · '}후보 {others.filter((t) => t.id === restartTournamentId(currentTournament.id)
+            || t.restartSourceTournamentId === currentTournament.id
+            || normalizeTournamentName(t.name) === restartTournamentName(currentTournament.name)).length}개
+        </span>
         {lookup.kind === 'missing' && !preparing && prepareError && others.length > 0 && (
           <>
             <span>읽은 다른 대회 이름:</span>

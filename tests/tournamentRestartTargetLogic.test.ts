@@ -157,11 +157,11 @@ describe('자동 생성 리스타트 대회 — 고정 id와 생성 필드', () 
     expect(findRestartTarget(main, [main, created])).toEqual({ kind: 'found', tournament: created })
   })
 
-  it('이름이 바뀌어도 고정 id 대회는 같은 대회로 연결된다, 이름이 같은 다른 대회가 또 있으면 중단한다', () => {
+  it('이름이 바뀌어도 고정 id 대회는 같은 대회로 연결된다, 이름이 같은 다른 대회가 또 있어도 고정 id 대회가 우선이다', () => {
     const renamed = { ...buildRestartTournament(main, '2026-10-05T01:00:00.000Z'), name: '이름을 고친 대회' }
     expect(findRestartTarget(main, [main, renamed]).kind).toBe('found')
     const manual = named('manual', 'Test3 리스타트전')
-    expect(findRestartTarget(main, [main, renamed, manual]).kind).toBe('ambiguous')
+    expect(findRestartTarget(main, [main, renamed, manual])).toEqual({ kind: 'found', tournament: renamed })
   })
 
   it('같은 본선에서 두 번 만들어도 id가 같아 문서 하나로 합쳐진다', () => {
