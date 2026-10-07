@@ -100,9 +100,6 @@ export function TournamentArchiveView({ tournament, onBack }: { tournament: Arch
       <div className="card col-card" style={{ gap: 6 }}>
         <span style={{ fontWeight: 800, fontSize: 18 }}>하이런</span>
         <span style={{ fontSize: 17, fontWeight: 700 }}>{tournament.highRun.name} {tournament.highRun.value}</span>
-        {tournament.handicapNotes.map((n) => (
-          <span key={n.name} className="muted" style={{ fontSize: 15 }}>{n.name} 핸디 기준 {n.handicap}</span>
-        ))}
       </div>
 
       {tournament.stages.map((stage) => <StageSection key={stage.title} stage={stage} />)}

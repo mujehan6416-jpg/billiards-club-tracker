@@ -150,7 +150,11 @@ describe('기록용 완료 대회 화면', () => {
     expect(screen.getByText('📅 2026년 10월 5일')).toBeInTheDocument()
     expect(screen.getByText('⏱ 55분 경기 · 대회 완료')).toBeInTheDocument()
     expect(screen.getByText('현응렬 6')).toBeInTheDocument()
-    expect(screen.getByText('조영일 핸디 기준 20')).toBeInTheDocument()
+    // 핸디 안내 문구는 화면에 표시하지 않는다 — 조영일 경기 기록(점수/목표)은 그대로 보인다.
+    expect(screen.queryByText(/핸디 기준/)).not.toBeInTheDocument()
+    expect(within(main).getAllByText('17/20')).toHaveLength(2)
+    expect(within(main).getByText('12/20')).toBeInTheDocument()
+    expect(within(main).getByText('20/20')).toBeInTheDocument()
     expect(within(restart).getByText('11/15')).toBeInTheDocument()
     expect(within(restart).getByText('9/20')).toBeInTheDocument()
     expect(within(main).getByText('본선 3·4위전')).toBeInTheDocument()
