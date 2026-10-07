@@ -1,9 +1,20 @@
-import type { ArchivedEntry, ArchivedStage, ArchivedTournament } from '../../data/tournamentArchive'
-import { nameEmphasis } from './tournamentDisplay'
+import { useMemo, useState } from 'react'
+import type { ArchivedTournament } from '../../data/tournamentArchive'
+import type { Tournament } from '../../types/tournament'
+import { archiveStageToMatches } from '../../logic/tournamentArchiveMatches'
+import { countTournamentProgress } from '../../logic/tournamentMatch'
+import { TournamentBracketView } from './TournamentBracketView'
+import { TournamentFinalResults } from './TournamentFinalResults'
 
 /**
  * 완료된 대회의 "열람용 확정 결과" 화면. 읽기 전용이며 아무것도 저장하지 않는다.
- * 대진 엔진·통계와 연결되지 않은 기록용 데이터(data/tournamentArchive.ts)만 그린다.
+ *
+ * 화면은 기존 대회 결과 화면과 같은 컴포넌트(라운드별 보기 TournamentBracketView · 최종 결과
+ * TournamentFinalResults)를 그대로 쓴다. 데이터만 기록용 확정값(data/tournamentArchive.ts)을
+ * 표시 전용으로 바꿔 넘긴다(logic/tournamentArchiveMatches.ts) — 대진 엔진·서버·통계와는 연결되지 않는다.
+ *
+ * 전체 대진표 그림(TournamentBracketVisual)은 쓰지 않는다. 그 그림은 대진 자리 배치가 필요한데,
+ * 당시 오프라인 추첨 자리는 남아 있지 않아 추정해야 하기 때문이다(기존 리스타트 대진도 라운드별 보기만 쓴다).
  */
 
 /** "2026-10-05" → "2026년 10월 5일". 형식이 다르면 원문을 그대로 쓴다. */
@@ -36,73 +47,68 @@ export function TournamentArchiveCard({ tournament, onSelect }: { tournament: Ar
   )
 }
 
-function EntryRow({ entry }: { entry: ArchivedEntry }) {
-  if (entry.kind === 'bye') {
-    return (
-      <div className="card col-card" style={{ gap: 4 }} data-testid="archive-bye">
-        <span style={{ fontSize: 17, fontWeight: 700 }}>{entry.name}</span>
-        <span className="muted" style={{ fontSize: 15 }}>부전승 (경기 없이 다음 라운드 진출)</span>
-      </div>
-    )
-  }
-  const { winner, loser } = entry
-  const win = nameEmphasis(true, true)
-  const lose = nameEmphasis(true, false)
-  return (
-    <div className="card col-card" style={{ gap: 8 }} data-testid="archive-game">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <span style={{ ...win, fontSize: 17 }}>{winner.name}</span>
-        <span style={{ fontSize: 17, fontWeight: 800 }}>{winner.score}/{winner.target} <span style={{ fontSize: 15 }}>승</span></span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <span style={{ ...lose, fontSize: 17 }}>{loser.name}</span>
-        <span style={{ fontSize: 17, color: lose.color }}>{loser.score}/{loser.target}</span>
-      </div>
-    </div>
-  )
-}
-
-function StageSection({ stage }: { stage: ArchivedStage }) {
-  return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }} aria-label={stage.title}>
-      <h3 style={{ margin: '8px 0 0', fontSize: 20, color: '#072B61' }}>{stage.title}</h3>
-
-      <div className="card col-card" style={{ gap: 8 }}>
-        <span style={{ fontWeight: 800, fontSize: 18 }}>🏆 {stage.title} 최종 결과</span>
-        {stage.placements.map((p) => (
-          <span key={p.label} style={{ fontSize: 17, fontWeight: 700 }}>{p.label}: {p.name}</span>
-        ))}
-      </div>
-
-      {stage.rounds.map((round) => (
-        <div key={round.label} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <h4 style={{ margin: '6px 0 0', fontSize: 18 }}>{stage.title} {round.label}</h4>
-          {round.entries.map((entry, i) => <EntryRow key={i} entry={entry} />)}
-        </div>
-      ))}
-    </section>
-  )
-}
+const noop = () => {}
 
 export function TournamentArchiveView({ tournament, onBack }: { tournament: ArchivedTournament; onBack: () => void }) {
+  const stages = useMemo(
+    () => tournament.stages.map((stage, i) => ({ stage, key: `${tournament.id}-${i}`, ...archiveStageToMatches(stage, `${tournament.id}-${i}`) })),
+    [tournament],
+  )
+  const [activeKey, setActiveKey] = useState(stages[0]?.key)
+  const active = stages.find((s) => s.key === activeKey) ?? stages[0]
+
+  // TournamentFinalResults가 받는 대회 정보 — 화면 표시("대회가 종료되었습니다.")에만 쓴다.
+  const finished: Tournament = {
+    id: tournament.id, name: tournament.name, date: tournament.date ?? '',
+    timeLimitMinutes: tournament.timeLimitMinutes, status: 'finished', createdAt: '',
+  }
+  const isRestartStage = !!active && active !== stages[0]
+  const progress = countTournamentProgress(active?.matches ?? [])
+
   return (
     <div className="tab">
       <button type="button" onClick={onBack} style={{ marginBottom: 4 }}>← 대회 목록</button>
       <h2 className="tab-title" style={{ marginBottom: 0 }}>{tournament.name}</h2>
-      {tournament.date && (
-        <div className="muted" style={{ fontSize: 15 }}>📅 {formatKoreanDate(tournament.date)}</div>
+      <span className="muted">
+        {tournament.date ? `📅 ${formatKoreanDate(tournament.date)} · ` : ''}{tournament.timeLimitMinutes}분 경기
+      </span>
+
+      {/* 본선 / 리스타트전 전환 — 기존 대회 화면의 "라운드별 보기 / 전체 대진표" 전환 버튼과 같은 모양. */}
+      {stages.length > 1 && (
+        <div style={{ display: 'flex', gap: 8 }} role="group" aria-label="본선·리스타트전 선택">
+          {stages.map((s) => (
+            <button
+              key={s.key} type="button" aria-pressed={s.key === active?.key}
+              className={s.key === active?.key ? 'primary grow' : 'grow'} style={{ fontSize: 16, fontWeight: 700, padding: 12 }}
+              onClick={() => setActiveKey(s.key)}
+            >
+              {s.stage.title}
+            </button>
+          ))}
+        </div>
       )}
-      <div className="muted" style={{ fontSize: 15 }}>⏱ {tournament.timeLimitMinutes}분 경기 · 대회 완료</div>
-      <p className="muted" style={{ fontSize: 15, margin: 0 }}>
-        경기 기록은 &quot;점수/목표&quot;로 표시됩니다. 이 화면은 확정된 결과를 보여 주는 기록용이며, 개인 전적·랭킹에는 반영되지 않습니다.
-      </p>
 
-      <div className="card col-card" style={{ gap: 6 }}>
-        <span style={{ fontWeight: 800, fontSize: 18 }}>하이런</span>
-        <span style={{ fontSize: 17, fontWeight: 700 }}>{tournament.highRun.name} {tournament.highRun.value}</span>
+      {active && (
+        <section aria-label={active.stage.title} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* 기존 대회 화면의 진행 현황 카드("7 / 7 경기 완료")와 같은 모양 — 실시간 연결 문구·새로고침은 기록용이라 없다. */}
+          <div className="card">
+            <span style={{ fontSize: 17, fontWeight: 800 }}>
+              {progress.done} / {progress.total} 경기 완료
+            </span>
+          </div>
+          <TournamentBracketView key={active.key} matches={active.matches} nameOf={active.nameOf} roundLabelOf={active.roundLabelOf} />
+          <TournamentFinalResults
+            tournament={finished} matches={active.matches} nameOf={active.nameOf}
+            isAdmin={false} onFinish={noop} hideThirdPlace={isRestartStage}
+          />
+        </section>
+      )}
+
+      {/* 하이런 — 최종 결과 카드와 같은 모양으로 둔다. */}
+      <div className="card col-card" style={{ gap: 10 }}>
+        <span style={{ fontWeight: 800, fontSize: 19 }}>🎯 하이런</span>
+        <span style={{ fontSize: 16, fontWeight: 700 }}>{tournament.highRun.name} {tournament.highRun.value}</span>
       </div>
-
-      {tournament.stages.map((stage) => <StageSection key={stage.title} stage={stage} />)}
     </div>
   )
 }

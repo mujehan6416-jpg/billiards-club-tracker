@@ -24,6 +24,8 @@ vi.mock('../src/lib/tournamentSync', () => ({
 
 import { TournamentTab } from '../src/tabs/TournamentTab'
 import { ARCHIVED_TOURNAMENTS } from '../src/data/tournamentArchive'
+import { archiveStageToMatches } from '../src/logic/tournamentArchiveMatches'
+import { calculateFinalPlacements } from '../src/logic/tournamentMatch'
 import { useApp } from '../src/store/appStore'
 import { useAuth } from '../src/store/authStore'
 import { useAdmin } from '../src/store/adminStore'
@@ -91,7 +93,7 @@ describe('기록용 완료 대회 데이터 (제2회 부산동문회장배)', ()
     ])
   })
 
-  it('하이런은 현응렬 6, 조영일 핸디 기준은 20이다', () => {
+  it('하이런은 현응렬 6이다 (핸디 안내 데이터는 남아 있지만 화면에는 표시하지 않는다)', () => {
     expect(cup.highRun).toEqual({ name: '현응렬', value: 6 })
     expect(cup.handicapNotes).toEqual([{ name: '조영일', handicap: 20 }])
   })
@@ -122,6 +124,59 @@ describe('기록용 완료 대회 데이터 (제2회 부산동문회장배)', ()
   })
 })
 
+describe('확정 결과 → 기존 결과 화면용 경기 목록 변환 (표시 전용)', () => {
+  const main = archiveStageToMatches(stage('본선'), 'm')
+  const restart = archiveStageToMatches(stage('리스타트전'), 'r')
+
+  it('경기 수: 본선 16칸(15경기 + 부전승 1), 리스타트 11칸(10경기 + 부전승 1), 모두 확정 상태', () => {
+    expect(main.matches.filter((m) => m.resultType === 'normal')).toHaveLength(15)
+    expect(main.matches.filter((m) => m.resultType === 'bye')).toHaveLength(1)
+    expect(restart.matches.filter((m) => m.resultType === 'normal')).toHaveLength(10)
+    expect(restart.matches.filter((m) => m.resultType === 'bye')).toHaveLength(1)
+    expect([...main.matches, ...restart.matches].every((m) => m.status === 'official')).toBe(true)
+  })
+
+  it('회원과 연결하지 않는다(memberId 없음 — 통계·회원 원본과 무관)', () => {
+    expect([...main.matches, ...restart.matches].every((m) => m.playerAMemberId === null && m.playerBMemberId === null)).toBe(true)
+  })
+
+  it('점수/목표는 확정 데이터 그대로 옮긴다', () => {
+    const allGames = games('본선').length + games('리스타트전').length
+    const moved = [...main.matches, ...restart.matches].filter((m) => m.resultType === 'normal')
+    expect(moved).toHaveLength(allGames)
+    const kim = restart.matches.find((m) => restart.nameOf(m.officialWinnerParticipantId ?? null) === '김재홍')!
+    expect([kim.scoreA, kim.playerAHandicapSnapshot, kim.scoreB, kim.playerBHandicapSnapshot]).toEqual([11, 15, 9, 20])
+    expect(restart.nameOf(kim.officialLoserParticipantId ?? null)).toBe('나재운')
+  })
+
+  it('기존 순위 계산(calculateFinalPlacements)이 확정 순위와 같다', () => {
+    const p = calculateFinalPlacements(main.matches)
+    expect(main.nameOf(p.championParticipantId)).toBe('임진홍')
+    expect(main.nameOf(p.runnerUpParticipantId)).toBe('현응렬')
+    expect(p.thirdPlaceParticipantIds.map((id) => main.nameOf(id))).toEqual(['조영일'])
+    expect(main.nameOf(p.fourthPlaceParticipantId ?? null)).toBe('엄재익')
+    const r = calculateFinalPlacements(restart.matches)
+    expect(restart.nameOf(r.championParticipantId)).toBe('우연홍')
+    expect(restart.nameOf(r.runnerUpParticipantId)).toBe('송원경')
+  })
+
+  it('다음 경기 연결은 승자가 실제로 나온 다음 라운드 경기로만 정한다', () => {
+    for (const { matches, nameOf } of [main, restart]) {
+      const byId = new Map(matches.map((m) => [m.id, m]))
+      for (const m of matches.filter((x) => x.nextMatchId)) {
+        const next = byId.get(m.nextMatchId!)!
+        const winner = nameOf(m.officialWinnerParticipantId ?? null)
+        const nextSide = m.nextSlot === 'playerA' ? next.playerAParticipantId : next.playerBParticipantId
+        expect(nameOf(nextSide)).toBe(winner)
+      }
+      // 결승과 3·4위전만 다음 경기가 없다.
+      expect(matches.filter((x) => !x.nextMatchId).map((x) => x.playerCountInRound).sort()).toEqual(
+        matches.some((x) => x.playerCountInRound === 3) ? [2, 3] : [2],
+      )
+    }
+  })
+})
+
 describe('기록용 완료 대회 화면', () => {
   it('대회 목록에 완료 상태로 보이고, 다른 운영 대회도 그대로 보인다', async () => {
     render(<TournamentTab />)
@@ -132,32 +187,73 @@ describe('기록용 완료 대회 화면', () => {
     expect(within(card).getByText('⏱ 55분 경기')).toBeInTheDocument()
   })
 
-  it('누르면 결과 화면이 열리고 본선·리스타트전이 나뉘어 보인다', async () => {
+  /** 라운드 탭을 하나씩 눌러 그 단계의 모든 경기 카드 글자를 모은다(기존 라운드별 보기 화면 그대로). */
+  function collectCards(stageTitle: string) {
+    const region = screen.getByRole('region', { name: stageTitle })
+    const tabs = within(within(region).getByTestId('round-tabs')).getAllByRole('button')
+    const labels = tabs.map((t) => t.textContent ?? '')
+    const cards: string[] = []
+    for (const tab of tabs) {
+      fireEvent.click(tab)
+      for (const label of within(region).getAllByText(/^경기 \d+/)) cards.push(label.parentElement!.textContent ?? '')
+    }
+    return { region, labels, cards, byes: cards.filter((c) => c.includes('부전승')), games: cards.filter((c) => !c.includes('부전승')) }
+  }
+
+  async function openArchive() {
     render(<TournamentTab />)
     fireEvent.click(await screen.findByRole('button', { name: /제2회 부산동문회장배 당구대회/ }))
+  }
 
+  it('기존 대회 결과 화면과 같은 머리말(대회명 · 날짜 · 경기 시간)로 열린다', async () => {
+    await openArchive()
     expect(screen.getByRole('heading', { name: '제2회 부산동문회장배 당구대회' })).toBeInTheDocument()
-    const main = screen.getByRole('region', { name: '본선' })
-    const restart = screen.getByRole('region', { name: '리스타트전' })
-    expect(within(main).getByText('1위: 임진홍')).toBeInTheDocument()
-    expect(within(main).getByText('4위: 엄재익')).toBeInTheDocument()
-    expect(within(restart).getByText('우승: 우연홍')).toBeInTheDocument()
-    expect(within(restart).getByText('준우승: 송원경')).toBeInTheDocument()
-    expect(within(main).getAllByTestId('archive-game')).toHaveLength(15)
-    expect(within(restart).getAllByTestId('archive-game')).toHaveLength(10)
-    expect(within(main).getAllByTestId('archive-bye')).toHaveLength(1)
-    expect(within(restart).getAllByTestId('archive-bye')).toHaveLength(1)
-    expect(screen.getByText('📅 2026년 10월 5일')).toBeInTheDocument()
-    expect(screen.getByText('⏱ 55분 경기 · 대회 완료')).toBeInTheDocument()
+    expect(screen.getByText('📅 2026년 10월 5일 · 55분 경기')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '본선' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '리스타트전' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('본선: 기존 라운드 탭·경기 카드로 15경기 + 부전승 1건, 기존 최종 결과 카드로 1~4위', async () => {
+    await openArchive()
+    const { region, labels, games, byes } = collectCards('본선')
+    expect(labels).toEqual(['✅ 예선', '✅ 8강', '✅ 4강', '✅ 3·4위전', '✅ 결승'])
+    expect(within(region).getByText('15 / 15 경기 완료')).toBeInTheDocument()
+    expect(games).toHaveLength(15)
+    expect(byes).toHaveLength(1)
+    expect(byes[0]).toContain('송원경')
+    expect(within(region).getByText('우승: 임진홍')).toBeInTheDocument()
+    expect(within(region).getByText('준우승: 현응렬')).toBeInTheDocument()
+    expect(within(region).getByText('3위: 조영일')).toBeInTheDocument()
+    expect(within(region).getByText('4위: 엄재익')).toBeInTheDocument()
+    expect(within(region).getByText('대회가 종료되었습니다.')).toBeInTheDocument()
+    // 조영일 경기 기록(점수/목표)은 그대로 — 17/20 두 번, 4강 12/20 패, 3·4위전 20/20 승.
+    expect(games.filter((c) => c.includes('승자 조영일 · 17/20'))).toHaveLength(2)
+    expect(games.some((c) => c.includes('패자 조영일 · 12/20'))).toBe(true)
+    expect(games.some((c) => c.includes('승자 조영일 · 20/20'))).toBe(true)
+    expect(games.some((c) => c.includes('승자 임진홍 · 25/25') && c.includes('패자 현응렬 · 11/23'))).toBe(true)
+  })
+
+  it('리스타트전: 10경기 + 부전승 1건, 우승·준우승만 표시', async () => {
+    await openArchive()
+    fireEvent.click(screen.getByRole('button', { name: '리스타트전' }))
+    const { region, labels, games, byes } = collectCards('리스타트전')
+    expect(labels).toEqual(['✅ 예선', '✅ 8강', '✅ 4강', '✅ 결승'])
+    expect(within(region).getByText('10 / 10 경기 완료')).toBeInTheDocument()
+    expect(games).toHaveLength(10)
+    expect(byes).toHaveLength(1)
+    expect(byes[0]).toContain('우연홍')
+    expect(within(region).getByText('우승: 우연홍')).toBeInTheDocument()
+    expect(within(region).getByText('준우승: 송원경')).toBeInTheDocument()
+    expect(within(region).queryByText(/3위/)).not.toBeInTheDocument()
+    expect(games.some((c) => c.includes('승자 김재홍 · 11/15') && c.includes('패자 나재운 · 9/20'))).toBe(true)
+  })
+
+  it('하이런 현응렬 6을 보여 주고, 핸디 안내 문구·전체 대진표 그림은 없다', async () => {
+    await openArchive()
+    expect(screen.getByText('🎯 하이런')).toBeInTheDocument()
     expect(screen.getByText('현응렬 6')).toBeInTheDocument()
-    // 핸디 안내 문구는 화면에 표시하지 않는다 — 조영일 경기 기록(점수/목표)은 그대로 보인다.
     expect(screen.queryByText(/핸디 기준/)).not.toBeInTheDocument()
-    expect(within(main).getAllByText('17/20')).toHaveLength(2)
-    expect(within(main).getByText('12/20')).toBeInTheDocument()
-    expect(within(main).getByText('20/20')).toBeInTheDocument()
-    expect(within(restart).getByText('11/15')).toBeInTheDocument()
-    expect(within(restart).getByText('9/20')).toBeInTheDocument()
-    expect(within(main).getByText('본선 3·4위전')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '전체 대진표' })).not.toBeInTheDocument()
   })
 
   it('"대회 목록" 버튼으로 목록에 돌아온다', async () => {

@@ -16,8 +16,13 @@ import { matchMemberStatusMessage, nameEmphasis, rateDisplay, roundLabel } from 
  * 전체 bracket을 한 화면에 욱여넣지 않고 라운드 탭으로 나눈다(고령 사용자 UI 기준).
  */
 export function TournamentBracketView({
-  matches, nameOf, highlightMemberId, isPreview, onSelectMatch, selectedMatchId, renderMatchDetail,
+  matches, nameOf, highlightMemberId, isPreview, onSelectMatch, selectedMatchId, renderMatchDetail, roundLabelOf,
 }: {
+  /**
+   * 라운드 탭 이름을 따로 정할 때만 넘긴다(기록용 완료 대회의 "예선" 등). 넘기지 않으면 기존처럼
+   * playerCountInRound로 이름을 만든다 — 일반 대회 화면은 이 값을 넘기지 않으므로 동작이 그대로다.
+   */
+  roundLabelOf?: (match: TournamentMatch) => string
   matches: TournamentMatch[]
   nameOf: (participantId: string | null) => string
   /** 이 memberId가 나온 경기 카드를 강조 표시한다(보통 로그인한 본인). */
@@ -54,10 +59,10 @@ export function TournamentBracketView({
       .sort(([a, listA], [b, listB]) => sortKey(a, listA) - sortKey(b, listB))
       .map(([roundNumber, list]) => ({
         roundNumber,
-        label: roundLabel(list[0].playerCountInRound),
+        label: roundLabelOf ? roundLabelOf(list[0]) : roundLabel(list[0].playerCountInRound),
         matches: list.sort((a, b) => a.matchNumber - b.matchNumber),
       }))
-  }, [matches])
+  }, [matches, roundLabelOf])
 
   const [activeRound, setActiveRound] = useState(() => rounds[0]?.roundNumber ?? 1)
   const current = rounds.find((r) => r.roundNumber === activeRound) ?? rounds[0]
