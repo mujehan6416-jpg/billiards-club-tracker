@@ -15,6 +15,8 @@ import { TournamentBracketView } from '../components/tournament/TournamentBracke
 import { TournamentBracketVisual } from '../components/tournament/TournamentBracketVisual'
 import { TournamentMatchPanel } from '../components/tournament/TournamentMatchPanel'
 import { TournamentFinalResults } from '../components/tournament/TournamentFinalResults'
+import { TournamentArchiveCard, TournamentArchiveView } from '../components/tournament/TournamentArchiveView'
+import { ARCHIVED_TOURNAMENTS, type ArchivedTournament } from '../data/tournamentArchive'
 import { TournamentRestartSender, type RestartBracketPlan, type RestartSendResult } from '../components/tournament/TournamentRestartSender'
 import { buildRestartTournament, findRestartTarget, planRestartTransfer, restartCandidates } from '../logic/tournamentRestart'
 import {
@@ -72,7 +74,7 @@ import {
   finishTournament,
 } from '../lib/tournamentSync'
 
-type View = 'list' | 'create' | 'detail'
+type View = 'list' | 'create' | 'detail' | 'archive'
 
 /**
  * 이미 계산된 대진 노드·좌석으로 경기 목록을 만든다. 순수 함수 두 개를 이어붙이기만 한다.
@@ -106,8 +108,11 @@ function buildMatchesFromMapping(
  */
 export function TournamentTab({
   clubId = 'skkubc', devTournaments, devParticipants, devMembers, devMatches, devDrawMappings, previewMode = false,
+  archivedTournaments = ARCHIVED_TOURNAMENTS,
 }: {
   clubId?: string
+  /** 완료된 대회의 열람용 확정 결과(기록용). 서버·통계와 무관한 읽기 전용 목록이다. */
+  archivedTournaments?: ArchivedTournament[]
   devTournaments?: Tournament[]
   devParticipants?: Record<string, TournamentParticipant[]>
   /** 개발 미리보기 전용 — 넘기면 실제 useApp(회원) 대신 이 목록을 쓴다. */
@@ -145,6 +150,7 @@ export function TournamentTab({
   const [devDrawMappingByTournamentId, setDevDrawMappingByTournamentId] =
     useState<Record<string, TournamentDrawMapping>>(devDrawMappings ?? {})
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [archiveId, setArchiveId] = useState<string | null>(null)
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null)
   /** 라운드별 카드 보기(기존)와 전체 대진표 시각화, 두 가지 보기 방식. */
   const [bracketViewMode, setBracketViewMode] = useState<'round' | 'full'>('round')
@@ -949,6 +955,11 @@ export function TournamentTab({
     )
   }
 
+  const archived = view === 'archive' ? archivedTournaments.find((a) => a.id === archiveId) : undefined
+  if (archived) {
+    return <TournamentArchiveView tournament={archived} onBack={() => { setArchiveId(null); setView('list') }} />
+  }
+
   if (view === 'create') {
     return (
       <div className="tab">
@@ -1201,6 +1212,15 @@ export function TournamentTab({
       )}
 
       <TournamentList tournaments={tournaments} participantsByTournamentId={participantsByTournamentId} onSelect={openTournament} />
+
+      {archivedTournaments.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }} aria-label="완료된 대회 결과">
+          <h3 style={{ margin: '12px 0 0', fontSize: 18 }}>완료된 대회 결과</h3>
+          {archivedTournaments.map((a) => (
+            <TournamentArchiveCard key={a.id} tournament={a} onSelect={(id) => { setArchiveId(id); setView('archive') }} />
+          ))}
+        </section>
+      )}
     </div>
   )
 }

@@ -204,7 +204,7 @@ describe('제2회 부산동문회장배 — 본선 → 리스타트 전체 시�
 
   it('1. 화면(관리자): 본선 열기 → 예선 7경기를 입력·확인·최종 승인 — 리스타트는 아직 없다', async () => {
     asAdmin()
-    render(<TournamentTab />)
+    render(<TournamentTab archivedTournaments={[]} />)
     await openTournamentInUi(MAIN_NAME)
     for (const r of MAIN_R1) await playMatch(MAIN, r)
     // 본선 1차 7경기 official → 승자는 8강 자리에 올라갔다
@@ -370,7 +370,7 @@ describe('제2회 부산동문회장배 — 본선 → 리스타트 전체 시�
     expect(findRestartTarget(main, withDecoy)).toMatchObject({ kind: 'found', tournament: { id: RESTART } })
     // 새로 열린 화면(다른 기기)에서 본선·리스타트를 열어 결과가 그대로 보인다
     asAdmin()
-    render(<TournamentTab />)
+    render(<TournamentTab archivedTournaments={[]} />)
     await openTournamentInUi(RESTART_NAME)
     clickRound(2)
     await settle()
