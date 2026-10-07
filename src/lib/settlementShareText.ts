@@ -116,14 +116,36 @@ export function expenseByMethodText(settlement: RegularSettlement): string {
 }
 
 /**
+ * 총수입을 구성별로 풀어 쓴 괄호 문구: "(회비 800,000원 + 찬조 현금 350,000원 + 찬조 계좌이체 350,000원)".
+ * 기존 calcIncomeSummary의 값만 쓰고, 총수입(totalIncome)에 들어가는 여섯 칸을 빠짐없이 나눠 담아 세부 합계 = 총수입금액이 되게 한다:
+ *  - 회비 = 현금 + 계좌이체(입금확인) + 기타 결제수단(입금확인) 회비 전부(= 회비 총액)
+ *  - 찬조 현금 / 찬조 계좌이체(입금확인)
+ *  - 기타 수입 = "기타" 결제수단으로 받은 입금확인 찬조(위 세 항목에 안 들어가는 유일한 수입 칸)
+ * 0원 항목은 생략하고, 총수입이 0원이면 빈 문자열(괄호 줄 없음). 미확인 계좌이체는 총수입에 없으므로 여기에도 없다.
+ */
+export function incomeBreakdownText(settlement: RegularSettlement): string {
+  const i = calcIncomeSummary(settlement)
+  const parts: [string, number][] = [
+    ['회비', i.duesCash + i.duesTransferConfirmed + i.duesOther],
+    ['찬조 현금', i.donationCash],
+    ['찬조 계좌이체', i.donationTransferConfirmed],
+    ['기타 수입', i.donationOther],
+  ]
+  const shown = parts.filter(([, n]) => n > 0).map(([name, n]) => `${name} ${won(n)}`)
+  return shown.length > 0 ? `(${shown.join(' + ')})` : ''
+}
+
+/**
  * 회장 보고용 지출 상세 — 항목마다 결제수단을 붙인다("상품비 200,000원 (현금)"). 금액·항목·순서는 회원용 공유문의
  * allExpenseLineItems와 똑같이 모임 부담액(clubShare)·예전 회식비(차수순) 다음 지출(등록순)이고, 결제수단은 각 기록의 값(현금/체크카드/계좌이체/기타)이다.
+ * 모임 부담액이 0원인 줄(예: 전액 찬조로 모임이 낸 돈이 없는 회식비)은 보고문 표시에서만 뺀다 — 원본 기록과 총지출 계산에는 영향이 없다(0원이라 합계도 같다).
  */
 export function expenseLinesWithMethod(settlement: RegularSettlement): string[] {
   const dinner = [...settlement.dinnerContributions]
+    .filter((d) => d.clubShare > 0)
     .sort((a, b) => a.dinnerRound - b.dinnerRound)
     .map((d) => `${d.dinnerRound}차 회식비${d.paidBy ? `(${d.paidBy})` : ''} ${won(d.clubShare)} (${d.method})`)
-  const items = settlement.expenses.map((e) => `${e.label} ${won(e.clubShare)} (${e.method})`)
+  const items = settlement.expenses.filter((e) => e.clubShare > 0).map((e) => `${e.label} ${won(e.clubShare)} (${e.method})`)
   return [...dinner, ...items]
 }
 
@@ -161,7 +183,7 @@ const cashOrShortage = (n: number) => (n < 0 ? `현금 부족 ${won(-n)}` : won(
 
 /**
  * 회장 보고용 공유문 — 정산 제목 + 관리자용 재무 요약. 관리자만 생성한다.
- * 구성: 통장 요약(전월 잔액·총수입·총지출+결제수단별·현재 잔액) → [현금 흐름표] → [자금이동 내역] → [지출 내역].
+ * 구성: 전월 잔액 → 총수입(구성별) → 총지출(결제수단별) + [지출 내역] → 현재 잔액 → [현금 흐름표] → [자금이동 내역].
  * 현금 흐름표가 현금 설명을 모두 맡으므로 예전 [현금 현황] 3줄은 따로 두지 않는다(중복 제거).
  * 카카오톡은 고정폭 글꼴이 아니라서 열을 맞춘 표 대신 "라벨 / +금액 → 보유 금액" 두 줄 흐름으로 쓴다.
  */
@@ -170,6 +192,7 @@ export function buildPresidentShareText(settlement: RegularSettlement): string {
   const cash = calcCashSummary(settlement)
   const profit = calcProfitSummary(settlement)
   const byMethod = expenseByMethodText(settlement)
+  const incomeText = incomeBreakdownText(settlement)
 
   const lines: string[] = [
     `[${settlement.meetingName}] ${settlement.meetingDate}`,
@@ -179,10 +202,13 @@ export function buildPresidentShareText(settlement: RegularSettlement): string {
     `전월 통장 잔액 : ${won(bank.prevBalance)}`,
     '',
     `총수입금액 : ${won(profit.totalIncome)}`,
-    '',
-    `총지출금액 : ${won(profit.totalExpense)}`,
   ]
+  if (incomeText) lines.push(incomeText)
+  lines.push('', `총지출금액 : ${won(profit.totalExpense)}`)
   if (byMethod) lines.push(byMethod)
+  // [지출 내역] — 총지출금액 바로 아래(항목마다 결제수단 표시). 같은 상세를 맨 아래에 또 쓰지 않는다.
+  const expenseLines = expenseLinesWithMethod(settlement)
+  if (expenseLines.length > 0) lines.push('', '[지출 내역]', '', ...expenseLines)
   lines.push('', `현재 통장 잔액 : ${won(bank.currentBalance)}`)
   lines.push(`계좌이체 미확인 금액 : ${won(bank.unconfirmedTransferAmount)}`)
 
@@ -207,12 +233,6 @@ export function buildPresidentShareText(settlement: RegularSettlement): string {
       lines.push(`${day} ${flow} ${won(e.amount)}`)
       if (e.note) lines.push(e.note)
     })
-  }
-
-  // [지출 내역] — 항목마다 결제수단 표시
-  const expenseLines = expenseLinesWithMethod(settlement)
-  if (expenseLines.length > 0) {
-    lines.push('', '', '[지출 내역]', '', ...expenseLines)
   }
   return lines.join('\n')
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildPresidentShareText, buildMemberShareText, buildPublicSummary, buildDonationDetailText,
-  buildCashFlowRows, expenseByMethodText, expenseLinesWithMethod,
+  buildCashFlowRows, expenseByMethodText, expenseLinesWithMethod, incomeBreakdownText,
 } from '../src/lib/settlementShareText'
 import {
   calcBankSummary, calcCashSummary, calcHoldingsSummary, calcIncomeSummary, calcExpenseSummary, calcProfitSummary,
@@ -42,6 +42,8 @@ const example = () => fake({
 
 /** 보고문에서 "[제목]" 블록(다음 "[" 제목 전까지)을 잘라낸다. */
 const section = (text: string, title: string) => text.split(`[${title}]\n`)[1].split('\n\n\n')[0].replace(/^\n/, '')
+/** [지출 내역] 블록 — 총지출금액 바로 아래에 있고, 다음 빈 줄(= "현재 통장 잔액" 앞)까지. */
+const expenseBlock = (text: string) => text.split('[지출 내역]\n\n')[1].split('\n\n')[0]
 
 describe('회장 보고용 — 상단 요약 + 결제수단별 총지출', () => {
   it('1·2. 총지출금액 아래에 결제수단별 합계가 나오고 그 합이 총지출금액과 같다', () => {
@@ -79,7 +81,7 @@ describe('회장 보고용 — 상단 요약 + 결제수단별 총지출', () =>
 describe('회장 보고용 — [지출 내역] 결제수단 표시', () => {
   it('4~7. 각 지출 항목에 사용자용 결제수단 이름이 붙는다 — (현금) (계좌이체) (체크카드)', () => {
     const text = buildPresidentShareText(example())
-    expect(section(text, '지출 내역')).toBe('상품비 1,000,000원 (현금)\n식대 920,000원 (현금)\n장소비 480,000원 (계좌이체)\n용품비 100,000원 (체크카드)')
+    expect(expenseBlock(text)).toBe('상품비 1,000,000원 (현금)\n식대 920,000원 (현금)\n장소비 480,000원 (계좌이체)\n용품비 100,000원 (체크카드)')
     expect(expenseLinesWithMethod(fake({ expenses: [expense('e1', '기타지출', 50_000, '기타')] }))).toEqual(['기타지출 50,000원 (기타)'])
   })
 
@@ -94,6 +96,100 @@ describe('회장 보고용 — [지출 내역] 결제수단 표시', () => {
 
   it('지출이 없으면 [지출 내역] 섹션이 없다', () => {
     expect(buildPresidentShareText(fake())).not.toContain('[지출 내역]')
+  })
+})
+
+describe('회장 보고용 — 총수입 구성 / [지출 내역] 위치', () => {
+  const dues = (id: string, amount: number, method: '현금' | '계좌이체' | '기타', status: '입금확인' | '미확인' = '입금확인') =>
+    ({ id, participantType: 'guest' as const, memberId: null, displayName: `가상${id}`, addedVia: 'manually_added_guest' as const, dues: { amount, method, status } })
+  const donation = (id: string, amount: number, method: '현금' | '계좌이체' | '기타', status: '입금확인' | '미확인' = '입금확인') =>
+    ({ id, participantType: 'guest' as const, memberId: null, displayName: `가상${id}`, addedVia: 'manually_added_guest' as const, donation: { amount, method, status } })
+
+  it('1·2. 총수입금액 아래에 회비 / 찬조 현금 / 찬조 계좌이체가 나오고 합이 총수입금액과 같다', () => {
+    const s = fake({
+      participants: [dues('A', 300_000, '현금'), dues('B', 500_000, '계좌이체'), donation('C', 350_000, '현금'), donation('D', 350_000, '계좌이체')],
+    })
+    const text = buildPresidentShareText(s)
+    // 회비는 현금·계좌이체를 모두 합친 회비 총액(800,000)
+    expect(text).toContain('총수입금액 : 1,500,000원\n(회비 800,000원 + 찬조 현금 350,000원 + 찬조 계좌이체 350,000원)')
+    expect(calcIncomeSummary(s).totalIncome).toBe(1_500_000)
+    expect(incomeBreakdownText(s)).toBe('(회비 800,000원 + 찬조 현금 350,000원 + 찬조 계좌이체 350,000원)')
+  })
+
+  it('3. 기타 결제수단 수입이 있어도 세부 합계 = 총수입금액이다 (회비 기타는 회비에, 찬조 기타는 "기타 수입"으로)', () => {
+    const s = fake({
+      participants: [dues('A', 100_000, '현금'), dues('B', 40_000, '기타'), donation('C', 20_000, '현금'), donation('D', 30_000, '계좌이체'), donation('E', 7_000, '기타')],
+    })
+    const i = calcIncomeSummary(s)
+    expect(i.totalIncome).toBe(197_000)
+    expect(incomeBreakdownText(s)).toBe('(회비 140,000원 + 찬조 현금 20,000원 + 찬조 계좌이체 30,000원 + 기타 수입 7,000원)')
+    const sum = [...incomeBreakdownText(s).matchAll(/([\d,]+)원/g)].reduce((a, m) => a + Number(m[1].replace(/,/g, '')), 0)
+    expect(sum).toBe(i.totalIncome)
+  })
+
+  it('미확인 계좌이체·0원 항목은 세부에 나오지 않고(총수입에도 없음), 총수입이 0원이면 괄호 줄이 없다', () => {
+    const s = fake({ participants: [dues('A', 50_000, '현금'), donation('B', 90_000, '계좌이체', '미확인')] })
+    expect(incomeBreakdownText(s)).toBe('(회비 50,000원)')
+    expect(calcIncomeSummary(s).totalIncome).toBe(50_000)
+    const none = buildPresidentShareText(fake())
+    expect(none).toContain('총수입금액 : 0원')
+    expect(none).not.toMatch(/총수입금액 : 0원\n\(/)
+  })
+
+  it('수입 세부 금액은 총수입 계산에서 가져온다 — 총수입금액·순익 계산값은 변하지 않는다', () => {
+    const s = example()
+    expect(buildPresidentShareText(s)).toContain('총수입금액 : 870,000원\n(회비 520,000원 + 찬조 현금 350,000원)')
+    expect(calcIncomeSummary(s).totalIncome).toBe(870_000)
+    expect(calcProfitSummary(s).netProfit).toBe(-1_630_000)
+  })
+
+  it('5·6. [지출 내역]은 총지출금액(결제수단 합계) 바로 아래, 현재 통장 잔액 위에 한 번만 나온다', () => {
+    const text = buildPresidentShareText(example())
+    expect(text).toContain(
+      '총지출금액 : 2,500,000원\n(현금 1,920,000원 + 계좌이체 480,000원 + 체크카드 100,000원)\n\n[지출 내역]\n\n' +
+      '상품비 1,000,000원 (현금)\n식대 920,000원 (현금)\n장소비 480,000원 (계좌이체)\n용품비 100,000원 (체크카드)\n\n현재 통장 잔액 : 3,412,614원',
+    )
+    expect(text.match(/\[지출 내역\]/g)).toHaveLength(1)
+    expect(text.match(/상품비 1,000,000원/g)).toHaveLength(1)
+    // 맨 아래(자금이동 내역 뒤)에는 지출 내역이 없다
+    expect(text.split('[자금이동 내역]')[1]).not.toContain('(현금)')
+  })
+
+  it('1~4. 모임 부담액이 0원인 지출·회식비 줄은 [지출 내역]에서 빠지고, 0원 초과 지출은 결제수단과 함께 나오며, 총지출은 그대로다', () => {
+    const s = fake({
+      expenses: [
+        expense('e1', '상품비', 200_000, '현금'),
+        { ...expense('e2', '전액찬조 식대', 80_000, '계좌이체'), clubShare: 0, personalDonation: 80_000 }, // 모임 부담 0원
+        expense('e3', '장소비', 120_000, '체크카드'),
+      ],
+      dinnerContributions: [
+        { id: 'd1', dinnerRound: 1, totalAmount: 300_000, method: '현금', clubShare: 0, contributionType: '전액찬조', contributors: [{ name: '가상찬조자', memberId: null, amount: 300_000 }] },
+        { id: 'd2', dinnerRound: 2, totalAmount: 90_000, method: '현금', clubShare: 90_000, contributionType: '모임회계지출', contributors: [] },
+      ],
+    })
+    const text = buildPresidentShareText(s)
+    expect(expenseBlock(text)).toBe('2차 회식비 90,000원 (현금)\n상품비 200,000원 (현금)\n장소비 120,000원 (체크카드)')
+    expect(text).not.toContain('1차 회식비')
+    expect(text).not.toContain('전액찬조 식대')
+    expect(text).not.toMatch(/ 0원 \(/) // 결제수단이 붙은 0원 줄이 없다
+    // 총지출·결제수단별 합계는 기존 계산 그대로(0원 줄은 합계에 영향이 없다)
+    expect(calcExpenseSummary(s).total).toBe(410_000)
+    expect(text).toContain('총지출금액 : 410,000원\n(현금 290,000원 + 체크카드 120,000원)')
+    // 원본 기록은 그대로 남아 있다
+    expect(s.expenses).toHaveLength(3)
+    expect(s.dinnerContributions).toHaveLength(2)
+    // 회원용 공유문의 지출 줄은 예전과 같다(0원 줄 포함)
+    expect(buildMemberShareText(s)).toContain('1차 회식비 0원')
+  })
+
+  it('모든 지출이 0원이면 [지출 내역] 섹션 자체가 없다', () => {
+    const s = fake({ dinnerContributions: [{ id: 'd1', dinnerRound: 1, totalAmount: 100_000, method: '현금', clubShare: 0, contributionType: '전액찬조', contributors: [{ name: '가상찬조자', memberId: null, amount: 100_000 }] }] })
+    expect(buildPresidentShareText(s)).not.toContain('[지출 내역]')
+    expect(expenseLinesWithMethod(s)).toEqual([])
+  })
+
+  it('지출이 없으면 [지출 내역] 섹션 없이 총지출 0원 다음에 바로 현재 통장 잔액이 온다', () => {
+    expect(buildPresidentShareText(fake())).toContain('총지출금액 : 0원\n\n현재 통장 잔액 : 5,042,614원')
   })
 })
 
@@ -202,7 +298,9 @@ describe('회장 보고용 — [자금이동 내역] 유지와 일치', () => {
     const text = buildPresidentShareText(example())
     expect(section(text, '자금이동 내역')).toBe('09/30 통장 → 현금 1,200,000원\n상금 및 예비비 현금 인출\n\n10/06 현금 → 통장 150,000원\n예비비 잔액 입금')
     expect(text.indexOf('[현금 흐름표]')).toBeLessThan(text.indexOf('[자금이동 내역]'))
-    expect(text.indexOf('[자금이동 내역]')).toBeLessThan(text.indexOf('[지출 내역]'))
+    // 지출 내역은 더 이상 맨 아래가 아니다 — 자금이동 내역이 마지막 섹션
+    expect(text.indexOf('[지출 내역]')).toBeLessThan(text.indexOf('[현금 흐름표]'))
+    expect(text.endsWith('10/06 현금 → 통장 150,000원\n예비비 잔액 입금')).toBe(true)
   })
 
   it('메모가 없으면 금액 줄만 나온다 / 기록이 없으면 섹션이 없다', () => {
