@@ -17,6 +17,11 @@ export interface ArchiveStageMatches {
   nameOf: (participantId: string | null) => string
   /** 화면 라운드 이름(예선·8강·4강·3·4위전·결승) — 확정 결과표의 이름을 그대로 쓴다. */
   roundLabelOf: (match: TournamentMatch) => string
+  /**
+   * 첫 라운드가 아닌데 이 단계의 이전 경기에서 올라오지 않은 선수(예: 리스타트 8강에 합류한 본선 탈락자).
+   * 확정 결과에서 그대로 읽어 낸 것이며, 전체 대진표에서 "어디서 합류했는지" 안내하는 데만 쓴다.
+   */
+  joiners: { roundLabel: string; names: string[] }[]
 }
 
 export function archiveStageToMatches(stage: ArchivedStage, stageKey: string): ArchiveStageMatches {
@@ -76,9 +81,19 @@ export function archiveStageToMatches(stage: ArchivedStage, stageKey: string): A
     })
   })
 
+  const joiners = regular.slice(1).map((round) => {
+    const roundMatches = matches.filter((m) => labels.get(m.id) === round.label)
+    const arrived = (m: TournamentMatch, participantId: string | null) =>
+      matches.some((s) => s.nextMatchId === m.id && s.officialWinnerParticipantId === participantId)
+    const joined = roundMatches.flatMap((m) => [m.playerAParticipantId, m.playerBParticipantId]
+      .filter((id): id is string => !!id && !arrived(m, id)))
+    return { roundLabel: round.label, names: joined.map((id) => names.get(id) ?? '알수없음') }
+  }).filter((j) => j.names.length > 0)
+
   return {
     matches,
     nameOf: (participantId) => (participantId ? (names.get(participantId) ?? '알수없음') : ''),
     roundLabelOf: (match) => labels.get(match.id) ?? '',
+    joiners,
   }
 }

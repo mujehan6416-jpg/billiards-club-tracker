@@ -4,17 +4,19 @@ import type { Tournament } from '../../types/tournament'
 import { archiveStageToMatches } from '../../logic/tournamentArchiveMatches'
 import { countTournamentProgress } from '../../logic/tournamentMatch'
 import { TournamentBracketView } from './TournamentBracketView'
+import { TournamentBracketVisual } from './TournamentBracketVisual'
 import { TournamentFinalResults } from './TournamentFinalResults'
 
 /**
  * 완료된 대회의 "열람용 확정 결과" 화면. 읽기 전용이며 아무것도 저장하지 않는다.
  *
- * 화면은 기존 대회 결과 화면과 같은 컴포넌트(라운드별 보기 TournamentBracketView · 최종 결과
- * TournamentFinalResults)를 그대로 쓴다. 데이터만 기록용 확정값(data/tournamentArchive.ts)을
- * 표시 전용으로 바꿔 넘긴다(logic/tournamentArchiveMatches.ts) — 대진 엔진·서버·통계와는 연결되지 않는다.
+ * 화면은 기존 대회 결과 화면과 같은 컴포넌트(라운드별 보기 TournamentBracketView · 전체 대진표
+ * TournamentBracketVisual · 최종 결과 TournamentFinalResults)를 그대로 쓴다. 데이터만 기록용 확정값
+ * (data/tournamentArchive.ts)을 표시 전용으로 바꿔 넘긴다(logic/tournamentArchiveMatches.ts) — 대진 엔진·서버·통계와는
+ * 연결되지 않는다.
  *
- * 전체 대진표 그림(TournamentBracketVisual)은 쓰지 않는다. 그 그림은 대진 자리 배치가 필요한데,
- * 당시 오프라인 추첨 자리는 남아 있지 않아 추정해야 하기 때문이다(기존 리스타트 대진도 라운드별 보기만 쓴다).
+ * 전체 대진표는 오프라인 추첨 자리를 복원한 것이 아니다. "이 경기 승자가 다음 라운드 어느 경기에 나왔는가"라는
+ * 실제 경기 흐름만으로 선을 잇는다(TournamentBracketVisual은 nextMatchId 연결만 따라 그린다).
  */
 
 /** "2026-10-05" → "2026년 10월 5일". 형식이 다르면 원문을 그대로 쓴다. */
@@ -55,6 +57,8 @@ export function TournamentArchiveView({ tournament, onBack }: { tournament: Arch
     [tournament],
   )
   const [activeKey, setActiveKey] = useState(stages[0]?.key)
+  /** 기존 대회 화면과 같은 두 가지 보기 방식. 본선·리스타트전을 바꿔도 고른 보기 방식은 유지한다. */
+  const [viewMode, setViewMode] = useState<'round' | 'full'>('round')
   const active = stages.find((s) => s.key === activeKey) ?? stages[0]
 
   // TournamentFinalResults가 받는 대회 정보 — 화면 표시("대회가 종료되었습니다.")에만 쓴다.
@@ -96,7 +100,35 @@ export function TournamentArchiveView({ tournament, onBack }: { tournament: Arch
               {progress.done} / {progress.total} 경기 완료
             </span>
           </div>
-          <TournamentBracketView key={active.key} matches={active.matches} nameOf={active.nameOf} roundLabelOf={active.roundLabelOf} />
+          {/* 기존 대회 화면의 "라운드별 보기 / 전체 대진표" 전환 버튼 그대로. */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button" aria-pressed={viewMode === 'round'}
+              className={viewMode === 'round' ? 'primary grow' : 'grow'} style={{ fontSize: 16, fontWeight: 700, padding: 12 }}
+              onClick={() => setViewMode('round')}
+            >
+              라운드별 보기
+            </button>
+            <button
+              type="button" aria-pressed={viewMode === 'full'}
+              className={viewMode === 'full' ? 'primary grow' : 'grow'} style={{ fontSize: 16, fontWeight: 700, padding: 12 }}
+              onClick={() => setViewMode('full')}
+            >
+              전체 대진표
+            </button>
+          </div>
+          {viewMode === 'round' ? (
+            <TournamentBracketView key={active.key} matches={active.matches} nameOf={active.nameOf} roundLabelOf={active.roundLabelOf} />
+          ) : (
+            <>
+              <TournamentBracketVisual key={active.key} matches={active.matches} nameOf={active.nameOf} roundLabelOf={active.roundLabelOf} />
+              {active.joiners.map((j) => (
+                <span key={j.roundLabel} className="muted" style={{ fontSize: 15 }}>
+                  {j.roundLabel}부터 합류{isRestartStage ? '(본선 탈락자)' : ''}: {j.names.join(' · ')}
+                </span>
+              ))}
+            </>
+          )}
           <TournamentFinalResults
             tournament={finished} matches={active.matches} nameOf={active.nameOf}
             isAdmin={false} onFinish={noop} hideThirdPlace={isRestartStage}

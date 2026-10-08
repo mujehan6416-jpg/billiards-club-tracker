@@ -177,6 +177,68 @@ describe('확정 결과 → 기존 결과 화면용 경기 목록 변환 (표시
   })
 })
 
+describe('전체 대진표용 실제 경기 흐름 (추첨 슬롯 추정 없음)', () => {
+  /** 경기(승자 이름) → 그 승자가 나간 다음 경기의 두 선수 이름. 확정 결과표의 "→ 다음 라운드 진출"과 같아야 한다. */
+  function flow(stageTitle: string) {
+    const { matches, nameOf, roundLabelOf } = archiveStageToMatches(stage(stageTitle), 'x')
+    const byId = new Map(matches.map((m) => [m.id, m]))
+    return matches.filter((m) => m.nextMatchId).map((m) => {
+      const next = byId.get(m.nextMatchId!)!
+      return `${roundLabelOf(m)} ${nameOf(m.officialWinnerParticipantId ?? null)} → ${roundLabelOf(next)} ${nameOf(next.playerAParticipantId)}·${nameOf(next.playerBParticipantId)}`
+    })
+  }
+
+  it('본선: 예선 → 8강 → 4강 → 결승 흐름이 실제 경기 그대로다', () => {
+    expect(flow('본선')).toEqual([
+      '예선 손해수 → 8강 임진홍·손해수',
+      '예선 임진홍 → 8강 임진홍·손해수',
+      '예선 엄재익 → 8강 엄재익·김병찬',
+      '예선 김병찬 → 8강 엄재익·김병찬',
+      '예선 현응렬 → 8강 현응렬·강호철',
+      '예선 강호철 → 8강 현응렬·강호철',
+      '예선 조영일 → 8강 조영일·송원경',
+      '예선 송원경 → 8강 조영일·송원경',
+      '8강 임진홍 → 4강 임진홍·엄재익',
+      '8강 엄재익 → 4강 임진홍·엄재익',
+      '8강 현응렬 → 4강 현응렬·조영일',
+      '8강 조영일 → 4강 현응렬·조영일',
+      '4강 임진홍 → 결승 임진홍·현응렬',
+      '4강 현응렬 → 결승 임진홍·현응렬',
+    ])
+  })
+
+  it('리스타트: 예선 승자 3명 + 부전승 1명이 8강으로, 이후 4강 → 결승 흐름이 실제 경기 그대로다', () => {
+    expect(flow('리스타트전')).toEqual([
+      '예선 강은기 → 8강 송원경·강은기',
+      '예선 김재홍 → 8강 김병찬·김재홍',
+      '예선 오용진 → 8강 손해수·오용진',
+      '예선 우연홍 → 8강 우연홍·강호철',
+      '8강 송원경 → 4강 송원경·김병찬',
+      '8강 김병찬 → 4강 송원경·김병찬',
+      '8강 손해수 → 4강 우연홍·손해수',
+      '8강 우연홍 → 4강 우연홍·손해수',
+      '4강 송원경 → 결승 우연홍·송원경',
+      '4강 우연홍 → 결승 우연홍·송원경',
+    ])
+  })
+
+  it('합류자: 리스타트 8강의 본선 탈락자 4명만 찾고, 본선에는 합류자가 없다', () => {
+    expect(archiveStageToMatches(stage('본선'), 'x').joiners).toEqual([])
+    expect(archiveStageToMatches(stage('리스타트전'), 'x').joiners).toEqual([
+      { roundLabel: '8강', names: ['송원경', '김병찬', '손해수', '강호철'] },
+    ])
+  })
+
+  it('3·4위전은 승자 진출 흐름에 끼지 않는다(4강 패자 둘의 별도 경기)', () => {
+    const { matches, nameOf, roundLabelOf } = archiveStageToMatches(stage('본선'), 'x')
+    const third = matches.find((m) => roundLabelOf(m) === '3·4위전')!
+    expect(third.playerCountInRound).toBe(3)
+    expect(third.nextMatchId).toBeNull()
+    expect(matches.some((m) => m.nextMatchId === third.id)).toBe(false)
+    expect([nameOf(third.officialWinnerParticipantId ?? null), nameOf(third.officialLoserParticipantId ?? null)]).toEqual(['조영일', '엄재익'])
+  })
+})
+
 describe('기록용 완료 대회 화면', () => {
   it('대회 목록에 완료 상태로 보이고, 다른 운영 대회도 그대로 보인다', async () => {
     render(<TournamentTab />)
@@ -248,12 +310,62 @@ describe('기록용 완료 대회 화면', () => {
     expect(games.some((c) => c.includes('승자 김재홍 · 11/15') && c.includes('패자 나재운 · 9/20'))).toBe(true)
   })
 
-  it('하이런 현응렬 6을 보여 주고, 핸디 안내 문구·전체 대진표 그림은 없다', async () => {
+  it('하이런 현응렬 6을 보여 주고, 핸디 안내 문구는 없다', async () => {
     await openArchive()
     expect(screen.getByText('🎯 하이런')).toBeInTheDocument()
     expect(screen.getByText('현응렬 6')).toBeInTheDocument()
     expect(screen.queryByText(/핸디 기준/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '전체 대진표' })).not.toBeInTheDocument()
+  })
+
+  it('기존 대회처럼 [라운드별 보기] [전체 대진표] 전환이 있고, 처음에는 라운드별 보기다', async () => {
+    await openArchive()
+    expect(screen.getByRole('button', { name: '라운드별 보기' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '전체 대진표' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByTestId('round-tabs')).toBeInTheDocument()
+  })
+
+  /** 전체 대진표(기존 TournamentBracketVisual)에 그려진 경기 칸들의 [A 이름, B 이름]. */
+  function visualCards(region: HTMLElement) {
+    return [...region.querySelectorAll('[data-match-id]')].map((el) => [...el.querySelectorAll('span')].map((s) => s.textContent ?? ''))
+  }
+
+  it('본선 전체 대진표: 예선 8칸(부전승 1) + 8강 4 + 4강 2 + 결승 1 + 3·4위전 1, 승자 칸 강조', async () => {
+    await openArchive()
+    fireEvent.click(screen.getByRole('button', { name: '전체 대진표' }))
+    const region = screen.getByRole('region', { name: '본선' })
+    expect(within(region).queryByTestId('round-tabs')).not.toBeInTheDocument()
+    for (const label of ['✅ 예선', '✅ 8강', '✅ 4강', '✅ 결승', '3·4위전']) expect(within(region).getByText(label)).toBeInTheDocument()
+    const cards = visualCards(region)
+    expect(cards).toHaveLength(16)
+    expect(cards.filter((c) => c.some((t) => t.includes('(부전승)')))).toHaveLength(1)
+    expect(cards.some((c) => c.includes('3·4위전') && c.includes('조영일') && c.includes('엄재익'))).toBe(true)
+    // 확정된 모든 실제 경기에 승자 칸이 하나씩, 부전승 1칸 — 15 + 1 = 16.
+    expect(region.querySelectorAll('[data-winner="true"]')).toHaveLength(16)
+    expect([...region.querySelectorAll('[data-winner="true"]')].filter((s) => s.textContent === '임진홍')).toHaveLength(4)
+    expect(within(region).getByText('우승: 임진홍')).toBeInTheDocument()
+    expect(within(region).queryByText(/부터 합류/)).not.toBeInTheDocument()
+  })
+
+  it('리스타트 전체 대진표: 예선 4칸(부전승 1) + 8강 4 + 4강 2 + 결승 1, 본선 탈락자 합류 안내', async () => {
+    await openArchive()
+    fireEvent.click(screen.getByRole('button', { name: '리스타트전' }))
+    fireEvent.click(screen.getByRole('button', { name: '전체 대진표' }))
+    const region = screen.getByRole('region', { name: '리스타트전' })
+    for (const label of ['✅ 예선', '✅ 8강', '✅ 4강', '✅ 결승']) expect(within(region).getByText(label)).toBeInTheDocument()
+    expect(within(region).queryByText('3·4위전')).not.toBeInTheDocument()
+    const cards = visualCards(region)
+    expect(cards).toHaveLength(11)
+    expect(cards.filter((c) => c.some((t) => t.includes('(부전승)')))).toHaveLength(1)
+    expect(region.querySelectorAll('[data-winner="true"]')).toHaveLength(11)
+    expect(within(region).getByText('8강부터 합류(본선 탈락자): 송원경 · 김병찬 · 손해수 · 강호철')).toBeInTheDocument()
+    expect(within(region).getByText('우승: 우연홍')).toBeInTheDocument()
+  })
+
+  it('전체 대진표에서 라운드별 보기로 돌아가면 기존 라운드 탭이 다시 보인다', async () => {
+    await openArchive()
+    fireEvent.click(screen.getByRole('button', { name: '전체 대진표' }))
+    fireEvent.click(screen.getByRole('button', { name: '라운드별 보기' }))
+    expect(screen.getByTestId('round-tabs')).toBeInTheDocument()
   })
 
   it('"대회 목록" 버튼으로 목록에 돌아온다', async () => {

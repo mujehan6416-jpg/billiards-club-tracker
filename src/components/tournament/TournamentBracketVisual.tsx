@@ -40,8 +40,13 @@ interface ConnectorLine { key: string; d: string }
  * 전체는 스크롤되지 않는다.
  */
 export function TournamentBracketVisual({
-  matches, nameOf, onSelectMatch, selectedMatchId,
+  matches, nameOf, onSelectMatch, selectedMatchId, roundLabelOf,
 }: {
+  /**
+   * 라운드 이름표를 따로 정할 때만 넘긴다(기록용 완료 대회의 "예선" 등). 넘기지 않으면 기존처럼
+   * playerCountInRound로 이름을 만든다 — 일반 대회 화면은 이 값을 넘기지 않으므로 동작이 그대로다.
+   */
+  roundLabelOf?: (match: TournamentMatch) => string
   matches: TournamentMatch[]
   nameOf: (participantId: string | null) => string
   onSelectMatch?: (match: TournamentMatch) => void
@@ -87,11 +92,11 @@ export function TournamentBracketVisual({
       .sort(([a], [b]) => a - b)
       .map(([roundNumber, list]) => ({
         roundNumber,
-        label: roundLabel(list[0].playerCountInRound),
+        label: roundLabelOf ? roundLabelOf(list[0]) : roundLabel(list[0].playerCountInRound),
         confirmed: isTournamentRoundOfficial(matches, roundNumber),
         x: layout.get(list[0].id)?.x ?? 0,
       }))
-  }, [matches, layout])
+  }, [matches, layout, roundLabelOf])
 
   const lines = useMemo(() => {
     // nextMatchId별로 소스 경기를 묶는다 — 실제 bracket 데이터를 기준으로만 묶고, 화면에
