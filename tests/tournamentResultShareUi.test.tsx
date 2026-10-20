@@ -43,6 +43,8 @@ const person = (id: string): TournamentParticipant => ({
 })
 const mainPeople = Array.from({ length: 8 }, (_, i) => person(`p${i + 1}`))
 const restartPeople = Array.from({ length: 16 }, (_, i) => person(`m${i + 1}`))
+// 본선에서 합류한 선수(합류 자리 채움 뒤 리스타트 참가자 문서가 생긴다) — 리스타트 경기 상세에 이름이 나오려면 필요하다
+restartPeople.push(...['p3', 'p7', 'p11', 'p15'].map(person))
 const restartMatches = playRestart()
 const { champion, runnerUp } = restartFinalists(restartMatches)
 const nameOfRestart = (id: string | null) => (id ? `가상선수${id.slice(1)}` : '')
@@ -208,6 +210,89 @@ describe('경기결과 공유 — 관리자 화면', () => {
     fetchTournamentMatchesMock.mockImplementation(async (id: string) => (id === 'main' ? playMain8(true) : restartMatches))
     fireEvent.click(screen.getByText('리스타트 결과 다시 불러오기'))
     await waitFor(() => expect(card().getByText(nameOfRestart(champion))).toBeInTheDocument())
+  })
+})
+
+describe('리스타트전 경기결과 — 이미지 카드와 카톡 문구에 함께 들어간다', () => {
+  async function open(opts: Parameters<typeof serve>[0] = {}) {
+    asAdmin()
+    serve(opts)
+    await openMain()
+    fireEvent.click(screen.getByText('경기결과 공유'))
+  }
+
+  it('이미지 카드에 "리스타트전 경기결과" 구역이 있고, 결승·준결승 경기가 승자 줄 + vs 줄로 나온다', async () => {
+    await open()
+    const section = await screen.findByTestId('result-restart-details')
+    expect(section.textContent).toContain('리스타트전 경기결과')
+    const titles = within(section).getAllByTestId('result-restart-section').map((e) => e.firstElementChild!.textContent)
+    expect(titles[0]).toBe('▶ 결승전')
+    expect(titles).toContain('▶ 준결승전')
+    const entries = within(section).getAllByTestId('result-restart-entry')
+    expect(entries[0].textContent).toContain(nameOfRestart(champion))
+    expect(entries[0].textContent).toContain('vs')
+    expect(entries[0].textContent).toContain(nameOfRestart(runnerUp))
+    // 카드 안(= 이미지로 만들어지는 DOM)에 들어 있다
+    expect(screen.getByTestId('result-card')).toContainElement(section)
+  })
+
+  it('카톡 문구 미리보기와 이미지 카드의 리스타트 경기 수가 같다(같은 데이터)', async () => {
+    await open()
+    const section = await screen.findByTestId('result-restart-details')
+    const preview = screen.getByTestId('result-text-preview').textContent ?? ''
+    const part = preview.slice(preview.indexOf('[리스타트전 경기결과]'))
+    const textGames = part.split('\n').filter((l) => /^\d+\. /.test(l)).length
+    expect(within(section).getAllByTestId('result-restart-entry')).toHaveLength(textGames)
+  })
+
+  it('"결과 이미지 만들기"는 리스타트 상세가 들어간 같은 카드를 shareImage로 넘긴다', async () => {
+    await open()
+    await screen.findByTestId('result-restart-details')
+    fireEvent.click(screen.getByText('결과 이미지 만들기'))
+    await waitFor(() => expect(shareImageMock).toHaveBeenCalledTimes(1))
+    const [node] = shareImageMock.mock.calls[0] as [HTMLElement]
+    expect(within(node).getByTestId('result-restart-details')).toBeInTheDocument()
+  })
+
+  it('리스타트 대회가 없으면 이미지 카드·문구에 리스타트 상세 구역이 없다(기존과 같다)', async () => {
+    await open({ tournaments: [mainT] })
+    expect(await card().findByText('리스타트 결과가 아직 확정되지 않았습니다.')).toBeInTheDocument()
+    expect(screen.queryByTestId('result-restart-details')).toBeNull()
+    expect(screen.getByTestId('result-text-preview').textContent).not.toContain('리스타트전 경기결과')
+  })
+
+  it('이미지 카드에 본선 경기 상세(결승전·3·4위전·준결승전·8강)도 들어간다 — 카톡 문구와 같은 경기 수', async () => {
+    await open()
+    const section = await screen.findByTestId('result-masters-details')
+    expect(section.textContent).toContain('본선 경기결과')
+    const titles = within(section).getAllByTestId('result-masters-section').map((e) => e.firstElementChild!.textContent)
+    expect(titles).toEqual(['▶ 결승전', '▶ 3·4위전', '▶ 준결승전', '▶ 8강'])
+    expect(within(section).getAllByTestId('result-masters-entry')).toHaveLength(1 + 1 + 2 + 4)
+    const preview = screen.getByTestId('result-text-preview').textContent ?? ''
+    const mastersText = preview.slice(preview.indexOf('▶ 결승전'), preview.indexOf('[리스타트전 경기결과]'))
+    expect(mastersText.split('\n').filter((l) => /^\d+\. /.test(l))).toHaveLength(8)
+    // 본선 → 리스타트전 순서, 둘 다 이미지가 되는 카드 안에 있다
+    const card = screen.getByTestId('result-card')
+    expect(card).toContainElement(section)
+    const restart = screen.getByTestId('result-restart-details')
+    expect(section.compareDocumentPosition(restart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('"결과 이미지 만들기"가 넘기는 카드 하나에 본선·리스타트 상세가 모두 있다', async () => {
+    await open()
+    await screen.findByTestId('result-masters-details')
+    fireEvent.click(screen.getByText('결과 이미지 만들기'))
+    await waitFor(() => expect(shareImageMock).toHaveBeenCalledTimes(1))
+    const [node] = shareImageMock.mock.calls[0] as [HTMLElement]
+    expect(within(node).getByTestId('result-masters-details')).toBeInTheDocument()
+    expect(within(node).getByTestId('result-restart-details')).toBeInTheDocument()
+  })
+
+  it('본선 이미지 카드의 기존 구조(2열 표, 마스터즈·리스타트 구역)는 그대로다', async () => {
+    await open()
+    await screen.findByTestId('result-restart-details')
+    expect(screen.getAllByTestId('result-section')).toHaveLength(2)
+    expect(screen.getByTestId('result-table')).toBeInTheDocument()
   })
 })
 

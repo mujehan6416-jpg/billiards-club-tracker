@@ -117,12 +117,14 @@ describe('카카오톡 문구 — 대회 최종결과가 먼저, 그 뒤에 본�
     mastersMatches: masters, mastersNameOf: nameOfMain, restartMatches: restart, restartNameOf: nameOfRestart, highRun,
   })
   const text = (highRun = '가상하이런', masters = playMain8(true)) => buildResultShareText(data(highRun, masters))
+  /** 카톡 문구에서 본선 부분(리스타트전 경기결과 구역 앞까지) */
+  const mastersPart = (t: string) => t.split('\n\n[리스타트전 경기결과]')[0]
   /** 구역 하나의 경기 목록 — 경기 하나 = 번호 줄(승자) + 이어지는 "vs" 줄(패자). 부전승은 번호 줄 하나. */
   const entries = (t: string, title: string) => {
     const lines = t.split('\n\n').find((b) => b.startsWith(`▶ ${title}\n`))!.split('\n').slice(1)
     const out: string[] = []
     for (const l of lines) {
-      if (/^\d+\. /.test(l)) out.push(l)
+      if (/^(\d+\.|-) /.test(l)) out.push(l)
       else out[out.length - 1] += `\n${l}`
     }
     return out
@@ -160,7 +162,7 @@ describe('카카오톡 문구 — 대회 최종결과가 먼저, 그 뒤에 본�
     const positions = heads.map((h) => t.indexOf(h))
     expect(positions.every((p) => p >= 0)).toBe(true)
     expect([...positions].sort((a, b) => a - b)).toEqual(positions)
-    expect(t).not.toContain('▶ 예선')
+    expect(mastersPart(t)).not.toContain('▶ 예선') // 리스타트 구역에는 예선이 있을 수 있으므로 본선 부분만 본다
     expect(entries(t, '결승전')).toHaveLength(1)
     expect(entries(t, '3·4위전')).toHaveLength(1)
     expect(entries(t, '준결승전')).toHaveLength(2)
@@ -224,6 +226,11 @@ describe('카카오톡 문구 — 대회 최종결과가 먼저, 그 뒤에 본�
     expect(early).toHaveLength(8) // 1차 8경기 중 실제 7경기(기권 1 포함) + 부전승 1
     expect(early[0]).toBe('1. 가상선수1 (승)\n    vs 가상선수2 (기권)')
     expect(early.some((l) => l.endsWith('(부전승)') && l.includes('가상선수15'))).toBe(true)
+    // 부전승은 번호를 쓰지 않고, 실제 경기 번호는 1부터 빈틈없이 이어진다(부전승 때문에 밀리지 않는다)
+    const bye = early.find((l) => l.includes('(부전승)'))!
+    expect(bye).toBe('- 가상선수15 (부전승)')
+    const nums = early.filter((l) => !l.includes('(부전승)')).map((l) => Number(l.split('.')[0]))
+    expect(nums).toEqual([1, 2, 3, 4, 5, 6, 7])
   })
 
   it('32강 이상은 8강보다 앞선 모든 라운드를 "예선" 하나로 묶는다(가까운 라운드부터)', () => {
@@ -241,19 +248,96 @@ describe('카카오톡 문구 — 대회 최종결과가 먼저, 그 뒤에 본�
 
   it('아직 공식 확정되지 않은 경기는 상세에 넣지 않고, 구역에 경기가 하나도 없으면 구역 자체를 만들지 않는다', () => {
     const t = text('', playMain8(true, 'before-final'))
-    expect(t).not.toContain('▶ 결승전')
-    expect(t).not.toContain('▶ 3·4위전')
+    expect(mastersPart(t)).not.toContain('▶ 결승전')
+    expect(mastersPart(t)).not.toContain('▶ 3·4위전')
     expect(t).toContain('▶ 준결승전')
     expect(t).toContain('마스터즈 결과가 아직 확정되지 않았습니다.')
     expect(t).not.toMatch(/마스터즈 \d위:/)
   })
 
-  it('리스타트 경기 상세는 넣지 않는다(최종결과 1·2위 요약만)', () => {
+  it('리스타트 경기 상세가 본선 경기 상세 뒤에 "[리스타트전 경기결과]" 구역으로 이어진다', () => {
     const t = text()
-    // 리스타트 선수 이름(가상선수 번호가 본선과 다른 경기)이 상세 구역에 나오지 않는다 — 상세는 본선 경기만
-    const detailPart = t.slice(t.indexOf('▶ 결승전'))
-    expect(detailPart).not.toContain(nameOfRestart(champion) + ' ') // 리스타트 결승 줄이 따로 없다
-    expect(detailPart.match(/▶ 결승전/g)).toHaveLength(1)
+    const header = t.indexOf('\n\n[리스타트전 경기결과]\n\n▶ ')
+    expect(header).toBeGreaterThan(t.indexOf('▶ 8강')) // 본선 상세가 모두 끝난 뒤
+    const restartPart = t.slice(header)
+    // 리스타트 결승: 승자 줄 + vs 패자 줄 (본선과 같은 모양)
+    expect(restartPart).toContain(`▶ 결승전\n1. ${nameOfRestart(champion)}`)
+    expect(restartPart).toContain(`\n    vs ${nameOfRestart(runnerUp)}`)
+    // 본선 상세는 그대로 한 번만 나온다
+    expect(t.slice(0, header).match(/▶ 결승전/g)).toHaveLength(1)
+  })
+
+  it('리스타트 상세 구역이 결승전 → 준결승전 → 8강 → 예선 순서다(있는 구역만)', () => {
+    const rd = data('').restartDetails
+    const titles = rd.map((d) => d.title)
+    expect(titles).toEqual(expect.arrayContaining(['결승전', '준결승전']))
+    expect(titles).toEqual(['결승전', '준결승전', '8강', '예선'].filter((k) => titles.includes(k)))
+    const t = text()
+    const part = t.slice(t.indexOf('[리스타트전 경기결과]'))
+    const positions = titles.map((k) => part.indexOf(`▶ ${k}`))
+    expect(positions.every((p) => p >= 0)).toBe(true)
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions)
+  })
+
+  it('리스타트 상세에는 3·4위전이 없고, 부전승은 점수·vs 없는 "(부전승)" 한 줄이다', () => {
+    const rd = data('').restartDetails
+    expect(rd.some((d) => d.title === '3·4위전')).toBe(false)
+    const lines = rd.flatMap((d) => d.lines)
+    for (const b of lines.filter((l) => l.includes('(부전승)'))) expect(b).not.toMatch(/\d+\/\d+|vs /)
+    const normals = lines.filter((l) => !l.includes('(부전승)'))
+    expect(normals.length).toBeGreaterThan(0)
+    for (const n of normals) expect(n).toMatch(/\n {4}vs /)
+  })
+
+  it('합성 부전승: 리스타트 상세의 부전승은 일반 경기 줄(점수·vs)로 만들어지지 않는다', () => {
+    const synthetic = restart.map((m) => (m.nextMatchId === null ? m : m)).slice()
+    const first = synthetic.find((m) => m.roundNumber === 1)!
+    const withBye = synthetic.map((m) => (m.id === first.id
+      ? { ...m, resultType: 'bye' as const, playerBParticipantId: null, scoreA: null, scoreB: null, status: 'official' as const }
+      : m))
+    const d = buildResultShareData({
+      mastersMatches: null, mastersNameOf: nameOfMain, restartMatches: withBye, restartNameOf: nameOfRestart, highRun: '',
+    })
+    const byeLines = d.restartDetails.flatMap((s) => s.lines).filter((l) => l.includes('(부전승)'))
+    expect(byeLines).toHaveLength(1)
+    expect(byeLines[0]).toMatch(/^- 가상선수\d+ \(부전승\)$/)
+  })
+
+  it('리스타트 부전승도 번호를 차지하지 않는다 — 실제 경기 번호가 1부터 연속된다', () => {
+    const first = restart.find((m) => m.roundNumber === 1)!
+    const withBye = restart.map((m) => (m.id === first.id
+      ? { ...m, resultType: 'bye' as const, playerBParticipantId: null, scoreA: null, scoreB: null, status: 'official' as const }
+      : m))
+    const d = buildResultShareData({
+      mastersMatches: null, mastersNameOf: nameOfMain, restartMatches: withBye, restartNameOf: nameOfRestart, highRun: '',
+    })
+    for (const sec of d.restartDetails) {
+      const nums = sec.lines.filter((l) => !l.includes('(부전승)')).map((l) => Number(l.split('.')[0]))
+      expect(nums).toEqual(nums.map((_, i) => i + 1))
+      for (const l of sec.lines.filter((x) => x.includes('(부전승)'))) expect(l).toMatch(/^- \S+ \(부전승\)$/)
+    }
+    expect(d.restartDetails.flatMap((s) => s.lines).some((l) => l.includes('(부전승)'))).toBe(true)
+  })
+
+  it('리스타트가 없거나 확정된 경기가 없으면 기존 문구와 똑같다(빈 리스타트 구역을 만들지 않는다)', () => {
+    const base = (restartMatches: typeof restart | null) => buildResultShareData({
+      mastersMatches: playMain8(true), mastersNameOf: nameOfMain, restartMatches, restartNameOf: nameOfRestart, highRun: '가상하이런',
+    })
+    expect(base(null).restartDetails).toEqual([])
+    expect(buildResultShareText(base(null))).not.toContain('리스타트전 경기결과')
+    const unplayed = restart.map((m) => ({ ...m, status: 'awaitingResult' as const, resultType: 'normal' as const }))
+    expect(base(unplayed).restartDetails).toEqual([])
+    expect(buildResultShareText(base(unplayed))).not.toContain('리스타트전 경기결과')
+  })
+
+  it('리스타트 상세를 넣어도 본선 최종결과·본선 상세 문구는 그대로다', () => {
+    const t = text()
+    const withRestart = t.slice(t.indexOf('▶ 결승전'), t.indexOf('\n\n[리스타트전 경기결과]'))
+    const none = buildResultShareText(buildResultShareData({
+      mastersMatches: playMain8(true), mastersNameOf: nameOfMain, restartMatches: null, restartNameOf: nameOfRestart, highRun: '가상하이런',
+    }))
+    expect(none.slice(none.indexOf('▶ 결승전'))).toBe(withRestart)
+    expect(t.startsWith('🏆 대회 최종결과\n\n마스터즈 1위: 가상선수1')).toBe(true)
   })
 
   it('하이런상은 입력한 이름만 쓰고(공백 정리), 비어 있으면 그 줄을 뺀다', () => {

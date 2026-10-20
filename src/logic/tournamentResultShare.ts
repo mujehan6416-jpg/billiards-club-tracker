@@ -14,6 +14,8 @@ import type { Tournament, TournamentMatch } from '../types/tournament'
 /** 화면·문구에 쓰는 이름. (한 곳에서만 정해서 문구·이미지가 어긋나지 않게 한다) */
 export const MASTERS_NAME = '마스터즈'
 export const RESTART_NAME = '리스타트'
+/** 리스타트 경기 상세 구역 제목(카톡 문구·이미지 카드 공통) */
+export const RESTART_DETAIL_TITLE = '리스타트전 경기결과'
 
 export interface ResultLine {
   /** 예: "마스터즈 1위" */
@@ -44,6 +46,8 @@ export interface TournamentResultShareData {
   highRun: string
   /** 본선(마스터즈) 경기 상세. 결승전 → 3·4위전 → 준결승전 → 8강 → 예선 순서. 리스타트 상세는 넣지 않는다. */
   details: MatchDetailSection[]
+  /** 리스타트 경기 상세(본선과 같은 구역 이름·모양). 3·4위전은 쓰지 않는다. 확정된 경기가 없으면 빈 배열 — 화면·문구에 아무것도 만들지 않는다. */
+  restartDetails: MatchDetailSection[]
 }
 
 export type ParticipantNameOf = (participantId: string | null) => string
@@ -112,14 +116,14 @@ const LOSER_INDENT = '    '
  *   `    vs 강호철 13/23(57%)`
  * 카톡은 폰 폭에 따라 긴 한 줄을 아무 데서나 꺾으므로, 승자·패자를 두 줄로 고정해 이름 길이와 상관없이 같은 모양이 되게 한다.
  * 점수 / 당시 핸디(경기 시점 스냅샷) / 달성률(%). 승자는 공식 승자(officialWinner)를 그대로 쓴다(승패 계산은 하지 않는다).
- * 기권은 점수 없이 `이름 (승)` / `vs 이름 (기권)`, 부전승은 `이름 (부전승)`. 아직 공식 확정되지 않은 경기는 null(출력하지 않음).
+ * 기권은 점수 없이 `이름 (승)` / `vs 이름 (기권)`, 부전승은 번호 없이 `- 이름 (부전승)`. 아직 공식 확정되지 않은 경기는 null(출력하지 않음).
  * 공식 승자가 기록되지 않은 예외 경기는 A·B 순서 그대로 둔다.
  */
 export function matchResultLine(index: number, m: TournamentMatch, nameOf: ParticipantNameOf): string | null {
   if (m.status !== 'official') return null
   if (m.resultType === 'bye') {
     const only = m.playerAParticipantId ?? m.playerBParticipantId
-    return only ? `${index}. ${nameOf(only)} (부전승)` : null
+    return only ? `- ${nameOf(only)} (부전승)` : null // 부전승은 실제 경기가 아니므로 번호를 쓰지 않는다(index 무시)
   }
   const winner = m.officialWinnerParticipantId ?? null
   const side = (participantId: string | null, score: number | null, handicap: number | null) => {
@@ -168,9 +172,12 @@ export function buildMatchDetailSections(matches: TournamentMatch[] | null, name
   const sections: MatchDetailSection[] = []
   for (const g of groups) {
     const lines: string[] = []
+    let played = 0 // 실제 경기 수 — 부전승 줄은 세지 않아 뒤 경기 번호가 밀리지 않는다
     for (const m of g.list) {
-      const line = matchResultLine(lines.length + 1, m, nameOf)
-      if (line) lines.push(line)
+      const line = matchResultLine(played + 1, m, nameOf)
+      if (!line) continue
+      lines.push(line)
+      if (m.resultType !== 'bye') played++
     }
     if (lines.length > 0) sections.push({ title: g.title, lines })
   }
@@ -189,13 +196,19 @@ export function buildResultShareData(input: {
     restart: buildRestartSection(input.restartMatches, input.restartNameOf),
     highRun: input.highRun.trim().replace(/\s+/g, ' '),
     details: buildMatchDetailSections(input.mastersMatches, input.mastersNameOf),
+    // 리스타트는 1·2위만 쓰는 원칙이므로 3·4위전은 상세에서도 뺀다. 부전승은 본선과 같이 점수 없는 "(부전승)" 한 줄이다.
+    restartDetails: buildMatchDetailSections(
+      input.restartMatches ? input.restartMatches.filter((m) => m.playerCountInRound !== 3) : null,
+      input.restartNameOf,
+    ),
   }
 }
 
 /**
  * 카카오톡에 붙여넣을 문구. 대회 최종결과(마스터즈 · 리스타트 · 하이런상)가 먼저 나오고, 그 뒤에 본선 경기 상세가
  * 결승전 → 준결승전 → 8강 → 예선 순으로 이어진다. 카톡의 굵은 글씨(*) 해석에 기대지 않고 이모지·줄바꿈만 쓴다.
- * 리스타트는 1위·2위만 요약하고 리스타트 경기 상세는 넣지 않는다. 하이런상 이름이 비어 있으면 그 줄은 넣지 않는다.
+ * 리스타트는 1위·2위 요약 뒤에, 본선 경기 상세 다음으로 "[리스타트전 경기결과]" 구역이 이어진다
+ * (확정된 리스타트 경기가 없으면 이 구역 자체를 만들지 않아 기존 문구와 같다). 하이런상 이름이 비어 있으면 그 줄은 넣지 않는다.
  */
 export function buildResultShareText(data: TournamentResultShareData): string {
   const blocks: string[] = ['🏆 대회 최종결과']
@@ -208,6 +221,10 @@ export function buildResultShareText(data: TournamentResultShareData): string {
   blocks.push(sectionRows(data.restart))
   if (data.highRun) blocks.push(`하이런상: ${data.highRun}`)
   for (const d of data.details) blocks.push([`▶ ${d.title}`, ...d.lines].join('\n'))
+  if (data.restartDetails.length > 0) {
+    blocks.push(`[${RESTART_DETAIL_TITLE}]`)
+    for (const d of data.restartDetails) blocks.push([`▶ ${d.title}`, ...d.lines].join('\n'))
+  }
   return blocks.join('\n\n')
 }
 

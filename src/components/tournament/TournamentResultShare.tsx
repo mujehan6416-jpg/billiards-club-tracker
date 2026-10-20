@@ -1,7 +1,7 @@
 import { forwardRef, useRef, useState } from 'react'
 import type { Tournament, TournamentMatch } from '../../types/tournament'
 import {
-  buildResultShareData, buildResultShareText,
+  buildResultShareData, buildResultShareText, RESTART_DETAIL_TITLE,
   type ParticipantNameOf, type ResultSection, type TournamentResultShareData,
 } from '../../logic/tournamentResultShare'
 import { shareImage, shareText } from '../../lib/share'
@@ -110,10 +110,51 @@ export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tou
             </>
           )}
         </div>
+        {data.details.length > 0 && (
+          <>
+            {divider}
+            <DetailSections title="본선 경기결과" icon="🏆" sections={data.details} testId="masters" />
+          </>
+        )}
+        {data.restartDetails.length > 0 && (
+          <>
+            {divider}
+            <DetailSections title={RESTART_DETAIL_TITLE} icon="⚔️" sections={data.restartDetails} testId="restart" />
+          </>
+        )}
       </div>
     )
   },
 )
+
+/**
+ * 이미지 카드 아래쪽의 경기 상세(본선 → 리스타트전) — 위 최종결과 표와 구분선으로 나뉜다. 카톡 문구와 같은 데이터
+ * (details / restartDetails)를 쓰며, 경기 하나는 "승자 줄 + vs 패자 줄", 부전승은 번호 없는 한 줄("- 이름 (부전승)").
+ * 카드 폭(340)을 그대로 쓰고 긴 줄은 줄바꿈된다.
+ */
+function DetailSections({ title, icon, sections, testId }: {
+  title: string; icon: string; sections: TournamentResultShareData['details']; testId: 'masters' | 'restart'
+}) {
+  return (
+    <div data-testid={`result-${testId}-details`} style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
+      <div style={titleStyle}>{icon} {title}</div>
+      {sections.map((sec) => (
+        <div key={sec.title} data-testid={`result-${testId}-section`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#111' }}>▶ {sec.title}</div>
+          {sec.lines.map((entry, i) => {
+            const [first, second] = entry.split('\n')
+            return (
+              <div key={i} data-testid={`result-${testId}-entry`} style={{ fontSize: 17, fontWeight: 600, color: '#111', lineHeight: 1.45, overflowWrap: 'anywhere' }}>
+                <div>{first}</div>
+                {second !== undefined && <div style={{ paddingLeft: 22, color: '#444' }}>{second.trim()}</div>}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 /**
  * [경기결과 공유] — 관리자 전용. 마스터즈(본선)·리스타트 최종 순위와 직접 입력한 하이런상, 그리고 본선 경기 상세로
