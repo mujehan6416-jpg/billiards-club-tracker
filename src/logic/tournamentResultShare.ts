@@ -48,6 +48,8 @@ export interface TournamentResultShareData {
   details: MatchDetailSection[]
   /** 리스타트 경기 상세(본선과 같은 구역 이름·모양). 3·4위전은 쓰지 않는다. 확정된 경기가 없으면 빈 배열 — 화면·문구에 아무것도 만들지 않는다. */
   restartDetails: MatchDetailSection[]
+  /** 테스트 대회이면 true — 문구·이미지에 "테스트 대회" 표시를 넣는다. 실제 대회는 false라 기존 형식 그대로다. */
+  isTest: boolean
 }
 
 export type ParticipantNameOf = (participantId: string | null) => string
@@ -190,11 +192,13 @@ export function buildResultShareData(input: {
   restartMatches: TournamentMatch[] | null
   restartNameOf: ParticipantNameOf
   highRun: string
+  isTest?: boolean
 }): TournamentResultShareData {
   return {
     masters: buildMastersSection(input.mastersMatches, input.mastersNameOf),
     restart: buildRestartSection(input.restartMatches, input.restartNameOf),
     highRun: input.highRun.trim().replace(/\s+/g, ' '),
+    isTest: input.isTest === true,
     details: buildMatchDetailSections(input.mastersMatches, input.mastersNameOf),
     // 리스타트는 1·2위만 쓰는 원칙이므로 3·4위전은 상세에서도 뺀다. 부전승은 본선과 같이 점수 없는 "(부전승)" 한 줄이다.
     restartDetails: buildMatchDetailSections(
@@ -211,7 +215,7 @@ export function buildResultShareData(input: {
  * (확정된 리스타트 경기가 없으면 이 구역 자체를 만들지 않아 기존 문구와 같다). 하이런상 이름이 비어 있으면 그 줄은 넣지 않는다.
  */
 export function buildResultShareText(data: TournamentResultShareData): string {
-  const blocks: string[] = ['🏆 대회 최종결과']
+  const blocks: string[] = data.isTest ? ['🧪 테스트 대회 결과 (실제 기록이 아닙니다)', '🏆 대회 최종결과'] : ['🏆 대회 최종결과']
   const sectionRows = (section: ResultSection) => {
     const rows = section.lines.map((l) => `${l.label}: ${l.value}`)
     if (section.notice) rows.push(section.notice)

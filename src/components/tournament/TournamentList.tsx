@@ -1,4 +1,5 @@
 import type { Tournament, TournamentParticipant } from '../../types/tournament'
+import { TestBadge } from './TestBadge'
 import { countEntries, tournamentStatusLabel, type EntryCounts } from './tournamentDisplay'
 
 const STATUS_BADGE_STYLE: Record<Tournament['status'], { bg: string; fg: string }> = {
@@ -38,7 +39,7 @@ export function TournamentList({ tournaments, participantsByTournamentId, onSele
             style={{ width: '100%', textAlign: 'left', alignItems: 'stretch', cursor: 'pointer' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-              <span style={{ fontWeight: 700, fontSize: 16, color: '#072B61' }}>{t.name}</span>
+              <span style={{ fontWeight: 700, fontSize: 16, color: '#072B61' }}>{t.name}{t.isTestTournament && <TestBadge />}</span>
               <span style={{
                 fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 999,
                 background: badge.bg, color: badge.fg, whiteSpace: 'nowrap',

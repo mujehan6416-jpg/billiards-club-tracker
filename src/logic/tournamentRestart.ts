@@ -124,6 +124,8 @@ export function buildRestartTournament(source: Tournament, nowIso: string, admin
     status: 'draft',
     createdAt: nowIso,
     ...(adminUid ? { createdByAdminUid: adminUid } : {}),
+    // 본선이 테스트 대회이면 리스타트도 자동으로 테스트 대회다(다시 고르지 않는다).
+    ...(source.isTestTournament === true ? { isTestTournament: true } : {}),
   }
 }
 

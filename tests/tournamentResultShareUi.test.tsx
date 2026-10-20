@@ -466,3 +466,52 @@ describe('경기결과 공유 — 권한과 범위', () => {
     expect(fetchTournamentsMock).toHaveBeenCalled()
   })
 })
+
+describe('테스트 대회 — 화면 표시와 공유', () => {
+  const testMain: Tournament = { ...mainT, name: 'Test3', isTestTournament: true }
+
+  it('테스트 대회는 목록·상세 제목에 "테스트" 배지가 있고, 공유 문구·이미지에도 테스트 표시가 들어간다(본선·리스타트 상세 포함)', async () => {
+    asAdmin()
+    serve({ tournaments: [testMain, { ...restartT, isTestTournament: true }] })
+    render(<TournamentTab />)
+    const listItem = (await screen.findAllByText('Test3'))[0].closest('button')!
+    expect(within(listItem).getByTestId('test-badge')).toBeInTheDocument()
+    fireEvent.click(listItem)
+    await screen.findByText(/경기 완료/)
+    expect(screen.getAllByTestId('test-badge').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByText('경기결과 공유'))
+    expect(await screen.findByTestId('result-test-mark')).toBeInTheDocument()
+    expect(screen.getByTestId('result-text-preview').textContent).toContain('🧪 테스트 대회 결과')
+    await waitFor(() => expect(screen.getByTestId('result-restart-details')).toBeInTheDocument())
+    expect(screen.getByTestId('result-masters-details')).toBeInTheDocument()
+  })
+
+  it('실제 대회에는 배지도 테스트 표시도 없다', async () => {
+    asAdmin()
+    serve()
+    await openMain()
+    expect(screen.queryByTestId('test-badge')).toBeNull()
+    fireEvent.click(screen.getByText('경기결과 공유'))
+    await screen.findByTestId('result-card')
+    expect(screen.queryByTestId('result-test-mark')).toBeNull()
+    expect(screen.getByTestId('result-text-preview').textContent).not.toContain('테스트')
+  })
+
+  it('삭제 확인창에 테스트 대회임이 표시된다(실제 대회는 표시 없음)', async () => {
+    asAdmin()
+    serve({ tournaments: [testMain, restartT] })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await openMain()
+    fireEvent.click(screen.getByText('대회 삭제'))
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("'Test3' (테스트 대회)를 삭제하시겠습니까?"))
+  })
+
+  it('실제 대회 삭제 확인창 문구는 기존과 같다', async () => {
+    asAdmin()
+    serve()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await openMain()
+    fireEvent.click(screen.getByText('대회 삭제'))
+    expect(confirmSpy).toHaveBeenCalledWith("'Test3'를 삭제하시겠습니까?\n대회 참가자, 대진 및 경기 정보가 함께 삭제됩니다.\n이 작업은 되돌릴 수 없습니다.")
+  })
+})

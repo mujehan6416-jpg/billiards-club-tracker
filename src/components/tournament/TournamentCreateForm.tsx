@@ -7,7 +7,7 @@ const TIME_LIMIT_PRESETS = [40, 50, 60]
  * (Tournament 타입 자체에 단식/복식 구분 필드가 없다).
  */
 export function TournamentCreateForm({ onCreate, onCancel, submitting }: {
-  onCreate: (input: { name: string; date: string; timeLimitMinutes: number }) => void
+  onCreate: (input: { name: string; date: string; timeLimitMinutes: number; isTestTournament: boolean }) => void
   onCancel: () => void
   submitting?: boolean
 }) {
@@ -15,6 +15,7 @@ export function TournamentCreateForm({ onCreate, onCancel, submitting }: {
   const [date, setDate] = useState('')
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(50)
   const [customMinutes, setCustomMinutes] = useState('')
+  const [isTest, setIsTest] = useState(false)
   const [error, setError] = useState('')
 
   const submit = () => {
@@ -25,7 +26,7 @@ export function TournamentCreateForm({ onCreate, onCancel, submitting }: {
       return
     }
     setError('')
-    onCreate({ name: name.trim(), date, timeLimitMinutes })
+    onCreate({ name: name.trim(), date, timeLimitMinutes, isTestTournament: isTest })
   }
 
   return (
@@ -85,6 +86,17 @@ export function TournamentCreateForm({ onCreate, onCancel, submitting }: {
           />
         </label>
       </div>
+
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 44 }}>
+        <input
+          type="checkbox" checked={isTest} onChange={(e) => setIsTest(e.target.checked)}
+          style={{ width: 24, height: 24, flexShrink: 0, marginTop: 2 }}
+        />
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 16, fontWeight: 700 }}>테스트 대회</span>
+          <span className="muted" style={{ fontSize: 14 }}>경기는 정상 진행되지만 전적·통계·랭킹에는 반영되지 않습니다.</span>
+        </span>
+      </label>
 
       {error && <span style={{ fontSize: 14, color: 'var(--danger)' }}>{error}</span>}
 

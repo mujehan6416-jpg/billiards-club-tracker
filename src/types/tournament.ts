@@ -84,6 +84,11 @@ export interface Tournament {
    * 리스타트 대진 자동 생성 때 한 번 기록한다. 일반 대회 문서에는 없다(없어도 모든 동작이 그대로다).
    */
   restartSourceTournamentId?: string
+  /**
+   * 테스트 대회 표시 — true면 대회는 정상 진행되지만 경기 결과를 전적·통계·랭킹용 Game으로 저장하지 않는다.
+   * 없으면(기존 모든 대회) false와 같다. 리스타트는 본선이 테스트 대회이면 자동으로 테스트로 본다.
+   */
+  isTestTournament?: boolean
 }
 
 /**

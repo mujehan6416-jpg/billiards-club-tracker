@@ -8,6 +8,7 @@ import { useAdminAuthStore } from '../store/adminAuthStore'
 import { AdminAuthLogin } from '../components/admin/AdminAuthLogin'
 import { TournamentList } from '../components/tournament/TournamentList'
 import { TournamentCreateForm } from '../components/tournament/TournamentCreateForm'
+import { TestBadge } from '../components/tournament/TestBadge'
 import { TournamentEntryCard } from '../components/tournament/TournamentEntryCard'
 import { TournamentParticipantAdmin } from '../components/tournament/TournamentParticipantAdmin'
 import { TournamentDrawAdmin } from '../components/tournament/TournamentDrawAdmin'
@@ -298,12 +299,13 @@ export function TournamentTab({
     }
   }
 
-  const handleCreateTournament = (input: { name: string; date: string; timeLimitMinutes: number }) => {
+  const handleCreateTournament = (input: { name: string; date: string; timeLimitMinutes: number; isTestTournament: boolean }) => {
     const id = previewMode ? `dev-created-${Date.now()}` : crypto.randomUUID()
     const tournament: Tournament = {
       id, name: input.name, date: input.date, timeLimitMinutes: input.timeLimitMinutes,
       status: 'draft', createdAt: new Date().toISOString(),
       ...(adminUid ? { createdByAdminUid: adminUid } : {}),
+      ...(input.isTestTournament ? { isTestTournament: true } : {}),
     }
     if (previewMode) {
       setTournaments((prev) => [...prev, tournament])
@@ -984,7 +986,7 @@ export function TournamentTab({
           </div>
         )}
         <button type="button" onClick={() => setView('list')} style={{ marginBottom: 4 }}>← 대회 목록</button>
-        <h2 className="tab-title" style={{ marginBottom: 0 }}>{selected.name}</h2>
+        <h2 className="tab-title" style={{ marginBottom: 0 }}>{selected.name}{selected.isTestTournament && <TestBadge />}</h2>
         <span className="muted">📅 {selected.date} · 제한시간 {selected.timeLimitMinutes}분</span>
         {error && <p className="info-msg">{error}</p>}
 
@@ -1177,7 +1179,7 @@ export function TournamentTab({
               className="danger block" style={{ fontSize: 15, padding: 12 }} disabled={busy}
               onClick={() => {
                 if (window.confirm(
-                  `'${selected.name}'를 삭제하시겠습니까?\n대회 참가자, 대진 및 경기 정보가 함께 삭제됩니다.\n이 작업은 되돌릴 수 없습니다.`,
+                  `'${selected.name}'${selected.isTestTournament ? ' (테스트 대회)' : ''}를 삭제하시겠습니까?\n대회 참가자, 대진 및 경기 정보가 함께 삭제됩니다.\n이 작업은 되돌릴 수 없습니다.`,
                 )) {
                   handleDeleteTournament()
                 }

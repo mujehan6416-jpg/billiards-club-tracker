@@ -83,6 +83,11 @@ export const TournamentResultCard = forwardRef<HTMLDivElement, { tournament: Tou
       >
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, textAlign: 'center', width: '100%' }}>
           <span style={{ fontSize: 20, fontWeight: 800, color: '#0f6e56' }}>당신회</span>
+          {data.isTest && (
+            <span data-testid="result-test-mark" style={{ fontSize: 16, fontWeight: 800, color: '#7a5200', background: '#fff3cd', padding: '2px 10px', borderRadius: 999 }}>
+              테스트 대회 (실제 기록 아님)
+            </span>
+          )}
           <span style={{ fontSize: 30, fontWeight: 800, color: '#111' }}>대회 경기결과</span>
           <span style={{ fontSize: 18, fontWeight: 600, color: '#333', overflowWrap: 'anywhere' }}>{tournament.name}</span>
           <span style={{ fontSize: 16, color: '#555' }}>{tournament.date}</span>
@@ -199,7 +204,7 @@ export function TournamentResultShare({
   const data = buildResultShareData({
     mastersMatches, mastersNameOf,
     restartMatches: restart?.matches ?? null, restartNameOf: restart?.nameOf ?? (() => ''),
-    highRun,
+    highRun, isTest: tournament.isTestTournament === true,
   })
   const text = buildResultShareText(data)
 

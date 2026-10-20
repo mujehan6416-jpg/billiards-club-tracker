@@ -145,6 +145,23 @@ function buildTournamentGameWrite(
   }
 }
 
+/**
+ * 이 대회의 경기 결과를 통계(Game)로 저장하면 안 되는지 — 테스트 대회이거나, 테스트 본선에 딸린 리스타트이면 true.
+ * 본선 id는 리스타트 문서의 restartSourceTournamentId로 찾는다(자동 생성 때 이미 플래그를 물려받지만,
+ * 이름 규칙으로 따로 만든 리스타트도 같이 막기 위한 이중 확인). 문서가 없으면 실제 대회로 본다(false).
+ */
+async function isStatsExcludedTournament(clubId: string, tournamentId: string): Promise<boolean> {
+  const snap = await getDoc(tournamentDoc(clubId, tournamentId))
+  if (!snap.exists()) return false
+  const t = snap.data() as Tournament
+  if (t.isTestTournament === true) return true
+  if (t.restartSourceTournamentId) {
+    const source = await getDoc(tournamentDoc(clubId, t.restartSourceTournamentId))
+    return source.exists() && (source.data() as Tournament).isTestTournament === true
+  }
+  return false
+}
+
 // ── 오류 ────────────────────────────────────────────────────────────
 
 export type TournamentSyncErrorCode = 'not-found' | 'validation' | 'blocked' | 'permission-denied' | 'unknown'
@@ -185,6 +202,8 @@ function toTournamentDoc(tournament: Tournament): Tournament {
     championParticipantId: tournament.championParticipantId,
     runnerUpParticipantId: tournament.runnerUpParticipantId,
     restartSourceTournamentId: tournament.restartSourceTournamentId,
+    // true일 때만 저장한다 — 실제 대회 문서는 예전과 똑같은 모양으로 남는다.
+    isTestTournament: tournament.isTestTournament === true ? true : undefined,
   })
 }
 
@@ -973,7 +992,9 @@ async function commitOfficialResult(
   // 통계(logic/stats.ts)가 정상 경로로 이 경기를 읽는다. 세션은 이 대회 전용으로 하나만
   // 쓰고(id가 tournamentId로 결정적), 이미 있으면 그대로 덮어써도 내용이 같아 안전하다
   // (games는 하위 컬렉션이라 세션 문서 자체를 다시 써도 지워지지 않는다).
-  const gameWrite = buildTournamentGameWrite(tournamentId, approvedAtIso, approved.match)
+  // 테스트 대회(와 그 리스타트)는 경기 진행용 문서(match)만 저장하고 통계용 세션·Game은 만들지 않는다.
+  let gameWrite = buildTournamentGameWrite(tournamentId, approvedAtIso, approved.match)
+  if (gameWrite && await isStatsExcludedTournament(clubId, tournamentId)) gameWrite = null
   if (gameWrite) {
     batch.set(sessionDoc(clubId, gameWrite.sessionId), {
       id: gameWrite.sessionId,
